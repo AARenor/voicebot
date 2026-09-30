@@ -6,127 +6,257 @@
 <title>Voicebot — operaatori töölaud</title>
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #667085;
-    --line: #e4e7ec; --accent: #1570ef; --accent-ink: #ffffff;
-    --ok: #12805c; --warn: #b54708; --bad: #b42318;
-    --radius: 12px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #101319; --panel: #1a1f2b; --ink: #eef1f6; --muted: #9aa3b2;
-      --line: #2b3242; --accent: #4e8df5;
-    }
+    --bg: #f7f6f2;
+    --card: #ffffff;
+    --ink: #1a1d21;
+    --ink-soft: #3d434b;
+    --muted: #73767c;
+    --line: #e9e6df;
+    --line-soft: #f1efe9;
+    --accent: #0f7b5f;
+    --accent-deep: #0a5c47;
+    --accent-tint: #e7f3ee;
+    --amber-bg: #fdf6e9;
+    --amber-line: #ecd9ac;
+    --amber-ink: #8a5a00;
+    --bad: #b42318;
+    --bad-tint: #fdecea;
+    --radius: 16px;
+    --shadow: 0 1px 2px rgba(26, 29, 33, .05), 0 8px 24px -16px rgba(26, 29, 33, .18);
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--ink);
-    margin: 0; padding: 1.5rem 1rem 3rem;
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 320px at 50% -120px, #ffffff 0%, rgba(255, 255, 255, 0) 70%),
+      var(--bg);
   }
-  .wrap { max-width: 1024px; margin: 0 auto; }
-  header.top {
-    display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
-    margin-bottom: 1rem;
+
+  /* Sticky top bar */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255, 255, 255, .88);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
   }
-  header.top h1 { font-size: 1.4rem; margin: 0; }
+  .topbar-inner {
+    max-width: 1120px; margin: 0 auto; padding: .7rem 1.25rem;
+    display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 10px; flex: none;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+    color: #fff; font-weight: 700; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand h1 { font-size: 1.02rem; margin: 0; letter-spacing: -.015em; }
+  .brand small { display: block; font-size: .74rem; color: var(--muted); font-weight: 400; }
+
   .pill {
-    font-size: .8rem; border: 1px solid var(--line); border-radius: 999px;
-    padding: .15rem .7rem; color: var(--muted); background: var(--panel);
+    font-size: .76rem; font-weight: 600; letter-spacing: .02em;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: .22rem .75rem; color: var(--muted); background: #fff;
+    white-space: nowrap;
   }
-  .pill.on { color: var(--ok); border-color: var(--ok); }
+  .pill.on { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-tint); }
   .pill.off { color: var(--muted); }
-  section.panel {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 1rem 1.2rem; margin-bottom: 1rem;
-  }
-  section.panel h2 { font-size: 1.05rem; margin: 0 0 .7rem; }
-  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
-  th, td { border-bottom: 1px solid var(--line); padding: .5rem .6rem; text-align: left; }
-  th { color: var(--muted); font-weight: 600; }
-  tr.demo { opacity: .62; }
-  .tag {
-    display: inline-block; font-size: .75rem; border-radius: 999px;
-    padding: .1rem .55rem; border: 1px solid var(--line); color: var(--muted);
-  }
-  .tag.pending { color: var(--warn); border-color: var(--warn); }
-  .tag.confirmed { color: var(--ok); border-color: var(--ok); }
-  .tag.cancelled { color: var(--bad); border-color: var(--bad); }
-  button {
-    font: inherit; font-size: .85rem; cursor: pointer;
-    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-    border-radius: 8px; padding: .35rem .8rem; margin-right: .35rem;
-  }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  button.danger { color: var(--bad); border-color: var(--bad); }
+
+  .auth { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
   input[type="password"] {
-    font: inherit; padding: .35rem .6rem; border: 1px solid var(--line);
-    border-radius: 8px; width: 20rem; max-width: 100%;
-    background: var(--panel); color: var(--ink);
+    font: inherit; font-size: .85rem;
+    padding: .42rem .7rem; border: 1px solid var(--line); border-radius: 10px;
+    width: 13rem; background: #fff; color: var(--ink);
   }
-  .toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .7rem; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
-  .card { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; }
-  .card span { font-size: .75rem; color: var(--muted); display: block; }
-  .card b { font-size: 1.15rem; }
+  input[type="password"]:focus-visible,
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  button {
+    font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink-soft);
+    border-radius: 10px; padding: .42rem .9rem;
+  }
+  button:hover { border-color: #d5d1c7; background: #fbfaf7; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+  button.danger { color: var(--bad); border-color: #efc5c1; }
+  button.danger:hover { background: var(--bad-tint); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 1.4rem 1.25rem 4rem; }
+
+  /* Demo notice */
+  .notice {
+    border: 1px solid var(--amber-line); background: var(--amber-bg);
+    border-left: 4px solid #d9a521; color: #6b4d00;
+    border-radius: 12px; padding: .7rem 1rem; margin-bottom: 1.1rem;
+    font-size: .9rem;
+  }
+  .notice b { color: #553d00; }
+
+  /* KPI cards */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1.1rem; }
+  .kpi {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: .85rem 1rem;
+  }
+  .kpi span {
+    display: block; font-size: .7rem; font-weight: 700;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+  }
+  .kpi b {
+    font-size: 1.7rem; font-weight: 700; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Panels */
+  .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.1rem; align-items: start; }
+  section.panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 1.1rem 1.25rem 1.25rem; margin-bottom: 1.1rem;
+  }
+  .grid section.panel { margin-bottom: 0; }
+  .panel-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
+  .panel-head h2 { font-size: 1rem; margin: 0; letter-spacing: -.01em; }
+  .eyebrow {
+    font-size: .7rem; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .count {
+    margin-left: auto; font-size: .76rem; font-weight: 700; color: var(--muted);
+    background: var(--line-soft); border-radius: 999px; padding: .1rem .6rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th {
+    font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: .45rem .6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  td { padding: .62rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fbfaf7; }
+  tr.demo td:first-child { border-left: 3px solid #d9a521; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .guest { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; flex: none;
+    background: var(--accent-tint); color: var(--accent-deep);
+    font-size: .75rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .guest b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .guest small { display: block; color: var(--muted); font-size: .76rem; }
+
+  .chip {
+    display: inline-block; font-size: .74rem; font-weight: 600; white-space: nowrap;
+    border-radius: 999px; padding: .16rem .65rem;
+    border: 1px solid var(--line); color: var(--muted); background: #fbfaf7;
+  }
+  .chip.pending { color: #8a5a00; border-color: var(--amber-line); background: var(--amber-bg); }
+  .chip.confirmed { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-tint); }
+  .chip.cancelled { color: var(--bad); border-color: #efc5c1; background: var(--bad-tint); }
+  .chip.urgent { color: var(--bad); border-color: #efc5c1; background: var(--bad-tint); }
+  .chip.lang { text-transform: uppercase; letter-spacing: .06em; }
+
+  .actions { white-space: nowrap; text-align: right; }
+  .actions button { margin-left: .35rem; }
+
+  .empty {
+    color: var(--muted); font-size: .9rem; text-align: center;
+    padding: 1.6rem 1rem; border: 1px dashed var(--line); border-radius: 12px;
+    background: #fbfaf7;
+  }
+  .empty::before { content: "○"; display: block; font-size: 1.4rem; margin-bottom: .3rem; }
+
+  details.config { margin-top: 1.1rem; }
+  details.config summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   pre {
-    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
-    padding: .7rem; overflow-x: auto; font-size: .8rem;
+    background: #fbfaf7; border: 1px solid var(--line); border-radius: 12px;
+    padding: .8rem 1rem; overflow-x: auto; font-size: .78rem; margin: .7rem 0 0;
   }
-  .empty { color: var(--muted); font-style: italic; }
+
+  footer { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 2rem; }
+
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
   @media (max-width: 640px) {
     table, thead, tbody, th, td, tr { display: block; }
     thead { display: none; }
-    tr { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .5rem; padding: .3rem .6rem; }
-    td { border: none; padding: .2rem 0; }
+    tbody tr { border: 1px solid var(--line); border-radius: 12px; margin-bottom: .6rem; padding: .4rem .8rem; }
+    tbody tr:hover td { background: none; }
+    td { border: none; padding: .25rem 0; }
+    .actions { text-align: left; }
   }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <h1>Voicebot — operaatori töölaud</h1>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">◉</div>
+      <h1>Voicebot <small>operaatori töölaud</small></h1>
+    </div>
     <span class="pill" id="livekit">… livekit</span>
     <span class="pill" id="mode">…</span>
-  </header>
-
-  <div class="panel" id="demo-banner" hidden>
-    DEMO režiim — kinnitused ja tühistamised ei kirjuta PMS-i.
-  </div>
-
-  <section class="panel" aria-label="Hoiud">
-    <h2>Ootel hoiud</h2>
-    <div class="toolbar">
-      <input id="token" type="password" placeholder="OPERATOR_TOKEN" autocomplete="off">
+    <div class="auth">
+      <input id="token" type="password" placeholder="OPERATOR_TOKEN" autocomplete="off" aria-label="Operaatori tunnus">
       <button id="refresh">Värskenda</button>
       <button id="reset">Lähtesta demo</button>
     </div>
-    <table id="holds">
-      <thead><tr>
-        <th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-    <p class="empty" id="holds-empty" hidden>Pole ootel hoidusid.</p>
-  </section>
+  </div>
+</header>
 
-  <section class="panel" aria-label="Kõned">
-    <h2>Kõned</h2>
-    <table id="calls">
-      <thead><tr><th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p class="empty" id="calls-empty" hidden>Kõnesid veel pole.</p>
-  </section>
+<div class="wrap">
+  <div class="notice" id="demo-banner" hidden>
+    <b>DEMO režiim</b> — kinnitused ja tühistamised ei kirjuta PMS-i.
+  </div>
 
-  <section class="panel" aria-label="Mõõdikud">
-    <h2>Mõõdikud</h2>
-    <div class="cards" id="metrics"></div>
-  </section>
+  <div class="kpis" id="metrics" aria-label="Mõõdikud"></div>
 
-  <section class="panel" aria-label="Seadistus">
-    <h2>Seadistus</h2>
+  <div class="grid">
+    <section class="panel" aria-label="Hoiud">
+      <div class="panel-head">
+        <div><div class="eyebrow">Broneeringud</div><h2>Ootel hoiud</h2></div>
+        <span class="count" id="holds-count">0</span>
+      </div>
+      <table id="holds">
+        <thead><tr>
+          <th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="holds-empty" aria-live="polite" hidden>Pole ootel hoidusid.</p>
+    </section>
+
+    <section class="panel" aria-label="Kõned">
+      <div class="panel-head">
+        <div><div class="eyebrow">Ajalugu</div><h2>Kõned</h2></div>
+        <span class="count" id="calls-count">0</span>
+      </div>
+      <table id="calls">
+        <thead><tr><th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="calls-empty" aria-live="polite" hidden>Kõnesid veel pole.</p>
+    </section>
+  </div>
+
+  <details class="config panel" aria-label="Seadistus">
+    <summary>Seadistus</summary>
     <pre id="config"></pre>
-  </section>
+  </details>
+
+  <footer>Voicebot · EE hotellid &amp; spaad · andmed uuenevad iga 30 s järel</footer>
 </div>
 
 <script>
@@ -142,42 +272,96 @@ async function api(path, opts = {}) {
 }
 function fmtExpiry(s) {
   const n = Number(s) || 0;
-  if (n <= 0) return "aegunud";
+  if (n <= 0) return {text: "aegunud", urgent: true};
   const m = Math.floor(n / 60);
-  return m > 0 ? m + " min " + (n % 60) + " s" : n + " s";
+  const text = m > 0 ? m + " min " + (n % 60) + " s" : n + " s";
+  return {text, urgent: n < 120};
 }
-function statusTag(status) {
-  const td = document.createElement("td");
+function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+function chip(text, cls) {
   const span = document.createElement("span");
+  span.className = "chip" + (cls ? " " + cls : "");
+  span.textContent = text;
+  return span;
+}
+function statusChip(status) {
   const known = ["pending", "confirmed", "cancelled"];
-  span.className = known.includes(status) ? "tag " + status : "tag";
-  span.textContent = status;
-  td.appendChild(span);
-  return td;
+  return chip(status, known.includes(status) ? status : "");
+}
+function relTime(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return String(iso ?? "");
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (mins < 1) return "just nüüd";
+  if (mins < 60) return mins + " min tagasi";
+  const h = Math.floor(mins / 60);
+  if (h < 24) return h + " h tagasi";
+  return Math.floor(h / 24) + " p tagasi";
 }
 async function loadHolds() {
   const {holds} = await api("/api/holds");
   const tbody = document.querySelector("#holds tbody");
   tbody.innerHTML = "";
   $("holds-empty").hidden = holds.length > 0;
+  $("holds-count").textContent = holds.length;
   for (const h of holds) {
     const tr = document.createElement("tr");
     if (h.source === "demo") tr.classList.add("demo");
     const id = String(h.hold_id ?? "");
-    const label = h.source === "demo" ? h.guest + " (demo)" : h.guest;
-    const cells = [label, h.service, h.quoted_total ?? "—", fmtExpiry(h.expires_in_s)];
-    for (const c of cells) {
-      const td = document.createElement("td");
-      td.textContent = c;  // textContent only: hostile content inert
-      tr.appendChild(td);
+    const isDemo = h.source === "demo";
+
+    const guestTd = document.createElement("td");
+    const guest = document.createElement("div");
+    guest.className = "guest";
+    const av = document.createElement("div");
+    av.className = "avatar";
+    av.setAttribute("aria-hidden", "true");
+    av.textContent = initials(h.guest);
+    const who = document.createElement("div");
+    const name = document.createElement("b");
+    name.textContent = h.guest ?? "";  // textContent only: hostile content inert
+    who.appendChild(name);
+    if (isDemo) {
+      const sub = document.createElement("small");
+      sub.textContent = "demo";
+      who.appendChild(sub);
     }
-    tr.appendChild(statusTag(h.status));
+    guest.appendChild(av);
+    guest.appendChild(who);
+    guestTd.appendChild(guest);
+    tr.appendChild(guestTd);
+
+    const svc = document.createElement("td");
+    svc.textContent = h.service ?? "—";
+    tr.appendChild(svc);
+
+    const price = document.createElement("td");
+    price.className = "num";
+    price.textContent = h.quoted_total ?? "—";
+    tr.appendChild(price);
+
+    const exp = document.createElement("td");
+    exp.className = "num";
+    const {text, urgent} = fmtExpiry(h.expires_in_s);
+    exp.appendChild(chip(text, urgent ? "urgent" : ""));
+    tr.appendChild(exp);
+
+    const st = document.createElement("td");
+    st.appendChild(statusChip(h.status ?? ""));
+    tr.appendChild(st);
+
     const act = document.createElement("td");
+    act.className = "actions";
     if (h.status === "pending") {
       for (const [what, cls, txt] of [["confirm", "primary", "Kinnita"], ["cancel", "danger", "Tühista"]]) {
         const b = document.createElement("button");
         b.textContent = txt;
         b.className = cls;
+        b.setAttribute("aria-label", txt + ": " + (h.guest ?? ""));
         b.dataset.id = id;  // raw ID in dataset, no JS-string interpolation
         b.dataset.act = what;
         if (window.IS_DEMO) {
@@ -204,41 +388,55 @@ async function decide(id, what) {
 }
 async function resetDemo() {
   try { await api("/api/reset", {method: "POST"}); } catch (e) { alert("Viga: " + e.message); }
-  await Promise.all([loadHolds(), loadCalls(), loadMeta(), loadStatus()]);
+  await Promise.all([loadHolds(), loadCalls(), loadMeta(), loadStatus()]).catch(() => {});
 }
 async function loadCalls() {
   const {calls} = await api("/api/calls");
   const tbody = document.querySelector("#calls tbody");
   tbody.innerHTML = "";
   $("calls-empty").hidden = calls.length > 0;
+  $("calls-count").textContent = calls.length;
   for (const c of calls) {
     const tr = document.createElement("tr");
     if (c.source === "demo") tr.classList.add("demo");
-    for (const val of [c.at, c.lang, c.summary, c.outcome]) {
-      const td = document.createElement("td");
-      td.textContent = val;
-      tr.appendChild(td);
-    }
+    const at = document.createElement("td");
+    at.className = "num";
+    at.textContent = relTime(c.at);
+    at.title = c.at;
+    tr.appendChild(at);
+    const lang = document.createElement("td");
+    lang.appendChild(chip(String(c.lang || "").toUpperCase(), "lang"));
+    tr.appendChild(lang);
+    const sum = document.createElement("td");
+    sum.textContent = c.summary ?? "";
+    tr.appendChild(sum);
+    const out = document.createElement("td");
+    out.appendChild(chip(c.outcome ?? "", ""));
+    tr.appendChild(out);
     tbody.appendChild(tr);
   }
 }
 async function loadMeta() {
-  const {metrics} = await api("/api/metrics");
-  const box = $("metrics");
-  box.innerHTML = "";
-  for (const [k, v] of Object.entries(metrics)) {
-    const div = document.createElement("div");
-    div.className = "card";
-    const label = document.createElement("span");
-    label.textContent = k;
-    const val = document.createElement("b");
-    val.textContent = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v);
-    div.appendChild(label);
-    div.appendChild(val);
-    box.appendChild(div);
-  }
-  const {config} = await api("/api/config");
-  $("config").textContent = JSON.stringify(config, null, 2);
+  try {
+    const {metrics} = await api("/api/metrics");
+    const box = $("metrics");
+    box.innerHTML = "";
+    for (const [k, v] of Object.entries(metrics)) {
+      const div = document.createElement("div");
+      div.className = "kpi";
+      const label = document.createElement("span");
+      label.textContent = k;
+      const val = document.createElement("b");
+      val.textContent = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v);
+      div.appendChild(label);
+      div.appendChild(val);
+      box.appendChild(div);
+    }
+  } catch (_) { /* metrics optional; config still loads */ }
+  try {
+    const {config} = await api("/api/config");
+    $("config").textContent = JSON.stringify(config, null, 2);
+  } catch (_) { /* config optional */ }
 }
 async function loadStatus() {
   // Independent of metrics/config: badge must refresh even if they fail.
@@ -259,12 +457,13 @@ async function loadStatus() {
     window.IS_DEMO = demo;
   } catch (_) { /* status optional on old builds */ }
 }
+window.IS_DEMO = true;  // fail closed until /api/status says LIVE
 loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));
 loadCalls().catch(() => {});
 loadMeta().catch(() => {});
 loadStatus().catch(() => {});
-setInterval(() => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadStatus().catch(() => {}); }, 30000);
-$("refresh").addEventListener("click", loadHolds);
+setInterval(() => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadMeta().catch(() => {}); loadStatus().catch(() => {}); }, 30000);
+$("refresh").addEventListener("click", () => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadStatus().catch(() => {}); });
 $("reset").addEventListener("click", resetDemo);
 </script>
 </body>
