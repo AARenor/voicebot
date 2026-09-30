@@ -45,6 +45,11 @@ Never commit these — Coolify env only (mirrors `.env.example`).
 Single-process assumption: in-memory HoldLedger + demo STORE diverge if
 replicas scale past 1 — keep Coolify replicas at exactly 1.
 
+Scale continuous-call **agent workers** separately from this web/API container.
+Do not increase web replicas until holds/idempotency use Redis and logs use
+Postgres or a single-writer service. See
+[`docs/operations/concurrency-and-capacity.md`](docs/operations/concurrency-and-capacity.md).
+
 ## 3. Verify
 
 - `https://robot.arleserver.cfd/health` → `{"ok": true}`

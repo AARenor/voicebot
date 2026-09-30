@@ -32,6 +32,8 @@ Caller (+372) -> DIDHub EE DID ($2.50) / Twilio fallback -> LiveKit SIP (inbound
 
 Latency budget: user-stop → voice-start <500ms (turn <1.5s e2e). Stream LLM tokens → TTS sentence chunks + filler `Üks hetk, kontrollin…`. Endpointing 550ms finished / 1300ms dangling + backchannel filter + 8s cap. Groq: total = TTFT + decode + network; short prompts (input tokens drive TTFT).
 
+Concurrency decision (2026-09-30): individual SIP dispatch creates one `call-*` room and isolated agent subprocess per caller. Hackathon cap is 3 concurrent calls, aligned across carrier channels, LiveKit SIP `max_active_calls`, and agent-worker load admission; the fourth overflows to human/queue/voicemail. Redis-backed holds/idempotency and Postgres/single-writer logs are required before worker/web replica scaling. Current evidence, provider-limit math, race handling, overload behavior, and load-test gate: [`docs/operations/concurrency-and-capacity.md`](docs/operations/concurrency-and-capacity.md).
+
 ## 3. Booking integrations (researched 2026-09-29, re-verified)
 
 Hotels: Apaleo first (see §1 flow), Mews second (Distributor availability/pricing/create; `mews.com/products/api`), Cloudbeds third (MyAllocator/Marketplace; rooms nest under room types; ARI `getRatePlans detailedRates`; `developers.cloudbeds.com`). Rule: confirm per property that the contract includes write API (create/change/cancel, live availability, restrictions, rates, limits, auth lead time).
