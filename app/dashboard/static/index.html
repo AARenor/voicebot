@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voicebot — operaatori töölaud</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #8884; padding: .4rem .6rem; text-align: left; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem; margin: 1rem 0; }
+  .card { border: 1px solid #8884; border-radius: .5rem; padding: .6rem .8rem; }
+  .card b { display: block; font-size: 1.2rem; }
+  button { margin-right: .3rem; }
+  #token { width: 22rem; max-width: 100%; }
+  .muted { opacity: .7; }
+</style>
+</head>
+<body>
+<h1>Voicebot — operaatori töölaud <span class="muted">(demo)</span></h1>
+
+<h2>Ootel hoiud (holds)</h2>
+<p>
+  Operaatori võti: <input id="token" type="password" placeholder="OPERATOR_TOKEN">
+  <button id="refresh">Värskenda</button>
+  <button id="reset">Lähtesta demo</button>
+</p>
+<table id="holds"><thead><tr>
+  <th>ID</th><th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
+</tr></thead><tbody></tbody></table>
+
+<h2>Kõned</h2>
+<table id="calls"><thead><tr>
+  <th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th>
+</tr></thead><tbody></tbody></table>
+
+<h2>Mõõdikud</h2>
+<div class="cards" id="metrics"></div>
+
+<h2>Seadistus</h2>
+<pre id="config"></pre>
+
+<script>
+const $ = (id) => document.getElementById(id);
+// Every string from the API is escaped before insert (XSS guard).
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const auth = () => {
+  const t = $("token").value.trim();
+  return t ? {"Authorization": "Bearer " + t} : {};
+};
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {...auth()}});
+  if (!r.ok) { const t = await r.text(); throw new Error(r.status + " " + t); }
+  return r.json();
+}
+async function loadHolds() {
+  const {holds} = await api("/api/holds");
+  const tbody = document.querySelector("#holds tbody");
+  tbody.innerHTML = "";
+  for (const h of holds) {
+    const tr = document.createElement("tr");
+    const id = String(h.hold_id ?? "");
+    const cells = [id, h.guest, h.service, h.quoted_total ?? "—",
+                   String(h.expires_in_s) + "s", h.status];
+    for (const c of cells) {
+      const td = document.createElement("td");
+      td.textContent = c;  // textContent, never HTML: inert by construction
+      tr.appendChild(td);
+    }
+    const act = document.createElement("td");
+    if (h.status === "pending") {
+      for (const what of ["confirm", "cancel"]) {
+        const b = document.createElement("button");
+        b.textContent = what === "confirm" ? "Kinnita" : "Tühista";
+        b.dataset.id = id;  // raw ID in dataset, no JS-string interpolation
+        b.dataset.act = what;
+        act.appendChild(b);
+      }
+    }
+    tr.appendChild(act);
+    tbody.appendChild(tr);
+  }
+}
+// One delegated listener (no inline onclick anywhere).
+document.querySelector("#holds tbody").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (b) decide(b.dataset.id, b.dataset.act);
+});
+async function decide(id, what) {
+  try { await api(`/api/holds/${encodeURIComponent(id)}/${what}`, {method: "POST"}); }
+  catch (e) { alert("Viga: " + e.message); }
+  await loadHolds();
+}
+async function resetDemo() {
+  try { await api("/api/reset", {method: "POST"}); } catch (e) { alert("Viga: " + e.message); }
+  await Promise.all([loadHolds(), loadCalls(), loadMeta()]);
+}
+async function loadCalls() {
+  const {calls} = await api("/api/calls");
+  document.querySelector("#calls tbody").innerHTML = calls.map((c) => (
+    `<tr><td>${esc(c.at)}</td><td>${esc(c.lang)}</td>` +
+    `<td>${esc(c.summary)}</td><td>${esc(c.outcome)}</td></tr>`
+  )).join("");
+}
+async function loadMeta() {
+  const {metrics} = await api("/api/metrics");
+  $("metrics").innerHTML = Object.entries(metrics).map(([k, v]) =>
+    `<div class="card"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
+  const {config} = await api("/api/config");
+  $("config").textContent = JSON.stringify(config, null, 2);
+}
+loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));
+loadCalls().catch(() => {});
+loadMeta().catch(() => {});
+$("refresh").addEventListener("click", loadHolds);
+$("reset").addEventListener("click", resetDemo);
+</script>
+</body>
+</html>
