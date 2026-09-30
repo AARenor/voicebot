@@ -6,8 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Non-root user first (logs + static readable).
-RUN useradd -m -u 10001 voicebot
+# curl is required: Coolify's own container healthcheck needs curl/wget.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 10001 voicebot
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
