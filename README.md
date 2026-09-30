@@ -1,13 +1,13 @@
-# Voicebot (ET hotel/spa, Pipecat + LiveKit SIP)
+# Voicebot (ET hotel/spa, LiveKit SIP + Agents target)
 
-Slow high-quality build. See ARCHITECTURE.md (v0.3) for the full plan.
+Slow high-quality build. See ARCHITECTURE.md (v1.0) for the truth-first plan.
 
 ## Layout
 
 ```
 voicebot/
   ARCHITECTURE.md
-  requirements.txt (+ requirements-phase2.txt for Pipecat/media ML)
+  requirements.txt (+ requirements-phase2.txt: legacy candidates to repin)
   .env.example        # copy to .env, never commit .env
   README.md
   app/
@@ -33,8 +33,9 @@ voicebot/
 
 1. `pip install -r requirements.txt`
 2. `cp .env.example .env` (+ fill GROQ_API_KEY)
-3. `python -m app.server` (browser WebSocket demo)
-4. Phase 2: 1 DIDHub EE DID ($2.50) -> LiveKit SIP eu-inbound.
+3. `python -m app.server` (dashboard + HTTP voice-turn demo)
+4. Telephone phase: approved Estonian DID/trunk -> self-hosted LiveKit SIP ->
+   individual room dispatch -> LiveKit Agents worker.
 
 ## Rules
 
