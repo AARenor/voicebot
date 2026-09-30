@@ -99,10 +99,19 @@ async function resetDemo() {
 }
 async function loadCalls() {
   const {calls} = await api("/api/calls");
-  document.querySelector("#calls tbody").innerHTML = calls.map((c) => (
-    `<tr><td>${esc(c.at)}</td><td>${esc(c.lang)}</td>` +
-    `<td>${esc(c.summary)}</td><td>${esc(c.outcome)}</td></tr>`
-  )).join("");
+  const tbody = document.querySelector("#calls tbody");
+  tbody.innerHTML = "";
+  for (const c of calls) {
+    const tr = document.createElement("tr");
+    if (c.source === "demo") tr.style.opacity = "0.65";
+    const summary = (c.source === "demo") ? c.summary + " (demo)" : c.summary;
+    for (const val of [c.at, c.lang, summary, c.outcome]) {
+      const td = document.createElement("td");
+      td.textContent = val;  // textContent only: hostile content inert
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
 }
 async function loadMeta() {
   const {metrics} = await api("/api/metrics");
@@ -111,9 +120,25 @@ async function loadMeta() {
   const {config} = await api("/api/config");
   $("config").textContent = JSON.stringify(config, null, 2);
 }
+async function loadStatus() {
+  // Independent of metrics/config: badge must refresh even if they fail.
+  try {
+    const {wired} = await api("/api/status");
+    const dot = $("livekit") || (() => {
+      const s = document.createElement("span");
+      s.id = "livekit";
+      document.querySelector("h1").appendChild(s);
+      return s;
+    })();
+    dot.textContent = wired && wired.livekit ? " ● livekit" : " ○ livekit";
+    dot.style.color = wired && wired.livekit ? "green" : "gray";
+  } catch (_) { /* status optional on old builds */ }
+}
 loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));
 loadCalls().catch(() => {});
 loadMeta().catch(() => {});
+loadStatus().catch(() => {});
+setInterval(() => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadStatus().catch(() => {}); }, 30000);
 $("refresh").addEventListener("click", loadHolds);
 $("reset").addEventListener("click", resetDemo);
 </script>

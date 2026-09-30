@@ -52,12 +52,14 @@ def retrieve(
 ) -> list[dict]:
     """BM25-ranked passages for query, filtered to lang. Cited or handoff.
 
-    The query runs as an FTS5 phrase (double-quotes escaped) so operator
-    characters in caller input can't break MATCH syntax; anything still
-    invalid returns [] instead of raising.
+    Token-prefix OR query (each token quoted, `*`-suffixed) so Estonian
+    inflections match without stemming ("spa" finds "Spaa", "saab" finds
+    "saabumist"); operator characters can't break MATCH syntax and
+    anything still invalid returns [] instead of raising.
     """
-    if not query.strip():
+    if not isinstance(query, str) or not query.strip():
         return []
+    query = query[:500]
     if isinstance(top_k, bool):
         limit = 3
     else:
@@ -65,7 +67,13 @@ def retrieve(
             limit = max(1, min(int(top_k), 20))
         except (TypeError, ValueError):
             limit = 3
-    phrase = '"' + query.replace('"', '""') + '"'
+    phrase = " OR ".join(
+        f'"{token.replace(chr(34), chr(34) * 2)}"*'
+        for token in query.split()
+        if token.strip()
+    )
+    if not phrase:
+        return []
     try:
         cursor = db.execute(
             "SELECT doc_id, title, text FROM faq "

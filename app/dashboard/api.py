@@ -74,7 +74,9 @@ try:
 
     @router.get("/calls")
     def list_calls() -> dict:
-        return {"calls": demo.STORE["calls"]}
+        from .. import callslog
+
+        return {"calls": callslog.list_calls(callslog.get_default())}
 
     @router.get("/config")
     def get_config() -> dict:
