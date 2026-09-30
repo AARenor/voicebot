@@ -38,6 +38,16 @@ class TestGroq(unittest.TestCase):
     def client(self, handler):
         return GroqClient("k", transport=httpx.MockTransport(handler))
 
+    def test_chat_uses_current_model(self):
+        def handler(request):
+            self.assertEqual(json.loads(request.content)["model"], "openai/gpt-oss-20b")
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"role": "assistant", "content": "OK"}}]},
+            )
+
+        self.client(handler).chat([{"role": "user", "content": "hi"}])
+
     def test_transcribe(self):
         def handler(request):
             self.assertIn("/openai/v1/audio/transcriptions", str(request.url))

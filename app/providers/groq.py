@@ -23,7 +23,7 @@ from .errors import (
 
 DEFAULT_BASE_URL = "https://api.groq.com"
 STT_MODEL = "whisper-large-v3-turbo"  # $0.04/hr; NOT the TalTech ET finetune
-CHAT_MODEL = "llama-3.1-8b-instant"  # pin + monitor: Groq catalog churns
+CHAT_MODEL = "openai/gpt-oss-20b"  # Groq's replacement for retired Llama 3.1 8B
 
 
 class GroqClient:
