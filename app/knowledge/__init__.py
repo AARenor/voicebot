@@ -1,19 +1,79 @@
 """Knowledge: FAQ ingest + retrieve (descriptive content only).
 
-Prices NEVER come from embeddings — only verbatim from live PMS offers
-(price_quote_id guard enforced in booking adapters). cite-or-handoff:
-answer from retrieved policy text with citation, else hand off to human.
-Backend: Postgres + pgvector now (SQLite FTS fallback for $0 demo).
+SQLite FTS5 backend (stdlib, no deps). Prices NEVER come from embeddings
+or from here — only verbatim from live PMS offers (price_quote_id guard
+in booking adapters). cite-or-handoff: answer from retrieved policy text
+with citation, else hand off to a human.
+All queries parameterized — no string-interpolated SQL anywhere.
 """
 
 from __future__ import annotations
 
-
-def ingest(documents: list[dict]) -> int:
-    """Store FAQ/policy docs. Returns count. Wired in Phase 1."""
-    raise NotImplementedError
+import sqlite3
 
 
-def retrieve(query: str, top_k: int = 3) -> list[dict]:
-    """Return cited passages for query. Wired in Phase 1."""
-    raise NotImplementedError
+def open_db(path: str = ":memory:") -> sqlite3.Connection:
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS faq USING fts5"
+        "(doc_id UNINDEXED, title, text, lang UNINDEXED)"
+    )
+    db.commit()
+    return db
+
+
+def ingest(db: sqlite3.Connection, documents: list[dict]) -> int:
+    """Store FAQ/policy docs [{doc_id, title, text, lang}]. Returns count."""
+    rows = []
+    for document in documents:
+        if (
+            not isinstance(document, dict)
+            or not document.get("doc_id")
+            or not document.get("text")
+        ):
+            raise ValueError("knowledge: doc needs doc_id and text")
+        rows.append(
+            (
+                document["doc_id"],
+                document.get("title", ""),
+                document["text"],
+                document.get("lang", "et"),
+            )
+        )
+    db.executemany(
+        "INSERT INTO faq (doc_id, title, text, lang) VALUES (?, ?, ?, ?)", rows
+    )
+    db.commit()
+    return len(rows)
+
+
+def retrieve(
+    db: sqlite3.Connection, query: str, lang: str = "et", top_k: int = 3
+) -> list[dict]:
+    """BM25-ranked passages for query, filtered to lang. Cited or handoff.
+
+    The query runs as an FTS5 phrase (double-quotes escaped) so operator
+    characters in caller input can't break MATCH syntax; anything still
+    invalid returns [] instead of raising.
+    """
+    if not query.strip():
+        return []
+    if isinstance(top_k, bool):
+        limit = 3
+    else:
+        try:
+            limit = max(1, min(int(top_k), 20))
+        except (TypeError, ValueError):
+            limit = 3
+    phrase = '"' + query.replace('"', '""') + '"'
+    try:
+        cursor = db.execute(
+            "SELECT doc_id, title, text FROM faq "
+            "WHERE faq MATCH ? AND lang = ? "
+            "ORDER BY bm25(faq) LIMIT ?",
+            (phrase, lang, limit),
+        )
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [{"doc_id": row[0], "title": row[1], "text": row[2]} for row in rows]
