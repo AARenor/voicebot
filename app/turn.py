@@ -13,6 +13,7 @@ with a safe handoff.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
@@ -146,12 +147,12 @@ async def run_turn(
             return {
                 "text_heard": "",
                 "reply": prompt,
-                "audio": _speak(tts, prompt),
+                "audio": await _speak(tts, prompt),
                 "tool_results": [],
                 "fallback_used": False,
             }
         try:
-            text = stt.transcribe(audio)
+            text = await asyncio.to_thread(stt.transcribe, audio)
         except ProviderError:
             # Any STT failure (retryable or bad-payload/4xx) degrades to the
             # repeat prompt — the caller always hears something.
@@ -159,7 +160,7 @@ async def run_turn(
             return {
                 "text_heard": "",
                 "reply": prompt,
-                "audio": _speak(tts, prompt),
+                "audio": await _speak(tts, prompt),
                 "tool_results": [],
                 "fallback_used": True,
             }
@@ -168,7 +169,7 @@ async def run_turn(
         return {
             "text_heard": "",
             "reply": prompt,
-            "audio": _speak(tts, prompt),
+            "audio": await _speak(tts, prompt),
             "tool_results": [],
             "fallback_used": False,
         }
@@ -191,16 +192,16 @@ async def run_turn(
         return {
             "text_heard": text if isinstance(text, str) else "",
             "reply": handoff,
-            "audio": _speak(tts, handoff),
+            "audio": await _speak(tts, handoff),
             "tool_results": [],
             "fallback_used": True,
         }
 
 
-def _speak(tts, text: str) -> bytes:
-    """Synthesize, degrading to silence (caller plays filler/beep)."""
+async def _speak(tts, text: str) -> bytes:
+    """Synthesize off the event loop, degrading to silence."""
     try:
-        return tts.synthesize(text)
+        return await asyncio.to_thread(tts.synthesize, text)
     except Exception:
         return b""
 
@@ -217,13 +218,16 @@ async def _run_dialogue(
 ) -> dict:
     """Core turn after audio/text are validated (may raise)."""
     messages = messages
-    answer, fallback_used = _sync_chat(
-        llm_primary, llm_secondary, messages, tools=BOOKING_TOOLS
+    answer, fallback_used = await asyncio.to_thread(
+        _sync_chat, llm_primary, llm_secondary, messages, BOOKING_TOOLS
     )
 
     tool_results = []
-    tool_calls = answer.get("tool_calls") or []
-    if tool_calls:
+    for _round in range(2):  # at most two tool rounds, then render
+        tool_calls = answer.get("tool_calls") or []
+        if not tool_calls:
+            break
+        round_results = []
         for index, call in enumerate(tool_calls):
             fn = call.get("function", {}) if isinstance(call, dict) else {}
             call_id = call.get("id") if isinstance(call, dict) else None
@@ -239,7 +243,8 @@ async def _run_dialogue(
                     if not isinstance(exc, ProviderError)
                     else str(exc),
                 }
-            tool_results.append({"id": call_id, "result": result})
+            round_results.append({"id": call_id, "result": result})
+        tool_results.extend(round_results)
         assistant_msg: dict = {
             "role": "assistant",
             "content": answer.get("content"),
@@ -251,22 +256,22 @@ async def _run_dialogue(
                 "tool_call_id": r["id"],
                 "content": json.dumps(r["result"], ensure_ascii=False),
             }
-            for r in tool_results
+            for r in round_results
         ]
-        follow, fallback2 = _sync_chat(
-            llm_primary, llm_secondary, messages + [assistant_msg] + tool_msgs
+        messages = messages + [assistant_msg] + tool_msgs
+        # Follow-up keeps tools: one-shot chains (search → hold) work.
+        answer, fallback_round = await asyncio.to_thread(
+            _sync_chat, llm_primary, llm_secondary, messages, BOOKING_TOOLS
         )
-        fallback_used = fallback_used or fallback2
-        reply = (follow.get("content") or "").strip()
-    else:
-        reply = (answer.get("content") or "").strip()
+        fallback_used = fallback_used or fallback_round
+    reply = (answer.get("content") or "").strip()
 
     if not reply:
         reply = FILLER.get(lang, FILLER["et"])
     if len(reply) > MAX_REPLY_CHARS:
         reply = reply[:MAX_REPLY_CHARS].rstrip() + "…"
     reply, _ = enforce_price_gate(reply, tool_results, lang)
-    audio = _speak(tts, reply)
+    audio = await _speak(tts, reply)
     return {
         "text_heard": text,
         "reply": reply,
@@ -306,12 +311,20 @@ _PII_KEYS = {
 }
 
 
+_PHONE_RE = re.compile(r"\+\d{7,}")
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
 def _scrub(value):
     """Drop guest-shaped keys recursively (secondary-tier PII guard)."""
     if isinstance(value, dict):
         return {k: _scrub(v) for k, v in value.items() if k.lower() not in _PII_KEYS}
     if isinstance(value, list):
         return [_scrub(v) for v in value]
+    if isinstance(value, str):
+        return _PHONE_RE.sub(
+            "[redacted phone]", _EMAIL_RE.sub("[redacted email]", value)
+        )
     return value
 
 
@@ -330,6 +343,8 @@ def _redact_for_secondary(messages: list) -> list:
         if message.get("role") == "tool":
             message = {**message, "content": "[redacted tool output]"}
         elif isinstance(message.get("content"), (dict, list)):
+            message = {**message, "content": _scrub(message["content"])}
+        elif isinstance(message.get("content"), str):
             message = {**message, "content": _scrub(message["content"])}
         redacted.append(message)
     return redacted

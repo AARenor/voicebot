@@ -34,12 +34,27 @@ try:
     @router.get("/holds")
     def list_holds() -> dict:
         now = time.time()
+        with _LOCK:
+            rows = list(demo.STORE["holds"])
         holds = []
-        for hold in demo.STORE["holds"]:
+        for hold in rows:
             holds.append(
                 {**hold, "expires_in_s": max(0, int(hold["expires_at"] - now))}
             )
         return {"holds": holds}
+
+    def _pending_or_raise(hold_id: str) -> dict:
+        """Pending, unexpired hold or HTTP error (410 when stale).
+
+        Callers must hold _LOCK (check + status flip are one atomic
+        section in confirm/cancel).
+        """
+        for hold in demo.STORE["holds"]:
+            if hold["hold_id"] == hold_id and hold["status"] == "pending":
+                if hold["expires_at"] < time.time():
+                    raise HTTPException(410, "hold expired")
+                return hold
+        raise HTTPException(404, "hold not found or not pending")
 
     @router.post("/holds/{hold_id}/confirm")
     def confirm_hold(
@@ -47,11 +62,9 @@ try:
     ) -> dict:
         _require_operator(authorization)
         with _LOCK:
-            for hold in demo.STORE["holds"]:
-                if hold["hold_id"] == hold_id and hold["status"] == "pending":
-                    hold["status"] = "confirmed"
-                    return {"ok": True, "hold_id": hold_id, "status": "confirmed"}
-        raise HTTPException(404, "hold not found or not pending")
+            hold = _pending_or_raise(hold_id)
+            hold["status"] = "confirmed"
+            return {"ok": True, "hold_id": hold_id, "status": "confirmed"}
 
     @router.post("/holds/{hold_id}/cancel")
     def cancel_hold(
@@ -59,11 +72,9 @@ try:
     ) -> dict:
         _require_operator(authorization)
         with _LOCK:
-            for hold in demo.STORE["holds"]:
-                if hold["hold_id"] == hold_id and hold["status"] == "pending":
-                    hold["status"] = "cancelled"
-                    return {"ok": True, "hold_id": hold_id, "status": "cancelled"}
-        raise HTTPException(404, "hold not found or not pending")
+            hold = _pending_or_raise(hold_id)
+            hold["status"] = "cancelled"
+            return {"ok": True, "hold_id": hold_id, "status": "cancelled"}
 
     @router.post("/reset")
     def reset_demo(authorization: str | None = Header(default=None)) -> dict:

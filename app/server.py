@@ -12,6 +12,7 @@ replicas scale past 1 — do not scale Coolify replicas (see COOLIFY.md).
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 
@@ -103,13 +104,37 @@ def build_stack() -> dict:
 
 def create_app():
     """FastAPI app factory (import fastapi lazily; keeps checks light)."""
+    from contextlib import asynccontextmanager
+
     from fastapi import FastAPI, Header
     from fastapi.staticfiles import StaticFiles
 
     from .dashboard import api as dashboard_api
 
-    app = FastAPI(title="voicebot-et")
-    app.state.stack = build_stack()
+    stack = build_stack()
+
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        # Release provider sockets on shutdown/reload (no behavior change).
+        seen = set()
+        for key in ("stt", "llm_primary", "llm_secondary", "tts", "slot"):
+            client = stack.get(key)
+            if client is None or id(client) in seen:
+                continue
+            seen.add(id(client))
+            close = getattr(client, "close", None)
+            if not callable(close):
+                continue
+            try:
+                result = close()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                pass
+
+    app = FastAPI(title="voicebot-et", lifespan=lifespan)
+    app.state.stack = stack
     if app.state.stack["demo"]:
         # Demo mode only: seed sample calls so the UI is alive before
         # the first real call. Production file DBs are never seeded.
@@ -157,9 +182,11 @@ def create_app():
 
         from .turn import run_turn
 
-        from .dashboard import api as dashboard_api
+        from . import callslog
 
         dashboard_api._require_operator(authorization)
+        if not isinstance(body, dict):
+            raise HTTPException(400, "body must be a JSON object")
         stack = app.state.stack
         language = body.get("language", "et")
         if language not in ("et", "en", "ru"):
@@ -198,7 +225,7 @@ def create_app():
                 text=text if not audio_b64 else None,
             )
         )
-        return {
+        response = {
             "text_heard": result["text_heard"],
             "reply": result["reply"],
             "audio_b64": base64.b64encode(result["audio"]).decode(),
@@ -206,6 +233,26 @@ def create_app():
             "fallback_used": result["fallback_used"],
             "tts_failed": result.get("tts_failed", False),
         }
+        try:
+            # Real turns enter the operator call log (never raises).
+            if result.get("tts_failed"):
+                outcome = "tts_failed"
+            elif result.get("fallback_used"):
+                outcome = "fallback"
+            elif result.get("tool_results"):
+                outcome = "tools_ok"
+            else:
+                outcome = "ok"
+            callslog.log_call(
+                callslog.get_default(),
+                language,
+                "",
+                f"{result['text_heard']} → {result['reply']}",
+                outcome,
+            )
+        except Exception:
+            pass
+        return response
 
     if dashboard_api.router is not None:
         app.include_router(dashboard_api.router)

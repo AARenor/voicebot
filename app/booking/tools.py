@@ -291,7 +291,7 @@ class Dispatcher:
                     "search_failed",
                     slot.search_slots,
                     _require_str(args, "service"),
-                    _require_str(args, "date"),
+                    _require_date(args, "date"),
                     args.get("provider")
                     if isinstance(args.get("provider"), str)
                     else None,

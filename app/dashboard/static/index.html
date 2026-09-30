@@ -22,6 +22,8 @@
     --bad: #b42318;
     --bad-tint: #fdecea;
     --radius: 16px;
+    --radius-sm: 12px;
+    --radius-xs: 10px;
     --shadow: 0 1px 2px rgba(26, 29, 33, .05), 0 8px 24px -16px rgba(26, 29, 33, .18);
   }
   * { box-sizing: border-box; }
@@ -50,7 +52,7 @@
   }
   .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; }
   .brand-mark {
-    width: 30px; height: 30px; border-radius: 10px; flex: none;
+    width: 30px; height: 30px; border-radius: var(--radius-xs); flex: none;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
     color: #fff; font-weight: 700; font-size: 15px;
     display: flex; align-items: center; justify-content: center;
@@ -70,16 +72,17 @@
   .auth { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
   input[type="password"] {
     font: inherit; font-size: .85rem;
-    padding: .42rem .7rem; border: 1px solid var(--line); border-radius: 10px;
+    padding: .42rem .7rem; border: 1px solid var(--line); border-radius: var(--radius-xs);
     width: 13rem; background: #fff; color: var(--ink);
   }
   input[type="password"]:focus-visible,
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:focus-visible,
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   button {
     font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
     border: 1px solid var(--line); background: #fff; color: var(--ink-soft);
-    border-radius: 10px; padding: .42rem .9rem;
+    border-radius: var(--radius-xs); padding: .42rem .9rem;
   }
   button:hover { border-color: #d5d1c7; background: #fbfaf7; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -94,7 +97,7 @@
   .notice {
     border: 1px solid var(--amber-line); background: var(--amber-bg);
     border-left: 4px solid #d9a521; color: #6b4d00;
-    border-radius: 12px; padding: .7rem 1rem; margin-bottom: 1.1rem;
+    border-radius: var(--radius-sm); padding: .7rem 1rem; margin-bottom: 1.1rem;
     font-size: .9rem;
   }
   .notice b { color: #553d00; }
@@ -116,6 +119,7 @@
 
   /* Panels */
   .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.1rem; align-items: start; }
+  .grid > section.panel { min-width: 0; }  /* let tables shrink instead of clipping */
   section.panel {
     background: var(--card); border: 1px solid var(--line);
     border-radius: var(--radius); box-shadow: var(--shadow);
@@ -124,10 +128,6 @@
   .grid section.panel { margin-bottom: 0; }
   .panel-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
   .panel-head h2 { font-size: 1rem; margin: 0; letter-spacing: -.01em; }
-  .eyebrow {
-    font-size: .7rem; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted);
-  }
   .count {
     margin-left: auto; font-size: .76rem; font-weight: 700; color: var(--muted);
     background: var(--line-soft); border-radius: 999px; padding: .1rem .6rem;
@@ -140,7 +140,7 @@
     color: var(--muted); text-align: left; padding: .45rem .6rem;
     border-bottom: 1px solid var(--line);
   }
-  td { padding: .62rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  td { padding: .62rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; overflow-wrap: anywhere; }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: #fbfaf7; }
   tr.demo td:first-child { border-left: 3px solid #d9a521; }
@@ -172,7 +172,7 @@
 
   .empty {
     color: var(--muted); font-size: .9rem; text-align: center;
-    padding: 1.6rem 1rem; border: 1px dashed var(--line); border-radius: 12px;
+    padding: 1.6rem 1rem; border: 1px dashed var(--line); border-radius: var(--radius-sm);
     background: #fbfaf7;
   }
   .empty::before { content: "○"; display: block; font-size: 1.4rem; margin-bottom: .3rem; }
@@ -180,7 +180,7 @@
   details.config { margin-top: 1.1rem; }
   details.config summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
   pre {
-    background: #fbfaf7; border: 1px solid var(--line); border-radius: 12px;
+    background: #fbfaf7; border: 1px solid var(--line); border-radius: var(--radius-sm);
     padding: .8rem 1rem; overflow-x: auto; font-size: .78rem; margin: .7rem 0 0;
   }
 
@@ -190,7 +190,7 @@
   @media (max-width: 640px) {
     table, thead, tbody, th, td, tr { display: block; }
     thead { display: none; }
-    tbody tr { border: 1px solid var(--line); border-radius: 12px; margin-bottom: .6rem; padding: .4rem .8rem; }
+    tbody tr { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: .6rem; padding: .4rem .8rem; }
     tbody tr:hover td { background: none; }
     td { border: none; padding: .25rem 0; }
     .actions { text-align: left; }
@@ -226,7 +226,7 @@
   <div class="grid">
     <section class="panel" aria-label="Hoiud">
       <div class="panel-head">
-        <div><div class="eyebrow">Broneeringud</div><h2>Ootel hoiud</h2></div>
+        <h2>Ootel hoiud</h2>
         <span class="count" id="holds-count">0</span>
       </div>
       <table id="holds">
@@ -240,7 +240,7 @@
 
     <section class="panel" aria-label="Kõned">
       <div class="panel-head">
-        <div><div class="eyebrow">Ajalugu</div><h2>Kõned</h2></div>
+        <h2>Kõned</h2>
         <span class="count" id="calls-count">0</span>
       </div>
       <table id="calls">
@@ -296,7 +296,7 @@ function relTime(iso) {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return String(iso ?? "");
   const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (mins < 1) return "just nüüd";
+  if (mins < 1) return "hetk tagasi";
   if (mins < 60) return mins + " min tagasi";
   const h = Math.floor(mins / 60);
   if (h < 24) return h + " h tagasi";

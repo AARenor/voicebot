@@ -103,6 +103,76 @@ def azure_tts():
 
 
 class TestFullTurn(unittest.TestCase):
+    def test_concurrent_turns_overlap(self):
+        import time
+
+        class SlowLlm:
+            def chat(self, messages, tools=None):
+                time.sleep(0.2)
+                return {"content": "Tere!"}
+
+        class QuietTts:
+            def synthesize(self, text):
+                return b""
+
+        async def both():
+            return await asyncio.gather(
+                turn.run_turn(
+                    b"", None, SlowLlm(), QuietTts(), Dispatcher(), text="Tere"
+                ),
+                turn.run_turn(
+                    b"", None, SlowLlm(), QuietTts(), Dispatcher(), text="Tere"
+                ),
+            )
+
+        start = time.monotonic()
+        first, second = run(both())
+        wall = time.monotonic() - start
+        self.assertIn("Tere!", first["reply"])
+        self.assertIn("Tere!", second["reply"])
+        # Serialized sync I/O would take >= 0.4 s; threaded turns overlap.
+        self.assertLess(wall, 0.35)
+
+    def test_two_round_tool_chain(self):
+        llm = scripted_chat(
+            [
+                {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "function": {
+                                "name": "search_availability",
+                                "arguments": {
+                                    "checkin": "2026-10-12",
+                                    "checkout": "2026-10-14",
+                                },
+                            },
+                        }
+                    ],
+                },
+                {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c2",
+                            "function": {
+                                "name": "hold_offer",
+                                "arguments": {"price_quote_id": "q1"},
+                            },
+                        }
+                    ],
+                },
+                {"content": "Valmis, tuba hoitud!"},
+            ]
+        )
+        dispatcher = Dispatcher(stay=FakeStay())
+        result = run(turn.run_turn(b"RIFF", groq_stt(), llm, azure_tts(), dispatcher))
+        self.assertEqual(len(result["tool_results"]), 2)
+        self.assertEqual(llm.calls, 3)
+        self.assertIn("Valmis", result["reply"])
+        self.assertFalse(result["fallback_used"])
+
     def test_booking_turn_end_to_end(self):
         llm = scripted_chat(
             [
@@ -535,6 +605,22 @@ class TestSlotTrack(unittest.TestCase):
             )
         )
 
+    def test_bad_slot_date_rejected_without_http(self):
+        calls = []
+
+        def handler(request):
+            calls.append(str(request.url))
+            return httpx.Response(200, json=["17:00"])
+
+        dispatcher = self._slot_dispatcher(handler)
+        with self.assertRaises(ProviderError):
+            run(
+                dispatcher.dispatch(
+                    "search_slots", {"service": "6", "date": "12.10.2026"}
+                )
+            )
+        self.assertEqual(calls, [])  # typed error, no PMS round-trip
+
     def test_slot_round_trip(self):
         def handler(request):
             url = str(request.url.path)
@@ -645,6 +731,22 @@ class TestSecondaryRedaction(unittest.TestCase):
             "Tere, olen Mari Maasikas.",
             str([m for m in redacted if m["role"] == "user"]),
         )
+
+    def test_prose_phone_email_redacted(self):
+        from app.turn import _redact_for_secondary
+
+        messages = [
+            {
+                "role": "user",
+                "content": "Helista +3725123456 või kirjuta mari@example.ee, aitäh!",
+            }
+        ]
+        blob = str(_redact_for_secondary(messages))
+        self.assertNotIn("+3725123456", blob)
+        self.assertNotIn("mari@example.ee", blob)
+        self.assertIn("[redacted phone]", blob)
+        self.assertIn("[redacted email]", blob)
+        self.assertIn("aitäh!", blob)  # prose otherwise intact
 
 
 if __name__ == "__main__":

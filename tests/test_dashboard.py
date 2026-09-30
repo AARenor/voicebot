@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import unittest
 
 sys.path.insert(0, "voicebot")
@@ -158,6 +159,19 @@ class TestDashboard(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
+    def test_expired_hold_confirm_410(self):
+        headers = {"Authorization": "Bearer test-token"}
+        demo.STORE["holds"][0]["expires_at"] = time.time() - 1
+        response = self.client.post(
+            "/api/holds/hold_demo_sea12/confirm", headers=headers
+        )
+        self.assertEqual(response.status_code, 410)
+
+    def test_turn_body_must_be_object(self):
+        auth = {"Authorization": "Bearer test-token"}
+        response = self.client.post("/api/turn", json=["x"], headers=auth)
+        self.assertIn(response.status_code, (400, 422))  # never 500
+
     def test_turn_demo_gated_and_bad_body(self):
         auth = {"Authorization": "Bearer test-token"}
         response = self.client.post("/api/turn", json={"text": "Tere!"}, headers=auth)
@@ -194,6 +208,77 @@ class TestDashboard(unittest.TestCase):
         self.assertIn("Tere!", body["reply"])
         self.assertTrue(base64.b64decode(body["audio_b64"]))
         self.assertEqual(body["tools_used"], 0)
+
+    def test_shutdown_closes_async_slot(self):
+        import httpx
+        from fastapi.testclient import TestClient
+
+        from app.booking.easyappointments import EasyAppointmentsAdapter
+
+        closed = []
+        adapter = EasyAppointmentsAdapter(
+            "https://x.example",
+            "k",
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])),
+        )
+        orig_close = adapter.close
+
+        async def spy():
+            closed.append("async")
+            await orig_close()
+
+        adapter.close = spy
+        self.client.app.state.stack["slot"] = adapter
+        with TestClient(self.client.app):
+            pass
+        self.assertIn("async", closed)
+
+    def test_shutdown_closes_providers(self):
+        from fastapi.testclient import TestClient
+
+        closed = []
+
+        class Closer:
+            def close(self):
+                closed.append("sync")
+
+        self.client.app.state.stack["tts"] = Closer()
+        with TestClient(self.client.app):
+            pass
+        self.assertIn("sync", closed)
+
+    def test_turn_text_path_logs_real_call(self):
+        from app import callslog
+        from app.booking.tools import Dispatcher
+
+        class FakeLlm:
+            def chat(self, messages, tools=None):
+                return {"content": "Tere! Kuidas saan aidata?"}
+
+        class FakeTts:
+            def synthesize(self, text):
+                return b"AUDIO:" + text.encode()[:8]
+
+        stack = self.client.app.state.stack
+        stack["llm_primary"] = FakeLlm()
+        stack["tts"] = FakeTts()
+        stack["dispatcher"] = Dispatcher()
+
+        def real_calls():
+            return [
+                c
+                for c in callslog.list_calls(callslog.get_default())
+                if c["source"] == "real"
+            ]
+
+        before = len(real_calls())
+        auth = {"Authorization": "Bearer test-token"}
+        response = self.client.post("/api/turn", json={"text": "Tere!"}, headers=auth)
+        self.assertEqual(response.status_code, 200)
+        after = real_calls()
+        self.assertEqual(len(after), before + 1)
+        self.assertEqual(after[0]["outcome"], "ok")
+        self.assertEqual(after[0]["lang"], "et")
 
 
 if __name__ == "__main__":
