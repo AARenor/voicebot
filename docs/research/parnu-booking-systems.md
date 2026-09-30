@@ -22,9 +22,157 @@ from vendor customer lists and stale indexed booking pages.
   and its current frontend states a 14-day full-feature trial without a credit
   card. Official API access is normally part of the Professional plan, so trial
   API access must be confirmed before implementation.
+- No public Pärnu switchboard dataset reports actual missed calls. A transparent
+  benchmark-transfer model estimates **3,581–7,163 missed booking-intent calls**
+  across Pärnu city accommodation properties during June–August, with a 30%
+  midpoint of **5,372**. This is a planning estimate, not an observed local
+  statistic; assumptions and the broader all-call scenario are below.
 - **No evidence of an Estonian QloApps deployment was found.** Do not claim
   that Estonian hotels use QloApps. It remains a technically suitable
   open-source demo backend only.
+
+## Summer missed-call demand model
+
+### What is known and what is estimated
+
+No public English- or Estonian-language source found in this research reports
+answered versus missed calls for a Pärnu hotel, spa, or the city as a whole.
+The figures below therefore combine high-confidence local capacity data with
+non-local hospitality call benchmarks. They must always be introduced as an
+**estimate**.
+
+Summer means June–August 2025, the latest complete summer in the Statistics
+Estonia table used here.
+
+### Local capacity and seasonality inputs
+
+Statistics Estonia table TU122 reports the following for Pärnu city:
+
+| Month | Available rooms | Room occupancy |
+| --- | ---: | ---: |
+| June 2025 | 2,238 | 58% |
+| July 2025 | 2,233 | 73% |
+| August 2025 | 2,247 | 61% |
+
+Direct table: [Statistics Estonia TU122](https://andmed.stat.ee/en/stat/majandus__turism-ja-majutus__majutus/TU122).
+The [Pärnu city tourism dashboard](https://turismistatistika.ee/en/county/parnu-city/)
+is a readable presentation of TU122/TU131 and reports 405,687 accommodated
+guests and 752,800 nights in Pärnu city for all of 2025. A May 2026 Pärnu
+tourism-market snapshot reports the same totals, 4,506 average bed places,
+1.86 nights average stay, and 45.8% annual bed-place occupancy:
+[source PDF](https://www.spaestonia.ee/medical/wp-content/uploads/2026/05/Annex-1.1_Parnu-Tourism-Market_EN.pdf).
+
+### Call-volume benchmark
+
+Revinate's [2026 North America hotel voice benchmark](https://www.revinate.com/hospitality-report/voice-channel-north-america/)
+reports these calls per room per month:
+
+| Month | All inbound calls | Booking-intent/lead calls |
+| --- | ---: | ---: |
+| June | 16 | 3 |
+| July | 16 | 3 |
+| August | 14 | 2 |
+
+Applying those rates to Pärnu's actual monthly room counts gives:
+
+- **102,994 total inbound calls** during the three-month summer;
+- **17,907 booking-intent calls** during the same period.
+
+This is an uncalibrated transfer from Revinate's North American customer base,
+not Pärnu call-log data. It may overstate Pärnu because Revinate customers are
+voice-channel users and the Pärnu room count includes smaller accommodation
+businesses. Conversely, separate spa lines and calls outside accommodation
+properties may be omitted.
+
+### Miss-rate scenarios
+
+Two hospitality vendor datasets put peak unanswered calls as high as 40%:
+
+- [Hospitality Net / Canary Technologies, 14 August 2025](https://www.hospitalitynet.org/opinion/4128546/can-ai-voice-agents-fix-the-flaws-in-hotel-call-centers):
+  up to 40% of hotel calls unanswered; one-third of those callers ready to book.
+- [Alveni 2026 hotel call analysis](https://alveni.ai/en/missed-calls-hotel/):
+  up to 40% at peak times, based on 13,200 calls across 15 German upscale hotels.
+
+Because neither source measures Pärnu, the model uses 20% as a conservative
+scenario, 30% as the midpoint, and 40% as the published peak-risk scenario:
+
+| Miss rate | Missed all inbound calls | Missed booking-intent calls |
+| --- | ---: | ---: |
+| 20% low scenario | 20,599 | 3,581 |
+| 30% midpoint | 30,898 | 5,372 |
+| 40% peak-risk scenario | 41,198 | 7,163 |
+
+The lead-call column assumes booking-intent calls are missed at the same rate
+as the overall call stream. No Pärnu data verifies that assumption. It is more
+conservative than applying Canary's statement that one-third of unanswered
+hotel calls come from guests ready to book.
+
+The booking-intent range is the more defensible sales number. The much larger
+all-call range includes directions, restaurant, in-stay support, event, group,
+housekeeping, and other operational calls and has higher transfer uncertainty.
+
+**Safe summary:** a benchmark-transfer model suggests roughly **3,600–7,200
+missed booking-intent calls per Pärnu summer**, midpoint **about 5,400**. It does
+not prove how many calls Pärnu hotels actually missed.
+
+### Confirmed BOUK cohort model
+
+The ten confirmed current Pärnu-city BOUK properties in this report total 267
+rooms in the 2026-09-30 API snapshot. Applying the same summer benchmark:
+
+| Scope | Modelled summer calls | Missed at 20% | Missed at 30% | Missed at 40% |
+| --- | ---: | ---: | ---: | ---: |
+| All inbound calls | 12,282 | 2,456 | 3,685 | 4,913 |
+| Booking-intent calls | 2,136 | 427 | 641 | 854 |
+
+Property-level planning ranges:
+
+| Property | Rooms | Modelled summer inbound | Missed inbound, 20–40% | Modelled lead calls | Missed leads, 20–40% |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Pärnu Hotel | 31 | 1,426 | 285–570 | 248 | 50–99 |
+| Rannahotell | 64 | 2,944 | 589–1,178 | 512 | 102–205 |
+| Frost Boutique Hotel | 14 | 644 | 129–258 | 112 | 22–45 |
+| Rosenplänter Boutique Hotel | 13 | 598 | 120–239 | 104 | 21–42 |
+| Kurgo Villa Hotel | 28 | 1,288 | 258–515 | 224 | 45–90 |
+| Hotel Hansalinn | 11 | 506 | 101–202 | 88 | 18–35 |
+| Hommiku Hostel | 22 | 1,012 | 202–405 | 176 | 35–70 |
+| Embrace Guestrooms & Apartments | 12 | 552 | 110–221 | 96 | 19–38 |
+| Reldor Motel | 44 | 2,024 | 405–810 | 352 | 70–141 |
+| Alice Backyard | 28 | 1,288 | 258–515 | 224 | 45–90 |
+
+These rows are prospect-sizing scenarios, not claims about an individual
+property's PBX performance.
+
+### Spa scenario — not a city estimate
+
+Visit Pärnu lists [nine Pärnu spas](https://visitparnu.com/en/spa-holidays/).
+Zenoti's [2025 salon/spa benchmark article](https://www.zenoti.com/thecheckin/ai-receptionist-vs-call-bot)
+states that 35% of calls to salons and spas go unanswered each month. No public
+source gives Pärnu spa call volume, so only a sensitivity table is defensible:
+
+| Assumed calls per spa/month | Nine spas: summer calls | Missed at 35% |
+| --- | ---: | ---: |
+| 100 | 2,700 | 945 |
+| 200 | 5,400 | 1,890 |
+| 300 | 8,100 | 2,835 |
+
+This is **not** an estimate of actual Pärnu spa calls. Do not add it to the
+hotel total: integrated spa hotels may use the same phone line, creating
+double counting.
+
+### Confidence and next measurement
+
+- **High confidence:** Pärnu room counts and occupancy from Statistics Estonia.
+- **Medium confidence:** the shape and seasonality of Revinate's hospitality
+  call benchmark.
+- **Low confidence:** transferring North American/German miss rates and call
+  behavior directly to Pärnu.
+
+A real pilot should replace the model with seven consecutive days of PBX call
+detail records: inbound count, answered, abandoned/missed, after-hours,
+concurrent overflow, wait time, and booking intent. Store only masked caller
+identifiers and aggregate statistics. Scale the observed daily result to the
+summer only after distinguishing normal weekdays, weekends, and events.
 
 ## Confirmation standard
 
@@ -143,12 +291,20 @@ Safe:
 > service inventory in one platform. Major Pärnu spa hotels commonly use
 > SALBOS, which is the next production connector target.
 
+> No public source measures Pärnu hotel missed calls. A benchmark-transfer
+> model using Statistics Estonia room capacity and hospitality voice benchmarks
+> estimates 3,600–7,200 missed booking-intent calls during June–August, with a
+> midpoint near 5,400. A pilot PBX export is required to replace this estimate
+> with local observed data.
+
 Unsafe — do not claim:
 
 - “Pärnu's major spa hotels currently use BOUK.”
 - “Hedon, Viiking, or Wasa currently use BOUK.”
 - “SALBOS booking writes are available through its public WooCommerce API.”
 - “Estonian hotels use QloApps.”
+- “Pärnu hotels miss 5,372 booking calls every summer.” The number is a model
+  midpoint, not a measured fact.
 
 ## Re-verification checklist
 

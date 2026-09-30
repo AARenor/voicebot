@@ -42,6 +42,8 @@ Estonia-local: Hotellinx (in-house PMS since 1992, `hotellinxbaltics.com`, reser
 
 Pärnu market re-check (2026-09-30): BOUK is confirmed through current official-site links plus active non-demo API records at 10 Pärnu accommodation properties, but no major Pärnu spa-treatment operation is confirmed on BOUK. Major spa hotels checked use SALBOS; Hestia Strand uses D-EDGE. BOUK supports room + hourly-service inventory and advertises a 14-day full-feature trial; official API access must be verified in the trial. Full property-by-property evidence, stale/migrated exclusions, and safe pitch claims: [`docs/research/parnu-booking-systems.md`](docs/research/parnu-booking-systems.md).
 
+Summer phone-demand model (2026-09-30): no public Pärnu missed-call logs exist. Statistics Estonia room counts combined with Revinate/Canary/Alveni hospitality benchmarks produce an explicitly low-confidence estimate of 3,581–7,163 missed booking-intent calls across Pärnu city accommodation properties in June–August (30% midpoint 5,372). Never present this as observed local data; methodology, all-call sensitivity, spa scenarios, and pilot measurement requirements are in the research note above.
+
 Adapter pattern: `StayAdapter` (night inventory, rate plans, `minGuaranteeType`, `prePaymentGrossAmount` vs total) vs `SlotAdapter` (service×provider×slot lifecycle, Zenoti `booking_id`). Shared only auth/idempotency/confirmation envelope. One interface (`search_availability`, `hold`, `confirm`, `cancel`, `guest_lookup`) per vendor driver. Drivers must support write/change/cancel — read-only never ships. Price utterances require live `price_quote_id`, never embeddings.
 
 ## 4. Humane Estonian voice (re-verified 2026-09-29)
