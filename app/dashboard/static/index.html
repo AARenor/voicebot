@@ -5,47 +5,128 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Voicebot — operaatori töölaud</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid #8884; padding: .4rem .6rem; text-align: left; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .6rem; margin: 1rem 0; }
-  .card { border: 1px solid #8884; border-radius: .5rem; padding: .6rem .8rem; }
-  .card b { display: block; font-size: 1.2rem; }
-  button { margin-right: .3rem; }
-  #token { width: 22rem; max-width: 100%; }
-  .muted { opacity: .7; }
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #667085;
+    --line: #e4e7ec; --accent: #1570ef; --accent-ink: #ffffff;
+    --ok: #12805c; --warn: #b54708; --bad: #b42318;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101319; --panel: #1a1f2b; --ink: #eef1f6; --muted: #9aa3b2;
+      --line: #2b3242; --accent: #4e8df5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+    margin: 0; padding: 1.5rem 1rem 3rem;
+  }
+  .wrap { max-width: 1024px; margin: 0 auto; }
+  header.top {
+    display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  header.top h1 { font-size: 1.4rem; margin: 0; }
+  .pill {
+    font-size: .8rem; border: 1px solid var(--line); border-radius: 999px;
+    padding: .15rem .7rem; color: var(--muted); background: var(--panel);
+  }
+  .pill.on { color: var(--ok); border-color: var(--ok); }
+  .pill.off { color: var(--muted); }
+  section.panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 1rem 1.2rem; margin-bottom: 1rem;
+  }
+  section.panel h2 { font-size: 1.05rem; margin: 0 0 .7rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { border-bottom: 1px solid var(--line); padding: .5rem .6rem; text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+  tr.demo { opacity: .62; }
+  .tag {
+    display: inline-block; font-size: .75rem; border-radius: 999px;
+    padding: .1rem .55rem; border: 1px solid var(--line); color: var(--muted);
+  }
+  .tag.pending { color: var(--warn); border-color: var(--warn); }
+  .tag.confirmed { color: var(--ok); border-color: var(--ok); }
+  .tag.cancelled { color: var(--bad); border-color: var(--bad); }
+  button {
+    font: inherit; font-size: .85rem; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 8px; padding: .35rem .8rem; margin-right: .35rem;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.danger { color: var(--bad); border-color: var(--bad); }
+  input[type="password"] {
+    font: inherit; padding: .35rem .6rem; border: 1px solid var(--line);
+    border-radius: 8px; width: 20rem; max-width: 100%;
+    background: var(--panel); color: var(--ink);
+  }
+  .toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .7rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; }
+  .card span { font-size: .75rem; color: var(--muted); display: block; }
+  .card b { font-size: 1.15rem; }
+  pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: .7rem; overflow-x: auto; font-size: .8rem;
+  }
+  .empty { color: var(--muted); font-style: italic; }
+  @media (max-width: 640px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    thead { display: none; }
+    tr { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .5rem; padding: .3rem .6rem; }
+    td { border: none; padding: .2rem 0; }
+  }
 </style>
 </head>
 <body>
-<h1>Voicebot — operaatori töölaud <span class="muted">(demo)</span></h1>
+<div class="wrap">
+  <header class="top">
+    <h1>Voicebot — operaatori töölaud</h1>
+    <span class="pill" id="livekit">… livekit</span>
+    <span class="pill">demo</span>
+  </header>
 
-<h2>Ootel hoiud (holds)</h2>
-<p>
-  Operaatori võti: <input id="token" type="password" placeholder="OPERATOR_TOKEN">
-  <button id="refresh">Värskenda</button>
-  <button id="reset">Lähtesta demo</button>
-</p>
-<table id="holds"><thead><tr>
-  <th>ID</th><th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
-</tr></thead><tbody></tbody></table>
+  <section class="panel" aria-label="Hoiud">
+    <h2>Ootel hoiud</h2>
+    <div class="toolbar">
+      <input id="token" type="password" placeholder="OPERATOR_TOKEN" autocomplete="off">
+      <button id="refresh">Värskenda</button>
+      <button id="reset">Lähtesta demo</button>
+    </div>
+    <table id="holds">
+      <thead><tr>
+        <th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty" id="holds-empty" hidden>Pole ootel hoidusid.</p>
+  </section>
 
-<h2>Kõned</h2>
-<table id="calls"><thead><tr>
-  <th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th>
-</tr></thead><tbody></tbody></table>
+  <section class="panel" aria-label="Kõned">
+    <h2>Kõned</h2>
+    <table id="calls">
+      <thead><tr><th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="empty" id="calls-empty" hidden>Kõnesid veel pole.</p>
+  </section>
 
-<h2>Mõõdikud</h2>
-<div class="cards" id="metrics"></div>
+  <section class="panel" aria-label="Mõõdikud">
+    <h2>Mõõdikud</h2>
+    <div class="cards" id="metrics"></div>
+  </section>
 
-<h2>Seadistus</h2>
-<pre id="config"></pre>
+  <section class="panel" aria-label="Seadistus">
+    <h2>Seadistus</h2>
+    <pre id="config"></pre>
+  </section>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-// Every string from the API is escaped before insert (XSS guard).
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
-  ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const auth = () => {
   const t = $("token").value.trim();
   return t ? {"Authorization": "Bearer " + t} : {};
@@ -55,25 +136,44 @@ async function api(path, opts = {}) {
   if (!r.ok) { const t = await r.text(); throw new Error(r.status + " " + t); }
   return r.json();
 }
+function fmtExpiry(s) {
+  const n = Number(s) || 0;
+  if (n <= 0) return "aegunud";
+  const m = Math.floor(n / 60);
+  return m > 0 ? m + " min " + (n % 60) + " s" : n + " s";
+}
+function statusTag(status) {
+  const td = document.createElement("td");
+  const span = document.createElement("span");
+  const known = ["pending", "confirmed", "cancelled"];
+  span.className = known.includes(status) ? "tag " + status : "tag";
+  span.textContent = status;
+  td.appendChild(span);
+  return td;
+}
 async function loadHolds() {
   const {holds} = await api("/api/holds");
   const tbody = document.querySelector("#holds tbody");
   tbody.innerHTML = "";
+  $("holds-empty").hidden = holds.length > 0;
   for (const h of holds) {
     const tr = document.createElement("tr");
+    if (h.source === "demo") tr.classList.add("demo");
     const id = String(h.hold_id ?? "");
-    const cells = [id, h.guest, h.service, h.quoted_total ?? "—",
-                   String(h.expires_in_s) + "s", h.status];
+    const label = h.source === "demo" ? h.guest + " (demo)" : h.guest;
+    const cells = [label, h.service, h.quoted_total ?? "—", fmtExpiry(h.expires_in_s)];
     for (const c of cells) {
       const td = document.createElement("td");
-      td.textContent = c;  // textContent, never HTML: inert by construction
+      td.textContent = c;  // textContent only: hostile content inert
       tr.appendChild(td);
     }
+    tr.appendChild(statusTag(h.status));
     const act = document.createElement("td");
     if (h.status === "pending") {
-      for (const what of ["confirm", "cancel"]) {
+      for (const [what, cls, txt] of [["confirm", "primary", "Kinnita"], ["cancel", "danger", "Tühista"]]) {
         const b = document.createElement("button");
-        b.textContent = what === "confirm" ? "Kinnita" : "Tühista";
+        b.textContent = txt;
+        b.className = cls;
         b.dataset.id = id;  // raw ID in dataset, no JS-string interpolation
         b.dataset.act = what;
         act.appendChild(b);
@@ -83,31 +183,31 @@ async function loadHolds() {
     tbody.appendChild(tr);
   }
 }
-// One delegated listener (no inline onclick anywhere).
 document.querySelector("#holds tbody").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-id]");
   if (b) decide(b.dataset.id, b.dataset.act);
 });
 async function decide(id, what) {
-  try { await api(`/api/holds/${encodeURIComponent(id)}/${what}`, {method: "POST"}); }
+  if (what !== "confirm" && what !== "cancel") return;
+  try { await api(`/api/holds/${encodeURIComponent(id)}/${encodeURIComponent(what)}`, {method: "POST"}); }
   catch (e) { alert("Viga: " + e.message); }
   await loadHolds();
 }
 async function resetDemo() {
   try { await api("/api/reset", {method: "POST"}); } catch (e) { alert("Viga: " + e.message); }
-  await Promise.all([loadHolds(), loadCalls(), loadMeta()]);
+  await Promise.all([loadHolds(), loadCalls(), loadMeta(), loadStatus()]);
 }
 async function loadCalls() {
   const {calls} = await api("/api/calls");
   const tbody = document.querySelector("#calls tbody");
   tbody.innerHTML = "";
+  $("calls-empty").hidden = calls.length > 0;
   for (const c of calls) {
     const tr = document.createElement("tr");
-    if (c.source === "demo") tr.style.opacity = "0.65";
-    const summary = (c.source === "demo") ? c.summary + " (demo)" : c.summary;
-    for (const val of [c.at, c.lang, summary, c.outcome]) {
+    if (c.source === "demo") tr.classList.add("demo");
+    for (const val of [c.at, c.lang, c.summary, c.outcome]) {
       const td = document.createElement("td");
-      td.textContent = val;  // textContent only: hostile content inert
+      td.textContent = val;
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -115,8 +215,19 @@ async function loadCalls() {
 }
 async function loadMeta() {
   const {metrics} = await api("/api/metrics");
-  $("metrics").innerHTML = Object.entries(metrics).map(([k, v]) =>
-    `<div class="card"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
+  const box = $("metrics");
+  box.innerHTML = "";
+  for (const [k, v] of Object.entries(metrics)) {
+    const div = document.createElement("div");
+    div.className = "card";
+    const label = document.createElement("span");
+    label.textContent = k;
+    const val = document.createElement("b");
+    val.textContent = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v);
+    div.appendChild(label);
+    div.appendChild(val);
+    box.appendChild(div);
+  }
   const {config} = await api("/api/config");
   $("config").textContent = JSON.stringify(config, null, 2);
 }
@@ -124,14 +235,10 @@ async function loadStatus() {
   // Independent of metrics/config: badge must refresh even if they fail.
   try {
     const {wired} = await api("/api/status");
-    const dot = $("livekit") || (() => {
-      const s = document.createElement("span");
-      s.id = "livekit";
-      document.querySelector("h1").appendChild(s);
-      return s;
-    })();
-    dot.textContent = wired && wired.livekit ? " ● livekit" : " ○ livekit";
-    dot.style.color = wired && wired.livekit ? "green" : "gray";
+    const dot = $("livekit");
+    const on = !!(wired && wired.livekit);
+    dot.textContent = on ? "● livekit" : "○ livekit";
+    dot.className = "pill " + (on ? "on" : "off");
   } catch (_) { /* status optional on old builds */ }
 }
 loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));
