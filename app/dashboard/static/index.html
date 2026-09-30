@@ -3,468 +3,490 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voicebot — operaatori töölaud</title>
+<meta name="theme-color" content="#ffffff">
+<title>Vastuvõtulaud — Voicebot</title>
 <style>
   :root {
-    --bg: #f7f6f2;
-    --card: #ffffff;
-    --ink: #1a1d21;
-    --ink-soft: #3d434b;
-    --muted: #73767c;
-    --line: #e9e6df;
-    --line-soft: #f1efe9;
-    --accent: #0f7b5f;
-    --accent-deep: #0a5c47;
-    --accent-tint: #e7f3ee;
-    --amber-bg: #fdf6e9;
-    --amber-line: #ecd9ac;
-    --amber-ink: #8a5a00;
-    --bad: #b42318;
-    --bad-tint: #fdecea;
-    --radius: 16px;
-    --radius-sm: 12px;
-    --radius-xs: 10px;
-    --shadow: 0 1px 2px rgba(26, 29, 33, .05), 0 8px 24px -16px rgba(26, 29, 33, .18);
+    --white: #fff;
+    --surface: #f4f7f5;
+    --surface-2: #eef3f0;
+    --ink: #17211c;
+    --graphite: #56615b;
+    --muted: #77817b;
+    --rule: #dde5e0;
+    --pine: #0b5c43;
+    --pine-dark: #074432;
+    --pine-wash: #e7f2ed;
+    --brass: #a87613;
+    --brass-wash: #fff8e8;
+    --alarm: #a73a32;
+    --alarm-wash: #fff0ee;
+    --r-sm: 6px;
+    --r: 10px;
+    --max: 1180px;
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { background: var(--white); -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
     color: var(--ink);
-    background:
-      radial-gradient(1200px 320px at 50% -120px, #ffffff 0%, rgba(255, 255, 255, 0) 70%),
-      var(--bg);
+    background: var(--white);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
+  button, input { font: inherit; touch-action: manipulation; }
+  button, summary, input { -webkit-tap-highlight-color: rgba(11, 92, 67, .12); }
+  button:focus-visible, input:focus-visible, summary:focus-visible,
+  .skip:focus-visible { outline: 3px solid rgba(11, 92, 67, .28); outline-offset: 2px; }
+  h1, h2 { text-wrap: balance; }
+  .skip {
+    position: fixed; left: 1rem; top: -4rem; z-index: 100;
+    background: var(--ink); color: var(--white); padding: .55rem .8rem;
+    border-radius: var(--r-sm);
+  }
+  .skip:focus { top: 1rem; }
 
-  /* Sticky top bar */
-  .topbar {
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(255, 255, 255, .88);
-    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
+  /* Shift bar */
+  .shiftbar {
+    position: sticky; top: 0; z-index: 20;
+    border-bottom: 1px solid var(--rule); background: rgba(255,255,255,.96);
   }
-  .topbar-inner {
-    max-width: 1120px; margin: 0 auto; padding: .7rem 1.25rem;
-    display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  .shiftbar-inner {
+    max-width: var(--max); min-height: 68px; margin: 0 auto; padding: .65rem 1.25rem;
+    display: grid; grid-template-columns: minmax(220px, 1fr) auto auto;
+    align-items: center; gap: 1rem;
   }
-  .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; }
+  .brand { display: flex; align-items: center; gap: .7rem; min-width: 0; }
   .brand-mark {
-    width: 30px; height: 30px; border-radius: var(--radius-xs); flex: none;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
-    color: #fff; font-weight: 700; font-size: 15px;
-    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex: none; border-radius: 50%;
+    display: grid; place-items: center; color: var(--white); background: var(--pine);
+    font-weight: 800; letter-spacing: -.04em;
   }
-  .brand h1 { font-size: 1.02rem; margin: 0; letter-spacing: -.015em; }
-  .brand small { display: block; font-size: .74rem; color: var(--muted); font-weight: 400; }
+  .brand h1 { margin: 0; font: 700 1.05rem/1.1 system-ui, sans-serif; }
+  .brand p { margin: .15rem 0 0; color: var(--muted); font-size: .78rem; }
+  .system-state { display: flex; gap: .9rem; align-items: center; color: var(--graphite); }
+  .state {
+    display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap;
+    font-size: .78rem; font-weight: 650;
+  }
+  .state-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .state.on .state-dot { background: var(--pine); box-shadow: 0 0 0 3px var(--pine-wash); }
+  .state.demo { color: var(--brass); }
+  .state.demo .state-dot { background: var(--brass); }
+  .state.live { color: var(--pine); }
+  .token-control { display: flex; align-items: end; gap: .45rem; }
+  .field { display: grid; gap: .2rem; }
+  .field label { color: var(--graphite); font-size: .72rem; font-weight: 650; }
+  input[type="password"], input[type="text"] {
+    width: 180px; height: 36px; padding: 0 .65rem;
+    color: var(--ink); background: var(--white); border: 1px solid var(--rule);
+    border-radius: var(--r-sm); spellcheck: false;
+  }
+  .icon-button, .button {
+    min-height: 36px; padding: 0 .8rem; border: 1px solid var(--rule);
+    border-radius: var(--r-sm); color: var(--ink); background: var(--white);
+    cursor: pointer; font-weight: 650;
+  }
+  .icon-button:hover, .button:hover { background: var(--surface); }
+  .button.primary { color: var(--white); border-color: var(--pine); background: var(--pine); }
+  .button.primary:hover { background: var(--pine-dark); }
+  .button.quiet-danger { color: var(--alarm); }
+  .button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .48; }
 
-  .pill {
-    font-size: .76rem; font-weight: 600; letter-spacing: .02em;
-    border: 1px solid var(--line); border-radius: 999px;
-    padding: .22rem .75rem; color: var(--muted); background: #fff;
-    white-space: nowrap;
+  .page { max-width: var(--max); margin: 0 auto; padding: 1.25rem 1.25rem 3rem; }
+  .demo-notice {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-bottom: 1rem; padding: .7rem .85rem; color: #694900;
+    border: 1px solid #ead7aa; border-left: 4px solid var(--brass);
+    border-radius: var(--r-sm); background: var(--brass-wash);
   }
-  .pill.on { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-tint); }
-  .pill.off { color: var(--muted); }
+  .demo-notice strong { color: #4e3800; }
 
-  .auth { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-  input[type="password"] {
-    font: inherit; font-size: .85rem;
-    padding: .42rem .7rem; border: 1px solid var(--line); border-radius: var(--radius-xs);
-    width: 13rem; background: #fff; color: var(--ink);
+  /* Compact shift summary — no giant SaaS metric cards. */
+  .shift-summary {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: 1rem; border-block: 1px solid var(--rule);
   }
-  input[type="password"]:focus-visible,
-  button:focus-visible,
-  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  button {
-    font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer;
-    border: 1px solid var(--line); background: #fff; color: var(--ink-soft);
-    border-radius: var(--radius-xs); padding: .42rem .9rem;
-  }
-  button:hover { border-color: #d5d1c7; background: #fbfaf7; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
-  button.danger { color: var(--bad); border-color: #efc5c1; }
-  button.danger:hover { background: var(--bad-tint); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 1.4rem 1.25rem 4rem; }
-
-  /* Demo notice */
-  .notice {
-    border: 1px solid var(--amber-line); background: var(--amber-bg);
-    border-left: 4px solid #d9a521; color: #6b4d00;
-    border-radius: var(--radius-sm); padding: .7rem 1rem; margin-bottom: 1.1rem;
-    font-size: .9rem;
-  }
-  .notice b { color: #553d00; }
-
-  /* KPI cards */
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1.1rem; }
-  .kpi {
-    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: var(--shadow); padding: .85rem 1rem;
-  }
-  .kpi span {
-    display: block; font-size: .7rem; font-weight: 700;
-    letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
-  }
-  .kpi b {
-    font-size: 1.7rem; font-weight: 700; letter-spacing: -.02em;
+  .shift-stat { padding: .75rem 1rem; border-right: 1px solid var(--rule); }
+  .shift-stat:first-child { padding-left: 0; }
+  .shift-stat:last-child { border-right: 0; }
+  .shift-stat span { display: block; color: var(--muted); font-size: .78rem; }
+  .shift-stat b {
+    display: block; margin-top: .12rem; font-size: 1.1rem;
     font-variant-numeric: tabular-nums;
   }
 
-  /* Panels */
-  .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.1rem; align-items: start; }
-  .grid > section.panel { min-width: 0; }  /* let tables shrink instead of clipping */
-  section.panel {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: var(--radius); box-shadow: var(--shadow);
-    padding: 1.1rem 1.25rem 1.25rem; margin-bottom: 1.1rem;
+  /* Next-expiring hold is the visual centre of gravity. */
+  .next-hold {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center;
+    gap: 1.25rem; min-height: 118px; margin-bottom: 1rem; padding: 1rem 1.15rem;
+    border: 1px solid var(--rule); border-left: 5px solid var(--brass);
+    background: var(--white);
   }
-  .grid section.panel { margin-bottom: 0; }
-  .panel-head { display: flex; align-items: baseline; gap: .6rem; margin-bottom: .8rem; }
-  .panel-head h2 { font-size: 1rem; margin: 0; letter-spacing: -.01em; }
+  .next-hold[data-urgent="true"] { border-left-color: var(--alarm); }
+  .next-copy { min-width: 0; }
+  .next-label { color: var(--graphite); font-size: .78rem; }
+  .next-guest {
+    margin: .12rem 0 .15rem; font: 600 1.45rem/1.18 ui-serif, Georgia, serif;
+    overflow-wrap: anywhere;
+  }
+  .next-service { margin: 0; color: var(--graphite); overflow-wrap: anywhere; }
+  .countdown { text-align: right; white-space: nowrap; }
+  .countdown strong {
+    display: block; color: var(--brass); font: 600 2.4rem/1 ui-serif, Georgia, serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .next-hold[data-urgent="true"] .countdown strong { color: var(--alarm); }
+  .countdown span { display: block; margin-top: .3rem; color: var(--muted); font-size: .75rem; }
+  .next-actions { display: flex; gap: .45rem; }
+
+  .workspace { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
+  .work-panel { min-width: 0; border-top: 2px solid var(--ink); }
+  .panel-head {
+    display: flex; align-items: baseline; gap: .7rem; padding: .75rem 0 .55rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel-head h2 { margin: 0; font-size: 1rem; }
   .count {
-    margin-left: auto; font-size: .76rem; font-weight: 700; color: var(--muted);
-    background: var(--line-soft); border-radius: 999px; padding: .1rem .6rem;
-    font-variant-numeric: tabular-nums;
+    margin-left: auto; min-width: 1.6rem; padding: .08rem .45rem; text-align: center;
+    color: var(--graphite); background: var(--surface); border-radius: 999px;
+    font-size: .76rem; font-variant-numeric: tabular-nums;
   }
 
-  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   th {
-    font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-    color: var(--muted); text-align: left; padding: .45rem .6rem;
-    border-bottom: 1px solid var(--line);
+    padding: .55rem .45rem; color: var(--graphite); border-bottom: 1px solid var(--rule);
+    text-align: left; font-size: .75rem; font-weight: 650;
   }
-  td { padding: .62rem .6rem; border-bottom: 1px solid var(--line-soft); vertical-align: middle; overflow-wrap: anywhere; }
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover td { background: #fbfaf7; }
-  tr.demo td:first-child { border-left: 3px solid #d9a521; }
+  td {
+    padding: .72rem .45rem; border-bottom: 1px solid var(--rule);
+    vertical-align: middle; overflow-wrap: anywhere;
+  }
+  tr.demo td:first-child { border-left: 3px solid var(--brass); padding-left: .6rem; }
+  .guest-name { font: 600 1rem/1.25 ui-serif, Georgia, serif; }
+  .sub { display: block; margin-top: .16rem; color: var(--muted); font-size: .75rem; }
   .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-  .guest { display: flex; align-items: center; gap: .6rem; min-width: 0; }
-  .avatar {
-    width: 32px; height: 32px; border-radius: 50%; flex: none;
-    background: var(--accent-tint); color: var(--accent-deep);
-    font-size: .75rem; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
+  .badge {
+    display: inline-block; padding: .15rem .5rem; color: var(--graphite);
+    border: 1px solid var(--rule); border-radius: 999px; background: var(--surface);
+    font-size: .74rem; white-space: nowrap;
   }
-  .guest b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .guest small { display: block; color: var(--muted); font-size: .76rem; }
+  .badge.pending { color: #6f4d00; border-color: #e5ce97; background: var(--brass-wash); }
+  .badge.confirmed { color: var(--pine); border-color: #b8d5ca; background: var(--pine-wash); }
+  .badge.cancelled, .badge.urgent { color: var(--alarm); border-color: #efc7c3; background: var(--alarm-wash); }
+  .actions { text-align: right; white-space: nowrap; }
+  .actions .button { min-height: 32px; padding-inline: .65rem; margin-left: .25rem; font-size: .8rem; }
 
-  .chip {
-    display: inline-block; font-size: .74rem; font-weight: 600; white-space: nowrap;
-    border-radius: 999px; padding: .16rem .65rem;
-    border: 1px solid var(--line); color: var(--muted); background: #fbfaf7;
+  /* Phone journal */
+  .call-journal {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 1.2rem; list-style: none; margin: 0; padding: 0;
   }
-  .chip.pending { color: #8a5a00; border-color: var(--amber-line); background: var(--amber-bg); }
-  .chip.confirmed { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-tint); }
-  .chip.cancelled { color: var(--bad); border-color: #efc5c1; background: var(--bad-tint); }
-  .chip.urgent { color: var(--bad); border-color: #efc5c1; background: var(--bad-tint); }
-  .chip.lang { text-transform: uppercase; letter-spacing: .06em; }
-
-  .actions { white-space: nowrap; text-align: right; }
-  .actions button { margin-left: .35rem; }
-
+  .call-item { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: .75rem; padding: .75rem 0; border-bottom: 1px solid var(--rule); }
+  .call-time { color: var(--graphite); font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .call-summary { margin: 0; overflow-wrap: anywhere; }
+  .call-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
   .empty {
-    color: var(--muted); font-size: .9rem; text-align: center;
-    padding: 1.6rem 1rem; border: 1px dashed var(--line); border-radius: var(--radius-sm);
-    background: #fbfaf7;
+    margin: .7rem 0 0; padding: 1rem; color: var(--graphite); background: var(--surface);
+    border-left: 3px solid var(--rule);
   }
-  .empty::before { content: "○"; display: block; font-size: 1.4rem; margin-bottom: .3rem; }
-
-  details.config { margin-top: 1.1rem; }
-  details.config summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
-  pre {
-    background: #fbfaf7; border: 1px solid var(--line); border-radius: var(--radius-sm);
-    padding: .8rem 1rem; overflow-x: auto; font-size: .78rem; margin: .7rem 0 0;
+  details.debug { display: none; margin-top: 1.25rem; }
+  details.debug.visible { display: block; }
+  details summary { cursor: pointer; font-weight: 650; }
+  pre { overflow: auto; padding: .8rem; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: .78rem; }
+  .toast {
+    position: fixed; right: 1rem; bottom: 1rem; z-index: 40; max-width: 360px;
+    padding: .7rem .85rem; color: var(--white); background: var(--ink);
+    border-radius: var(--r-sm); box-shadow: 0 8px 30px rgba(0,0,0,.16);
   }
+  footer { margin-top: 2rem; color: var(--muted); text-align: center; font-size: .78rem; }
 
-  footer { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 2rem; }
-
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 880px) {
+    .shiftbar-inner { grid-template-columns: 1fr auto; }
+    .token-control { grid-column: 1 / -1; }
+    .call-journal { grid-template-columns: 1fr; }
+  }
   @media (max-width: 640px) {
-    table, thead, tbody, th, td, tr { display: block; }
-    thead { display: none; }
-    tbody tr { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: .6rem; padding: .4rem .8rem; }
-    tbody tr:hover td { background: none; }
-    td { border: none; padding: .25rem 0; }
-    .actions { text-align: left; }
+    .page { padding-inline: .8rem; }
+    .shiftbar-inner { grid-template-columns: 1fr; gap: .55rem; padding-inline: .8rem; }
+    .system-state { gap: .75rem; justify-self: start; }
+    .token-control { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+    .token-control .field { grid-column: 1 / -1; }
+    .token-control input { width: 100%; }
+    .token-control #show-token, .token-control #refresh { width: 100%; }
+    .token-control #reset { grid-column: 1 / -1; width: 100%; }
+    .shift-summary { grid-template-columns: repeat(2, 1fr); }
+    .shift-stat:nth-child(2) { border-right: 0; }
+    .shift-stat:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
+    .next-hold { grid-template-columns: 1fr; gap: .75rem; }
+    .countdown { text-align: left; }
+    .next-actions { flex-wrap: wrap; }
+    table, thead, tbody, tr, th, td { display: block; }
+    thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    tbody tr { padding: .7rem 0; border-bottom: 1px solid var(--rule); }
+    td { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: .5rem; padding: .22rem 0; border: 0; }
+    td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; }
+    td.actions { display: flex; padding-top: .6rem; }
+    td.actions::before { display: none; }
+    .actions .button { margin-left: 0; margin-right: .35rem; }
   }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Hüppa töölauda</a>
 
-<header class="topbar">
-  <div class="topbar-inner">
+<header class="shiftbar">
+  <div class="shiftbar-inner">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true">◉</div>
-      <h1>Voicebot <small>operaatori töölaud</small></h1>
+      <div class="brand-mark" aria-hidden="true">V</div>
+      <div><h1>Vastuvõtulaud</h1><p>Voicebot · operaatori töölaud</p></div>
     </div>
-    <span class="pill" id="livekit">… livekit</span>
-    <span class="pill" id="mode">…</span>
-    <div class="auth">
-      <input id="token" type="password" placeholder="OPERATOR_TOKEN" autocomplete="off" aria-label="Operaatori tunnus">
-      <button id="refresh">Värskenda</button>
-      <button id="reset">Lähtesta demo</button>
+    <div class="system-state" aria-label="Süsteemi olek">
+      <span class="state" id="livekit" role="status" aria-live="polite"><span class="state-dot"></span>… livekit</span>
+      <span class="state demo" id="mode" role="status" aria-live="polite"><span class="state-dot"></span>…</span>
+    </div>
+    <div class="token-control">
+      <div class="field"><label for="token">Tunnus</label><input id="token" name="operator-token" type="password" placeholder="Sisesta vahetuse tunnus…" autocomplete="off" spellcheck="false"></div>
+      <button class="icon-button" id="show-token" type="button" aria-label="Näita tunnust">Näita</button>
+      <button class="button" id="refresh" type="button">Uuenda</button>
+      <button class="button quiet-danger" id="reset" type="button">Lähtesta demo</button>
     </div>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="notice" id="demo-banner" hidden>
-    <b>DEMO režiim</b> — kinnitused ja tühistamised ei kirjuta PMS-i.
-  </div>
+<main class="page" id="main">
+  <div class="demo-notice" id="demo-banner" hidden><span><strong>Demo</strong> — PMS-i ei kirjutata.</span><span>Proovi järjekorda turvaliselt.</span></div>
 
-  <div class="kpis" id="metrics" aria-label="Mõõdikud"></div>
+  <section class="shift-summary" id="metrics" aria-label="Vahetuse kokkuvõte"></section>
 
-  <div class="grid">
-    <section class="panel" aria-label="Hoiud">
-      <div class="panel-head">
-        <h2>Ootel hoiud</h2>
-        <span class="count" id="holds-count">0</span>
-      </div>
-      <table id="holds">
-        <thead><tr>
-          <th>Külaline</th><th>Teenus</th><th>Hind</th><th>Aegub</th><th>Olek</th><th></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="empty" id="holds-empty" aria-live="polite" hidden>Pole ootel hoidusid.</p>
+  <section class="next-hold" id="next-hold" aria-label="Järgmine aeguv hoius" hidden>
+    <div class="next-copy"><span class="next-label">Järgmine aeguv hoius</span><h2 class="next-guest" id="next-guest"></h2><p class="next-service" id="next-service"></p></div>
+    <div class="countdown" aria-live="polite"><strong id="next-countdown">—</strong><span id="next-guidance">Aegumiseni</span></div>
+    <div class="next-actions" id="next-actions"></div>
+  </section>
+
+  <div class="workspace">
+    <section class="work-panel" aria-labelledby="holds-title">
+      <div class="panel-head"><h2 id="holds-title">Hoidude järjekord</h2><span class="count" id="holds-count" role="status" aria-live="polite">0</span></div>
+      <table id="holds"><caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Aegumise järjekorras olevad hoiud</caption><thead><tr><th scope="col">Külaline</th><th scope="col">Teenus</th><th scope="col">Hind</th><th scope="col">Aegub</th><th scope="col">Olek</th><th scope="col">Tegevus</th></tr></thead><tbody></tbody></table>
+      <p class="empty" id="holds-empty" aria-live="polite" hidden>Ootel hoidusid pole. Uus kõnehoius ilmub siia automaatselt.</p>
     </section>
 
-    <section class="panel" aria-label="Kõned">
-      <div class="panel-head">
-        <h2>Kõned</h2>
-        <span class="count" id="calls-count">0</span>
-      </div>
-      <table id="calls">
-        <thead><tr><th>Aeg</th><th>Keel</th><th>Kokkuvõte</th><th>Tulemus</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="empty" id="calls-empty" aria-live="polite" hidden>Kõnesid veel pole.</p>
+    <section class="work-panel" aria-labelledby="calls-title">
+      <div class="panel-head"><h2 id="calls-title">Telefonipäevik</h2><span class="count" id="calls-count" role="status" aria-live="polite">0</span></div>
+      <ol class="call-journal" id="calls"></ol>
+      <p class="empty" id="calls-empty" aria-live="polite" hidden>Kõnesid pole. Esimene kõne ilmub siia automaatselt.</p>
     </section>
   </div>
 
-  <details class="config panel" aria-label="Seadistus">
-    <summary>Seadistus</summary>
-    <pre id="config"></pre>
-  </details>
-
-  <footer>Voicebot · EE hotellid &amp; spaad · andmed uuenevad iga 30 s järel</footer>
-</div>
+  <details class="debug" id="debug-config"><summary>Tehniline seadistus</summary><pre id="config"></pre></details>
+  <footer>Hoiud aeguvad automaatselt · loend uueneb jooksvalt, nimekiri iga 30 s</footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
+const state = {holds: [], calls: [], metrics: {}, demo: true, commandsReady: false};
+const metricLabels = {
+  resolution_rate: "Lahendatud",
+  ttfb_p50_ms: "Kõne algus p50",
+  ttfb_p95_ms: "Kõne algus p95",
+  quote_fidelity: "Hinna täpsus",
+  handoff_rate: "Suunamised"
+};
+window.IS_DEMO = true;
+
+const saved = sessionStorage.getItem("voicebot.operatorToken");
+if (saved) $("token").value = saved;
+$("token").addEventListener("input", () => sessionStorage.setItem("voicebot.operatorToken", $("token").value));
+$("show-token").addEventListener("click", () => {
+  const visible = $("token").type === "text";
+  $("token").type = visible ? "password" : "text";
+  $("show-token").textContent = visible ? "Näita" : "Peida";
+  $("show-token").setAttribute("aria-label", visible ? "Näita tunnust" : "Peida tunnus");
+});
+
 const auth = () => {
-  const t = $("token").value.trim();
-  return t ? {"Authorization": "Bearer " + t} : {};
+  const token = $("token").value.trim();
+  return token ? {Authorization: "Bearer " + token} : {};
 };
 async function api(path, opts = {}) {
-  const r = await fetch(path, {...opts, headers: {...auth()}});
-  if (!r.ok) { const t = await r.text(); throw new Error(r.status + " " + t); }
-  return r.json();
+  const method = String(opts.method || "GET").toUpperCase();
+  // Current GET routes are deliberately public/read-only; credentials attach
+  // only to paid/mutating POST routes.
+  const headers = method === "GET" ? {} : auth();
+  const response = await fetch(path, {...opts, headers});
+  if (!response.ok) {
+    const err = new Error(response.status === 403 ? "Tunnus puudub või on vale." : response.status === 410 ? "Hoid on aegunud. Uuenda järjekorda." : "Toiming ebaõnnestus.");
+    err.status = response.status;
+    throw err;
+  }
+  return response.json();
 }
-function fmtExpiry(s) {
-  const n = Number(s) || 0;
-  if (n <= 0) return {text: "aegunud", urgent: true};
-  const m = Math.floor(n / 60);
-  const text = m > 0 ? m + " min " + (n % 60) + " s" : n + " s";
-  return {text, urgent: n < 120};
+function toast(message) {
+  $("toast").textContent = message;
+  $("toast").hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { $("toast").hidden = true; }, 4200);
 }
-function initials(name) {
-  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "?";
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+function secondsText(seconds) {
+  const n = Math.max(0, Number(seconds) || 0);
+  if (n === 0) return "aegunud";
+  const minutes = Math.floor(n / 60);
+  return minutes ? `${minutes} min ${n % 60} s` : `${n} s`;
 }
-function chip(text, cls) {
+function relativeTime(raw) {
+  const date = new Date(String(raw || "").replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return String(raw || "");
+  const minutes = Math.round((date.getTime() - Date.now()) / 60000);
+  const formatter = new Intl.RelativeTimeFormat("et", {numeric: "auto"});
+  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
+  return formatter.format(Math.round(hours / 24), "day");
+}
+function badge(text, type = "") {
   const span = document.createElement("span");
-  span.className = "chip" + (cls ? " " + cls : "");
-  span.textContent = text;
+  span.className = "badge" + (type ? " " + type : "");
+  span.textContent = text ?? "";
   return span;
 }
-function statusChip(status) {
-  const known = ["pending", "confirmed", "cancelled"];
-  return chip(status, known.includes(status) ? status : "");
+function createAction(id, action, label, className = "") {
+  const button = document.createElement("button");
+  button.className = "button " + className;
+  button.type = "button";
+  button.textContent = label;
+  button.dataset.id = String(id || "");
+  button.dataset.act = action;
+  if (!state.commandsReady) {
+    button.setAttribute("aria-disabled", "true");
+    button.disabled = true;
+    button.title = "Varirežiim — PMS-i ei kirjutata";
+  }
+  return button;
 }
-function relTime(iso) {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return String(iso ?? "");
-  const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (mins < 1) return "hetk tagasi";
-  if (mins < 60) return mins + " min tagasi";
-  const h = Math.floor(mins / 60);
-  if (h < 24) return h + " h tagasi";
-  return Math.floor(h / 24) + " p tagasi";
+function renderSummary() {
+  const metrics = {...state.metrics};
+  const pending = state.holds.filter(h => h.status === "pending").length;
+  const urgent = state.holds.filter(h => h.status === "pending" && Number(h.expires_in_s) < 60).length;
+  const fidelity = String(metrics.quote_fidelity ?? "—").match(/\d+%/)?.[0] ?? "—";
+  const items = [
+    ["Ootel", pending], ["Aegub kohe", urgent], ["Kõnesid", state.calls.length],
+    [metricLabels.quote_fidelity, fidelity]
+  ];
+  const root = $("metrics");
+  root.replaceChildren();
+  for (const [label, value] of items) {
+    const item = document.createElement("div"); item.className = "shift-stat";
+    const l = document.createElement("span"); l.textContent = label;
+    const v = document.createElement("b"); v.textContent = String(value);
+    item.append(l, v); root.appendChild(item);
+  }
 }
-async function loadHolds() {
-  const {holds} = await api("/api/holds");
-  const tbody = document.querySelector("#holds tbody");
-  tbody.innerHTML = "";
+function sortedHolds() {
+  return [...state.holds].sort((a, b) => Number(a.expires_in_s) - Number(b.expires_in_s));
+}
+function renderHero() {
+  const hold = sortedHolds().find(h => h.status === "pending");
+  $("next-hold").hidden = !hold;
+  if (!hold) return;
+  $("next-hold").dataset.expiry = String(Date.now() + Number(hold.expires_in_s || 0) * 1000);
+  $("next-hold").dataset.urgent = Number(hold.expires_in_s) < 60 ? "true" : "false";
+  $("next-guest").textContent = hold.guest ?? "Külaline";
+  $("next-service").textContent = hold.service ?? "Teenus täpsustamata";
+  $("next-actions").replaceChildren(createAction(hold.hold_id, "confirm", "Kinnita hoius", "primary"), createAction(hold.hold_id, "cancel", "Loobu", "quiet-danger"));
+}
+function renderHolds() {
+  const holds = sortedHolds();
+  $("holds-count").textContent = String(holds.length);
   $("holds-empty").hidden = holds.length > 0;
-  $("holds-count").textContent = holds.length;
-  for (const h of holds) {
-    const tr = document.createElement("tr");
-    if (h.source === "demo") tr.classList.add("demo");
-    const id = String(h.hold_id ?? "");
-    const isDemo = h.source === "demo";
-
-    const guestTd = document.createElement("td");
-    const guest = document.createElement("div");
-    guest.className = "guest";
-    const av = document.createElement("div");
-    av.className = "avatar";
-    av.setAttribute("aria-hidden", "true");
-    av.textContent = initials(h.guest);
-    const who = document.createElement("div");
-    const name = document.createElement("b");
-    name.textContent = h.guest ?? "";  // textContent only: hostile content inert
-    who.appendChild(name);
-    if (isDemo) {
-      const sub = document.createElement("small");
-      sub.textContent = "demo";
-      who.appendChild(sub);
-    }
-    guest.appendChild(av);
-    guest.appendChild(who);
-    guestTd.appendChild(guest);
-    tr.appendChild(guestTd);
-
-    const svc = document.createElement("td");
-    svc.textContent = h.service ?? "—";
-    tr.appendChild(svc);
-
-    const price = document.createElement("td");
-    price.className = "num";
-    price.textContent = h.quoted_total ?? "—";
-    tr.appendChild(price);
-
-    const exp = document.createElement("td");
-    exp.className = "num";
-    const {text, urgent} = fmtExpiry(h.expires_in_s);
-    exp.appendChild(chip(text, urgent ? "urgent" : ""));
-    tr.appendChild(exp);
-
-    const st = document.createElement("td");
-    st.appendChild(statusChip(h.status ?? ""));
-    tr.appendChild(st);
-
-    const act = document.createElement("td");
-    act.className = "actions";
-    if (h.status === "pending") {
-      for (const [what, cls, txt] of [["confirm", "primary", "Kinnita"], ["cancel", "danger", "Tühista"]]) {
-        const b = document.createElement("button");
-        b.textContent = txt;
-        b.className = cls;
-        b.setAttribute("aria-label", txt + ": " + (h.guest ?? ""));
-        b.dataset.id = id;  // raw ID in dataset, no JS-string interpolation
-        b.dataset.act = what;
-        if (window.IS_DEMO) {
-          // Demo holds are sticky notes: no PMS writes behind them.
-          b.disabled = true;
-          b.title = "DEMO režiim — nupp ei kirjuta PMS-i";
-        }
-        act.appendChild(b);
-      }
-    }
-    tr.appendChild(act);
-    tbody.appendChild(tr);
+  const tbody = document.querySelector("#holds tbody");
+  tbody.replaceChildren();
+  for (const hold of holds) {
+    const row = document.createElement("tr");
+    if (hold.source === "demo") row.classList.add("demo");
+    const cells = [
+      ["Külaline", hold.guest ?? "", "guest"], ["Teenus", hold.service ?? "—"],
+      ["Hind", hold.quoted_total ?? "—", "num"], ["Aegub", secondsText(hold.expires_in_s), "num"],
+      ["Olek", hold.status ?? ""]
+    ];
+    cells.forEach(([label, value, cls], index) => {
+      const td = document.createElement("td"); td.dataset.label = label; if (cls) td.className = cls;
+      if (index === 0) { const name = document.createElement("span"); name.className = "guest-name"; name.textContent = value; td.appendChild(name); if (hold.source === "demo") { const demo = document.createElement("span"); demo.className = "sub"; demo.textContent = "Demo — PMS-i ei kirjutata"; td.appendChild(demo); } }
+      else if (index === 4) td.appendChild(badge(value, ["pending","confirmed","cancelled"].includes(value) ? value : ""));
+      else if (index === 3) td.appendChild(badge(value, Number(hold.expires_in_s) < 60 ? "urgent" : ""));
+      else td.textContent = value;
+      row.appendChild(td);
+    });
+    const actions = document.createElement("td"); actions.className = "actions"; actions.dataset.label = "Tegevus";
+    if (hold.status === "pending") actions.append(createAction(hold.hold_id, "confirm", "Kinnita", "primary"), createAction(hold.hold_id, "cancel", "Loobu", "quiet-danger"));
+    row.appendChild(actions); tbody.appendChild(row);
   }
+  renderHero(); renderSummary();
 }
-document.querySelector("#holds tbody").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-id]");
-  if (b) decide(b.dataset.id, b.dataset.act);
-});
-async function decide(id, what) {
-  if (what !== "confirm" && what !== "cancel") return;
-  try { await api(`/api/holds/${encodeURIComponent(id)}/${encodeURIComponent(what)}`, {method: "POST"}); }
-  catch (e) { alert("Viga: " + e.message); }
-  await loadHolds();
-}
-async function resetDemo() {
-  try { await api("/api/reset", {method: "POST"}); } catch (e) { alert("Viga: " + e.message); }
-  await Promise.all([loadHolds(), loadCalls(), loadMeta(), loadStatus()]).catch(() => {});
-}
-async function loadCalls() {
-  const {calls} = await api("/api/calls");
-  const tbody = document.querySelector("#calls tbody");
-  tbody.innerHTML = "";
-  $("calls-empty").hidden = calls.length > 0;
-  $("calls-count").textContent = calls.length;
-  for (const c of calls) {
-    const tr = document.createElement("tr");
-    if (c.source === "demo") tr.classList.add("demo");
-    const at = document.createElement("td");
-    at.className = "num";
-    at.textContent = relTime(c.at);
-    at.title = c.at;
-    tr.appendChild(at);
-    const lang = document.createElement("td");
-    lang.appendChild(chip(String(c.lang || "").toUpperCase(), "lang"));
-    tr.appendChild(lang);
-    const sum = document.createElement("td");
-    sum.textContent = c.summary ?? "";
-    tr.appendChild(sum);
-    const out = document.createElement("td");
-    out.appendChild(chip(c.outcome ?? "", ""));
-    tr.appendChild(out);
-    tbody.appendChild(tr);
+function renderCalls() {
+  $("calls-count").textContent = String(state.calls.length);
+  $("calls-empty").hidden = state.calls.length > 0;
+  const root = $("calls"); root.replaceChildren();
+  for (const call of state.calls) {
+    const item = document.createElement("li"); item.className = "call-item";
+    const time = document.createElement("time"); time.className = "call-time"; time.textContent = relativeTime(call.at); time.title = call.at ?? "";
+    const body = document.createElement("div"); const summary = document.createElement("p"); summary.className = "call-summary"; summary.textContent = call.summary ?? "";
+    const meta = document.createElement("div"); meta.className = "call-meta"; meta.append(badge(String(call.lang || "").toUpperCase()), badge(call.outcome ?? "")); if (call.source === "demo") meta.append(badge("demo", "pending"));
+    body.append(summary, meta); item.append(time, body); root.appendChild(item);
   }
+  renderSummary();
 }
-async function loadMeta() {
-  try {
-    const {metrics} = await api("/api/metrics");
-    const box = $("metrics");
-    box.innerHTML = "";
-    for (const [k, v] of Object.entries(metrics)) {
-      const div = document.createElement("div");
-      div.className = "kpi";
-      const label = document.createElement("span");
-      label.textContent = k;
-      const val = document.createElement("b");
-      val.textContent = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v);
-      div.appendChild(label);
-      div.appendChild(val);
-      box.appendChild(div);
-    }
-  } catch (_) { /* metrics optional; config still loads */ }
-  try {
-    const {config} = await api("/api/config");
-    $("config").textContent = JSON.stringify(config, null, 2);
-  } catch (_) { /* config optional */ }
+async function loadHolds() { const data = await api("/api/holds"); state.holds = data.holds || []; renderHolds(); }
+async function loadCalls() { const data = await api("/api/calls"); state.calls = data.calls || []; renderCalls(); }
+async function loadMeta() { try { const data = await api("/api/metrics"); state.metrics = data.metrics || {}; renderSummary(); } catch (_) {} if (new URLSearchParams(location.search).get("debug") === "1") { try { const data = await api("/api/config"); $("config").textContent = JSON.stringify(data.config || {}, null, 2); $("debug-config").classList.add("visible"); } catch (_) {} } }
+function renderState(element, label, className) {
+  const dot = document.createElement("span");
+  dot.className = "state-dot";
+  dot.setAttribute("aria-hidden", "true");
+  element.className = "state " + className;
+  element.replaceChildren(dot, document.createTextNode(label));
 }
 async function loadStatus() {
-  // Independent of metrics/config: badge must refresh even if they fail.
-  // Server-driven: demo flag decides the banner + button state.
   try {
     const status = await api("/api/status");
-    const wired = status.wired || {};
-    const dot = $("livekit");
-    const on = !!wired.livekit;
-    dot.textContent = on ? "● livekit" : "○ livekit";
-    dot.className = "pill " + (on ? "on" : "off");
-    const demo = !!status.demo;
-    const mode = $("mode");
-    mode.textContent = demo ? "DEMO" : "LIVE";
-    mode.className = "pill " + (demo ? "off" : "on");
+    const capabilities = status.capabilities || {};
+    state.demo = capabilities.serving_demo_data === undefined
+      ? !!status.demo : !!capabilities.serving_demo_data;
+    state.commandsReady = !!capabilities.operator_hold_commands_ready;
+    window.IS_DEMO = state.demo;
+    const livekit = !!(status.wired && status.wired.livekit);
+    renderState($("livekit"), livekit ? "LiveKit ühendatud" : "LiveKit ühendamata", livekit ? "on" : "");
+    const modeLabel = state.commandsReady ? "Live" : (state.demo ? "Demo" : "Varirežiim");
+    renderState($("mode"), modeLabel, state.commandsReady ? "live" : "demo");
     const banner = $("demo-banner");
-    banner.hidden = !demo;
-    window.IS_DEMO = demo;
-  } catch (_) { /* status optional on old builds */ }
+    banner.hidden = state.commandsReady;
+    const strong = document.createElement("strong");
+    strong.textContent = state.demo ? "Demo" : "Varirežiim";
+    banner.replaceChildren(
+      strong,
+      document.createTextNode(" — PMS-i ei kirjutata. Proovi järjekorda turvaliselt.")
+    );
+    renderHolds();
+  } catch (_) { /* status remains fail-closed demo */ }
 }
-window.IS_DEMO = true;  // fail closed until /api/status says LIVE
-loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));
-loadCalls().catch(() => {});
-loadMeta().catch(() => {});
-loadStatus().catch(() => {});
-setInterval(() => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadMeta().catch(() => {}); loadStatus().catch(() => {}); }, 30000);
-$("refresh").addEventListener("click", () => { loadHolds().catch(() => {}); loadCalls().catch(() => {}); loadStatus().catch(() => {}); });
-$("reset").addEventListener("click", resetDemo);
+async function refreshAll(showErrors = false) {
+  const results = await Promise.allSettled([loadStatus(), loadHolds(), loadCalls(), loadMeta()]);
+  if (showErrors && results[1].status === "rejected") {
+    toast("Järjekorda ei õnnestunud laadida. Proovi uuesti.");
+  }
+}
+async function decide(id, action) { if (!["confirm","cancel"].includes(action)) return; if (!state.commandsReady) { toast("Varirežiim — PMS-i ei kirjutata."); return; } if (action === "cancel" && !confirm("Loobud sellest hoiusest?")) return; try { await api(`/api/holds/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {method:"POST"}); await loadHolds(); } catch (error) { toast(error.message); } }
+function tickCountdown() { const hero = $("next-hold"); if (hero.hidden || !hero.dataset.expiry) return; const seconds = Math.max(0, Math.round((Number(hero.dataset.expiry) - Date.now()) / 1000)); $("next-countdown").textContent = secondsText(seconds); hero.dataset.urgent = seconds < 60 ? "true" : "false"; $("next-guidance").textContent = seconds ? "Aegumiseni — kinnita või helista tagasi" : "Hoid on aegunud"; }
+
+document.querySelector("#holds tbody").addEventListener("click", e => { const button = e.target.closest("button[data-id]"); if (button) decide(button.dataset.id, button.dataset.act); });
+$("next-actions").addEventListener("click", e => { const button = e.target.closest("button[data-id]"); if (button) decide(button.dataset.id, button.dataset.act); });
+$("refresh").addEventListener("click", refreshAll);
+$("reset").addEventListener("click", async () => { if (!confirm("Lähtestad demoandmed?")) return; try { await api("/api/reset", {method:"POST"}); await refreshAll(); } catch (error) { toast(error.message); } });
+window.IS_DEMO = true;
+refreshAll(true);
+setInterval(refreshAll, 30000);
+setInterval(tickCountdown, 1000);
 </script>
 </body>
 </html>

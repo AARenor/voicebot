@@ -136,8 +136,14 @@ BOOKING_TOOLS = [
 
 
 def _require_slot(adapter) -> SlotAdapter:
-    if adapter is None:
-        raise ProviderError("tools: no slot adapter configured")
+    if adapter is None or not getattr(adapter, "operational", False):
+        raise ProviderError("tools: slot booking not configured")
+    return adapter
+
+
+def _require_stay(adapter) -> StayAdapter:
+    if adapter is None or not getattr(adapter, "operational", False):
+        raise ProviderError("tools: stay booking not configured")
     return adapter
 
 
@@ -236,6 +242,21 @@ class Dispatcher:
         self._slot: SlotAdapter | None = slot
         self._faq = faq  # callable(question) -> passages
 
+    def available_tools(self) -> list[dict]:
+        """Advertise only workflows that can actually execute.
+
+        Configured PMS stubs remain status-visible but never tempt the LLM
+        into NotImplementedError paths. FAQ is independent of PMS readiness.
+        """
+        tools = []
+        if self._faq is not None:
+            tools.append(TOOL_FAQ)
+        if self._stay is not None and getattr(self._stay, "operational", False):
+            tools.extend((TOOL_SEARCH, TOOL_HOLD, TOOL_CONFIRM))
+        if self._slot is not None and getattr(self._slot, "operational", False):
+            tools.extend((TOOL_SEARCH_SLOTS, TOOL_HOLD_SLOT, TOOL_CONFIRM_SLOT))
+        return tools
+
     async def dispatch(self, name: str, args: dict) -> dict:
         if isinstance(args, str):
             # Real LLM wire shape sends arguments as a JSON string.
@@ -246,26 +267,24 @@ class Dispatcher:
         if not isinstance(args, dict):
             raise ProviderError("tools: args must be an object")
         if name == "search_availability":
-            if self._stay is None:
-                raise ProviderError("tools: no stay adapter configured")
+            stay = _require_stay(self._stay)
             checkin = _require_date(args, "checkin")
             checkout = _require_date(args, "checkout")
             if checkout <= checkin:
                 raise ProviderError("tools: checkout must be after checkin")
             offers = await _guarded(
                 "search_failed",
-                self._stay.search_availability,
+                stay.search_availability,
                 checkin,
                 checkout,
                 {"adults": _coerce_adults(args), "service": args.get("service", "")},
             )
             return {"offers": offers}
         if name == "hold_offer":
-            if self._stay is None:
-                raise ProviderError("tools: no stay adapter configured")
+            stay = _require_stay(self._stay)
             quote_id = _require_str(args, "price_quote_id")
             try:
-                hold = await self._stay.create_hold(quote_id)
+                hold = await stay.create_hold(quote_id)
             except (UnknownQuoteError, ProviderError):
                 raise ProviderError("tools: hold_invalid") from None
             return {
@@ -274,12 +293,11 @@ class Dispatcher:
                 "currency": hold.currency,
             }
         if name == "confirm_booking":
-            if self._stay is None:
-                raise ProviderError("tools: no stay adapter configured")
+            stay = _require_stay(self._stay)
             guest = _require_guest(args)
             return await _guarded(
                 "confirm_failed",
-                self._stay.confirm,
+                stay.confirm,
                 _require_str(args, "hold_id"),
                 guest,
                 _idempotency_key(args),

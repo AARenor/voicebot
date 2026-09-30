@@ -76,6 +76,29 @@ class TestDashboard(unittest.TestCase):
         metrics = self.client.get("/api/metrics").json()["metrics"]
         self.assertIn("quote_fidelity", metrics)
 
+    def test_status_exposes_truthful_capabilities(self):
+        body = self.client.get("/api/status").json()
+        capabilities = body["capabilities"]
+        self.assertFalse(capabilities["operator_hold_commands_ready"])
+        self.assertTrue(capabilities["serving_demo_data"])
+        self.assertFalse(capabilities["text_turn_ready"])
+        self.assertFalse(capabilities["audio_turn_ready"])
+
+    def test_live_without_command_service_fails_closed(self):
+        from app.dashboard import api as dashboard_api
+
+        headers = {"Authorization": "Bearer test-token"}
+        before = demo.STORE["holds"][0]["status"]
+        dashboard_api.configure_mode(demo=False, commands_ready=False)
+        try:
+            response = self.client.post(
+                "/api/holds/hold_demo_sea12/confirm", headers=headers
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(demo.STORE["holds"][0]["status"], before)
+        finally:
+            dashboard_api.configure_mode(demo=True, commands_ready=False)
+
     def test_hostile_hold_id_renders_inert(self):
         # P1-1 regression: a hold_id carrying quotes/brackets must come back
         # byte-identical via JSON (no HTML/JS interpretation server-side);

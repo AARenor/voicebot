@@ -77,6 +77,16 @@ class TestSeededFaq(unittest.TestCase):
         self.assertTrue(out["passages"])
         self.assertIn("9.00", out["passages"][0]["text"])
 
+    def test_faq_connection_safe_across_threads(self):
+        import concurrent.futures
+
+        def query(_):
+            return retrieve(self.db, "spa", lang="et")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(query, range(20)))
+        self.assertTrue(all(result for result in results))
+
 
 class TestUiBadge(unittest.TestCase):
     def test_status_badge_and_refresh_present(self):

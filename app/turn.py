@@ -17,7 +17,6 @@ import asyncio
 import json
 import re
 
-from .booking.tools import BOOKING_TOOLS
 from .providers.errors import (
     ProviderError,
     RateLimitedError,
@@ -218,8 +217,9 @@ async def _run_dialogue(
 ) -> dict:
     """Core turn after audio/text are validated (may raise)."""
     messages = messages
+    available_tools = dispatcher.available_tools()
     answer, fallback_used = await asyncio.to_thread(
-        _sync_chat, llm_primary, llm_secondary, messages, BOOKING_TOOLS
+        _sync_chat, llm_primary, llm_secondary, messages, available_tools
     )
 
     tool_results = []
@@ -261,7 +261,7 @@ async def _run_dialogue(
         messages = messages + [assistant_msg] + tool_msgs
         # Follow-up keeps tools: one-shot chains (search → hold) work.
         answer, fallback_round = await asyncio.to_thread(
-            _sync_chat, llm_primary, llm_secondary, messages, BOOKING_TOOLS
+            _sync_chat, llm_primary, llm_secondary, messages, available_tools
         )
         fallback_used = fallback_used or fallback_round
     reply = (answer.get("content") or "").strip()

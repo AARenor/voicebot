@@ -10,15 +10,19 @@ All queries parameterized — no string-interpolated SQL anywhere.
 from __future__ import annotations
 
 import sqlite3
+import threading
+
+_LOCK = threading.RLock()
 
 
 def open_db(path: str = ":memory:") -> sqlite3.Connection:
-    db = sqlite3.connect(path)
-    db.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS faq USING fts5"
-        "(doc_id UNINDEXED, title, text, lang UNINDEXED)"
-    )
-    db.commit()
+    db = sqlite3.connect(path, check_same_thread=False)
+    with _LOCK:
+        db.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS faq USING fts5"
+            "(doc_id UNINDEXED, title, text, lang UNINDEXED)"
+        )
+        db.commit()
     return db
 
 
@@ -40,10 +44,11 @@ def ingest(db: sqlite3.Connection, documents: list[dict]) -> int:
                 document.get("lang", "et"),
             )
         )
-    db.executemany(
-        "INSERT INTO faq (doc_id, title, text, lang) VALUES (?, ?, ?, ?)", rows
-    )
-    db.commit()
+    with _LOCK:
+        db.executemany(
+            "INSERT INTO faq (doc_id, title, text, lang) VALUES (?, ?, ?, ?)", rows
+        )
+        db.commit()
     return len(rows)
 
 
@@ -75,13 +80,14 @@ def retrieve(
     if not phrase:
         return []
     try:
-        cursor = db.execute(
-            "SELECT doc_id, title, text FROM faq "
-            "WHERE faq MATCH ? AND lang = ? "
-            "ORDER BY bm25(faq) LIMIT ?",
-            (phrase, lang, limit),
-        )
-        rows = cursor.fetchall()
+        with _LOCK:
+            cursor = db.execute(
+                "SELECT doc_id, title, text FROM faq "
+                "WHERE faq MATCH ? AND lang = ? "
+                "ORDER BY bm25(faq) LIMIT ?",
+                (phrase, lang, limit),
+            )
+            rows = cursor.fetchall()
     except sqlite3.OperationalError:
         return []
     return [{"doc_id": row[0], "title": row[1], "text": row[2]} for row in rows]

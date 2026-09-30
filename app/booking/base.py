@@ -153,6 +153,8 @@ class HoldLedger:
 class StayAdapter(abc.ABC):
     """Night-inventory PMS (Apaleo, Mews, Cloudbeds, QloApps demo)."""
 
+    operational = False  # stubs stay hidden from LLM tool advertising
+
     @abc.abstractmethod
     async def search_availability(
         self, checkin: str, checkout: str, party: dict
@@ -179,6 +181,8 @@ class StayAdapter(abc.ABC):
 
 class SlotAdapter(abc.ABC):
     """Slot-resource scheduler (Zenoti, Easy!Appointments, Cal, Fresha-staff)."""
+
+    operational = False  # adapters opt in after real API wiring + tests
 
     @abc.abstractmethod
     async def search_slots(

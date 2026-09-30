@@ -55,6 +55,8 @@ def _path_segment(value: str) -> str:
 
 
 class EasyAppointmentsAdapter(SlotAdapter):
+    operational = True
+
     def __init__(
         self,
         base_url: str,

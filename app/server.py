@@ -34,6 +34,7 @@ def build_stack() -> dict:
         "stay": None,
         "slot": None,
         "livekit": None,
+        "faq_db": None,
     }
     if os.environ.get("GROQ_API_KEY"):
         stack["stt"] = GroqClient(os.environ["GROQ_API_KEY"])
@@ -93,6 +94,7 @@ def build_stack() -> dict:
 
     faq_db = open_db()
     seed_faq(faq_db)
+    stack["faq_db"] = faq_db
     stack["dispatcher"] = Dispatcher(
         stay=stack["stay"],
         slot=stack["slot"],
@@ -132,9 +134,35 @@ def create_app():
                     await result
             except Exception:
                 pass
+        try:
+            stack["faq_db"].close()
+        except Exception:
+            pass
 
     app = FastAPI(title="voicebot-et", lifespan=lifespan)
     app.state.stack = stack
+    advertised = {
+        tool["function"]["name"] for tool in stack["dispatcher"].available_tools()
+    }
+    capabilities = {
+        "text_turn_ready": stack["llm_primary"] is not None
+        and stack["tts"] is not None,
+        "audio_turn_ready": stack["stt"] is not None
+        and stack["llm_primary"] is not None
+        and stack["tts"] is not None,
+        "stay_booking_ready": "search_availability" in advertised,
+        "slot_booking_ready": "search_slots" in advertised,
+        # Dashboard queue is still explicit demo state; never claim a PMS write.
+        "operator_hold_commands_ready": False,
+        "serving_demo_data": True,
+    }
+    # Injection point for Phase 2: a real operator command service flips
+    # operator_hold_commands_ready and serving_demo_data together.
+    app.state.capabilities = capabilities
+    dashboard_api.configure_mode(
+        demo=stack["demo"],
+        commands_ready=capabilities["operator_hold_commands_ready"],
+    )
     if app.state.stack["demo"]:
         # Demo mode only: seed sample calls so the UI is alive before
         # the first real call. Production file DBs are never seeded.
@@ -163,10 +191,11 @@ def create_app():
                 )
             },
             "demo": stack["demo"],
+            "capabilities": app.state.capabilities,
         }
 
     @app.post("/api/turn")
-    def voice_turn(
+    async def voice_turn(
         body: dict, authorization: str | None = Header(default=None)
     ) -> dict:
         """Full voice turn over HTTP (Phase 1 voice path, demo-gated).
@@ -213,17 +242,15 @@ def create_app():
         if stack["llm_primary"] is None or stack["tts"] is None:
             raise HTTPException(503, "voice stack not configured (demo mode)")
         stt = stack["stt"] if audio_b64 else None
-        result = _run_async(
-            run_turn(
-                audio,
-                stt,
-                stack["llm_primary"],
-                stack["tts"],
-                stack["dispatcher"],
-                llm_secondary=stack["llm_secondary"],
-                language=language,
-                text=text if not audio_b64 else None,
-            )
+        result = await run_turn(
+            audio,
+            stt,
+            stack["llm_primary"],
+            stack["tts"],
+            stack["dispatcher"],
+            llm_secondary=stack["llm_secondary"],
+            language=language,
+            text=text if not audio_b64 else None,
         )
         response = {
             "text_heard": result["text_heard"],
@@ -260,22 +287,6 @@ def create_app():
     static_dir = os.path.join(os.path.dirname(__file__), "dashboard", "static")
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
     return app
-
-
-def _run_async(coro):
-    """Run one coroutine synchronously (voice turn inside sync route)."""
-    import asyncio
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None:
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return asyncio.run(coro)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,8 @@ def run(coro):
 
 
 class FakeStay(StayAdapter):
+    operational = True
+
     def __init__(self):
         self._holds = HoldLedger()
         self._offers = {
@@ -422,6 +424,40 @@ class TestValidation(unittest.TestCase):
         out = run(Dispatcher(faq=faq).dispatch("answer_faq", {"question": "x" * 600}))
         self.assertEqual(out["passages"], [{"t": "policy"}])
         self.assertEqual(len(seen[0]), 500)
+
+    def test_advertised_tools_match_operational_adapters(self):
+        faq_only = Dispatcher(faq=lambda q: [])
+        self.assertEqual(
+            [t["function"]["name"] for t in faq_only.available_tools()],
+            ["answer_faq"],
+        )
+        stay = Dispatcher(stay=FakeStay())
+        stay_names = {t["function"]["name"] for t in stay.available_tools()}
+        self.assertEqual(
+            stay_names,
+            {"search_availability", "hold_offer", "confirm_booking"},
+        )
+
+        from app.booking.apaleo import ApaleoAdapter
+
+        stub = Dispatcher(stay=ApaleoAdapter("id", "secret"), faq=lambda q: [])
+        self.assertEqual(
+            [t["function"]["name"] for t in stub.available_tools()],
+            ["answer_faq"],
+        )
+
+    def test_configured_stub_is_not_dispatchable(self):
+        from app.booking.zenoti import ZenotiAdapter
+
+        dispatcher = Dispatcher(slot=ZenotiAdapter("z"))
+        self.assertEqual(dispatcher.available_tools(), [])
+        with self.assertRaises(ProviderError) as context:
+            run(
+                dispatcher.dispatch(
+                    "search_slots", {"service": "6", "date": "2026-10-01"}
+                )
+            )
+        self.assertEqual(str(context.exception), "tools: slot booking not configured")
 
 
 class TestTurnHardening(unittest.TestCase):

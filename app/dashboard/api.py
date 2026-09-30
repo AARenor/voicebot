@@ -19,6 +19,21 @@ try:
 
     router = APIRouter(prefix="/api")
     _LOCK = threading.Lock()  # demo single-worker guard (see COOLIFY notes)
+    _DEMO_MODE = True
+    _COMMANDS_READY = False
+
+    def configure_mode(*, demo: bool, commands_ready: bool) -> None:
+        """Server-owned capability gate for dashboard mutations."""
+        global _DEMO_MODE, _COMMANDS_READY
+        with _LOCK:
+            _DEMO_MODE = bool(demo)
+            _COMMANDS_READY = bool(commands_ready)
+
+    def _require_command_service() -> None:
+        # Demo actions may mutate the explicit demo store. Outside demo, never
+        # imply a PMS write until a real command service is injected.
+        if not _DEMO_MODE and not _COMMANDS_READY:
+            raise HTTPException(503, "operator hold commands not configured")
 
     def _require_operator(authorization: str | None) -> None:
         expected = os.environ.get("OPERATOR_TOKEN", "").strip()
@@ -61,6 +76,7 @@ try:
         hold_id: str, authorization: str | None = Header(default=None)
     ) -> dict:
         _require_operator(authorization)
+        _require_command_service()
         with _LOCK:
             hold = _pending_or_raise(hold_id)
             hold["status"] = "confirmed"
@@ -71,6 +87,7 @@ try:
         hold_id: str, authorization: str | None = Header(default=None)
     ) -> dict:
         _require_operator(authorization)
+        _require_command_service()
         with _LOCK:
             hold = _pending_or_raise(hold_id)
             hold["status"] = "cancelled"
