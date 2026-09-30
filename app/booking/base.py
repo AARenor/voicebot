@@ -44,22 +44,36 @@ class Hold:
 class HoldLedger:
     """Adapter-side TTL reservations. PMS is truth on confirm.
 
-    Single-worker constraint: no lock, no background sweep — unretrieved
-    holds evict lazily on get(). Do not share across processes without
-    adding a lock + sweep. Idempotency: confirm()/cancel() results are
-    recorded per idempotency_key; replays return the recorded envelope
-    without touching the PMS again.
+    Thread-safe: one RLock guards all maps (voice turns fan out over a
+    thread pool). Bounded: idempotency/memo maps evict oldest past
+    5000 entries. Holds evict lazily on get(). Crash/restart still loses
+    in-memory state — post-restart retries MUST reconcile against PMS
+    truth, never blindly re-book. Single process: do not scale past
+    1 replica (see COOLIFY.md).
     """
 
+    _BOUND = 5000
+
     def __init__(self, ttl_seconds: int = 600) -> None:
+        import threading
+
+        self._lock = threading.RLock()
         self._ttl = ttl_seconds
         self._holds: dict[str, Hold] = {}
         self._idempotent: dict[str, dict] = {}
+        self._memo: dict[str, dict] = {}
         self._pending: set[str] = set()  # keys with a PMS call in flight
+
+    def _evict(self) -> None:
+        while len(self._idempotent) > self._BOUND:
+            self._idempotent.pop(next(iter(self._idempotent)))
+        while len(self._memo) > self._BOUND:
+            self._memo.pop(next(iter(self._memo)))
 
     def check_replay(self, idempotency_key: str) -> dict | None:
         """Return recorded result if this key was seen, else None."""
-        return self._idempotent.get(idempotency_key)
+        with self._lock:
+            return self._idempotent.get(idempotency_key)
 
     def reserve(self, idempotency_key: str) -> bool:
         """Mark a PMS call in flight. False = already recorded or running.
@@ -69,15 +83,18 @@ class HoldLedger:
         against PMS truth (list/get before re-POST), never blindly
         re-book. Single-worker demo constraint.
         """
-        if idempotency_key in self._idempotent or idempotency_key in self._pending:
-            return False
-        self._pending.add(idempotency_key)
-        return True
+        with self._lock:
+            if idempotency_key in self._idempotent or idempotency_key in self._pending:
+                return False
+            self._pending.add(idempotency_key)
+            return True
 
     def record(self, idempotency_key: str, result: dict) -> dict:
-        self._pending.discard(idempotency_key)
-        self._idempotent[idempotency_key] = result
-        return result
+        with self._lock:
+            self._pending.discard(idempotency_key)
+            self._idempotent[idempotency_key] = result
+            self._evict()
+            return result
 
     def release_pending(self, idempotency_key: str) -> None:
         """Free a pending key WITHOUT recording (PMS call failed).
@@ -86,7 +103,19 @@ class HoldLedger:
         releases the key — otherwise the first attempt's failure blocks
         all same-key retries forever (poisoned idempotency).
         """
-        self._pending.discard(idempotency_key)
+        with self._lock:
+            self._pending.discard(idempotency_key)
+
+    def memo(self, idempotency_key: str, name: str, value) -> None:
+        """Stash a side value (e.g. created customerId) surviving retries
+        of the same idempotency key — but NOT process restarts."""
+        with self._lock:
+            self._memo.setdefault(idempotency_key, {})[name] = value
+            self._evict()
+
+    def get_memo(self, idempotency_key: str, name: str, default=None):
+        with self._lock:
+            return self._memo.get(idempotency_key, {}).get(name, default)
 
     def create(
         self,
@@ -103,18 +132,22 @@ class HoldLedger:
             expires_at=CLOCK() + self._ttl,
             payload=payload,
         )
-        self._holds[hold.hold_id] = hold
+        with self._lock:
+            self._holds[hold.hold_id] = hold
         return hold
 
     def get(self, hold_id: str) -> Hold | None:
-        hold = self._holds.get(hold_id)
-        if hold is None or hold.expired():
-            self._holds.pop(hold_id, None)
-            return None
-        return hold
+        with self._lock:
+            hold = self._holds.get(hold_id)
+            if hold is None or hold.expired():
+                self._holds.pop(hold_id, None)
+                return None
+            return hold
 
     def release(self, hold_id: str) -> None:
-        self._holds.pop(hold_id, None)
+        """Consume a hold so it cannot reconfirm (call after success)."""
+        with self._lock:
+            self._holds.pop(hold_id, None)
 
 
 class StayAdapter(abc.ABC):
@@ -132,7 +165,13 @@ class StayAdapter(abc.ABC):
 
     @abc.abstractmethod
     async def confirm(self, hold_id: str, guest: dict, idempotency_key: str) -> dict:
-        """Re-price against PMS truth, then book. Reject on price move."""
+        """Re-price against PMS truth, then book. Reject on price move.
+
+        Implementors MUST copy the Easy pattern: reserve(idempotency_key)
+        + reserve(f"confirm:{hold_id}") + try/except release + consume the
+        hold on success + memo side values, or concurrent retries will
+        double-book (see easyappointments.py).
+        """
 
     @abc.abstractmethod
     async def cancel(self, booking_id: str, idempotency_key: str) -> dict: ...

@@ -13,6 +13,7 @@ Source: docs.mews.com/booking-engine-guide/booking-engine-api.md.
 from __future__ import annotations
 
 from .base import Hold, HoldLedger, StayAdapter, UnknownQuoteError
+from ..providers.errors import ProviderError
 
 
 class MewsAdapter(StayAdapter):
@@ -41,9 +42,13 @@ class MewsAdapter(StayAdapter):
             quote = self._quotes[price_quote_id]
         except KeyError:
             raise UnknownQuoteError(price_quote_id) from None
+        try:
+            total = str(quote["total"])
+        except KeyError as exc:
+            raise ProviderError("mews: malformed quote snapshot") from exc
         return self._holds.create(
             price_quote_id=price_quote_id,
-            quoted_total=str(quote["total"]),
+            quoted_total=total,
             currency=str(quote.get("currency", "EUR")),
             payload={"quote": quote},
         )

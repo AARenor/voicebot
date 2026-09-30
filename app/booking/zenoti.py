@@ -27,6 +27,10 @@ class ZenotiAdapter(SlotAdapter):
     async def create_hold(self, slot_id: str) -> Hold:
         # No price on slot holds: confirm must price via PMS, and no price
         # may be uttered without a live pricing call (fidelity guard).
+        if not isinstance(slot_id, str) or not slot_id:
+            from ..providers.errors import ProviderError
+
+            raise ProviderError("zenoti: bad slot_id")
         return self._holds.create(
             price_quote_id=slot_id,
             quoted_total=None,

@@ -1,28 +1,32 @@
 # Voicebot (ET hotel/spa, Pipecat + LiveKit SIP)
 
-Slow high-quality build. See ARCHITECTURE.md (v0.2) for the full plan.
+Slow high-quality build. See ARCHITECTURE.md (v0.3) for the full plan.
 
 ## Layout
 
 ```
 voicebot/
   ARCHITECTURE.md
-  requirements.txt
+  requirements.txt (+ requirements-phase2.txt for Pipecat/media ML)
   .env.example        # copy to .env, never commit .env
   README.md
   app/
-    pipeline.py       # VAD -> STT -> LLM tools -> TTS, per-language routing
-    server.py         # browser WebSocket now, SIP webhook later
+    turn.py           # run_turn: hear -> think (+tools) -> book -> speak
+    pipeline.py       # routing tables + endpointing budget (descriptors)
+    server.py         # FastAPI: dashboard, /api/status, POST /api/turn
+    providers/        # Groq (STT+chat), Gemini (failover), Azure TTS
     booking/
       base.py         # StayAdapter / SlotAdapter ABCs + hold ledger types
-      apaleo.py       # first paid adapter (stub)
+      tools.py        # LLM tool schemas + Dispatcher + price gate
+      apaleo.py       # first paid adapter (stub: wire with PMS creds)
       mews.py         # second (stub)
       cloudbeds.py    # third (stub)
       zenoti.py       # spa parallel (stub)
       qloapps.py      # $0 demo double (stub)
-      easyappointments.py  # $0 demo double (stub)
-    knowledge/        # FAQ ingest + retrieve (stub)
-    dashboard/        # staff holds queue (stub)
+      easyappointments.py  # $0 demo double (REAL REST: avail/appts)
+    knowledge/        # SQLite FTS FAQ ingest + retrieve + ET seed
+    callslog.py       # SQLite turn/call log (masked peers, 30d retention)
+    dashboard/        # staff holds queue (live API) + static UI
 ```
 
 ## Quickstart (Phase 1, $0)

@@ -26,6 +26,10 @@ class QloAppsAdapter(StayAdapter):
 
     async def create_hold(self, price_quote_id: str) -> Hold:
         # $0 demo: no price — never utter one on this track.
+        if not isinstance(price_quote_id, str) or not price_quote_id:
+            from ..providers.errors import ProviderError
+
+            raise ProviderError("qloapps: bad price_quote_id")
         return self._holds.create(
             price_quote_id=price_quote_id,
             quoted_total=None,

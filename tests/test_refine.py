@@ -80,7 +80,15 @@ class TestSeededFaq(unittest.TestCase):
 
 class TestUiBadge(unittest.TestCase):
     def test_status_badge_and_refresh_present(self):
-        html = open("voicebot/app/dashboard/static/index.html").read()
+        from pathlib import Path
+
+        html = (
+            Path(__file__).resolve().parents[1]
+            / "app"
+            / "dashboard"
+            / "static"
+            / "index.html"
+        ).read_text()
         self.assertIn("/api/status", html)
         self.assertIn("setInterval", html)
         self.assertIn("30000", html)
@@ -108,6 +116,7 @@ class TestLogHardening(unittest.TestCase):
         import threading
 
         callslog.reset_default()
+        callslog.seed_demo(callslog.get_default())
         errors = []
 
         def worker(_):

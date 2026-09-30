@@ -8,6 +8,8 @@ carry a price_quote_id — never from embeddings or LLM invention.
 
 from __future__ import annotations
 
+import json
+import re
 import uuid
 
 from .base import SlotAdapter, StayAdapter, UnknownQuoteError
@@ -75,12 +77,87 @@ TOOL_FAQ = {
     },
 }
 
-BOOKING_TOOLS = [TOOL_SEARCH, TOOL_HOLD, TOOL_CONFIRM, TOOL_FAQ]
+TOOL_SEARCH_SLOTS = {
+    "type": "function",
+    "function": {
+        "name": "search_slots",
+        "description": "Search spa treatment time slots.",
+        "parameters": {
+            "type": "object",
+            "required": ["service", "date"],
+            "properties": {
+                "service": {"type": "string"},
+                "date": {"type": "string"},
+                "provider": {"type": "string"},
+            },
+        },
+    },
+}
+
+TOOL_HOLD_SLOT = {
+    "type": "function",
+    "function": {
+        "name": "hold_slot",
+        "description": "Hold one time slot (no charge).",
+        "parameters": {
+            "type": "object",
+            "required": ["slot_id"],
+            "properties": {"slot_id": {"type": "string"}},
+        },
+    },
+}
+
+TOOL_CONFIRM_SLOT = {
+    "type": "function",
+    "function": {
+        "name": "confirm_slot_booking",
+        "description": "Confirm a held slot.",
+        "parameters": {
+            "type": "object",
+            "required": ["hold_id", "guest"],
+            "properties": {
+                "hold_id": {"type": "string"},
+                "guest": {"type": "object"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+}
+
+BOOKING_TOOLS = [
+    TOOL_SEARCH,
+    TOOL_HOLD,
+    TOOL_CONFIRM,
+    TOOL_FAQ,
+    TOOL_SEARCH_SLOTS,
+    TOOL_HOLD_SLOT,
+    TOOL_CONFIRM_SLOT,
+]
 
 
-def _require_str(args: dict, name: str) -> str:
+def _require_slot(adapter) -> SlotAdapter:
+    if adapter is None:
+        raise ProviderError("tools: no slot adapter configured")
+    return adapter
+
+
+async def _guarded(code: str, call, *args):
+    """Run one adapter call; map internals to closed codes.
+
+    PMS internals (HTTP bodies, KeyErrors on snapshot keys) must never
+    reach LLM context or speech — full detail belongs in server logs.
+    """
+    try:
+        return await call(*args)
+    except UnknownQuoteError:
+        raise ProviderError(f"tools: {code}") from None
+    except ProviderError:
+        raise ProviderError(f"tools: {code}") from None
+
+
+def _require_str(args: dict, name: str, cap: int = 256) -> str:
     value = args.get(name)
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value or len(value) > cap:
         raise ProviderError(f"tools: bad arg {name!r}")
     return value
 
@@ -122,8 +199,15 @@ def _require_guest(args: dict) -> dict:
 
 
 def _idempotency_key(args: dict) -> str:
+    import re as _re
+
     key = args.get("idempotency_key")
-    if isinstance(key, str) and key and len(key) <= 128:
+    if (
+        isinstance(key, str)
+        and key
+        and len(key) <= 128
+        and _re.fullmatch(r"[\w][\w\-.]*", key)
+    ):
         return key
     # Never trust the model for exactly-once: mint server-side.
     return "srv_" + uuid.uuid4().hex
@@ -140,7 +224,12 @@ def speak_offer(offer: dict) -> str:
 
 
 class Dispatcher:
-    """Binds tool names to a Stay adapter, a Slot adapter, and FAQ lookup."""
+    """Binds tool names to a Stay adapter, a Slot adapter, and FAQ lookup.
+
+    Tool-error results carry closed codes (hold_invalid, pms_error) so
+    PMS internals never leak into LLM context or speech; full detail
+    belongs in server logs, not transcripts.
+    """
 
     def __init__(self, stay=None, slot=None, faq=None) -> None:
         self._stay: StayAdapter | None = stay
@@ -148,6 +237,12 @@ class Dispatcher:
         self._faq = faq  # callable(question) -> passages
 
     async def dispatch(self, name: str, args: dict) -> dict:
+        if isinstance(args, str):
+            # Real LLM wire shape sends arguments as a JSON string.
+            try:
+                args = json.loads(args)
+            except (ValueError, TypeError) as exc:
+                raise ProviderError(f"tools: bad JSON args: {exc}") from exc
         if not isinstance(args, dict):
             raise ProviderError("tools: args must be an object")
         if name == "search_availability":
@@ -157,7 +252,9 @@ class Dispatcher:
             checkout = _require_date(args, "checkout")
             if checkout <= checkin:
                 raise ProviderError("tools: checkout must be after checkin")
-            offers = await self._stay.search_availability(
+            offers = await _guarded(
+                "search_failed",
+                self._stay.search_availability,
                 checkin,
                 checkout,
                 {"adults": _coerce_adults(args), "service": args.get("service", "")},
@@ -169,8 +266,8 @@ class Dispatcher:
             quote_id = _require_str(args, "price_quote_id")
             try:
                 hold = await self._stay.create_hold(quote_id)
-            except UnknownQuoteError as exc:
-                raise ProviderError(f"tools: unknown price_quote_id: {exc}") from exc
+            except (UnknownQuoteError, ProviderError):
+                raise ProviderError("tools: hold_invalid") from None
             return {
                 "hold_id": hold.hold_id,
                 "quoted_total": hold.quoted_total,
@@ -180,7 +277,40 @@ class Dispatcher:
             if self._stay is None:
                 raise ProviderError("tools: no stay adapter configured")
             guest = _require_guest(args)
-            return await self._stay.confirm(
+            return await _guarded(
+                "confirm_failed",
+                self._stay.confirm,
+                _require_str(args, "hold_id"),
+                guest,
+                _idempotency_key(args),
+            )
+        if name == "search_slots":
+            slot = _require_slot(self._slot)
+            return {
+                "slots": await _guarded(
+                    "search_failed",
+                    slot.search_slots,
+                    _require_str(args, "service"),
+                    _require_str(args, "date"),
+                    args.get("provider")
+                    if isinstance(args.get("provider"), str)
+                    else None,
+                )
+            }
+        if name == "hold_slot":
+            slot = _require_slot(self._slot)
+            slot_id = _require_str(args, "slot_id")
+            try:
+                hold = await slot.create_hold(slot_id)
+            except (UnknownQuoteError, ProviderError):
+                raise ProviderError("tools: hold_invalid") from None
+            return {"hold_id": hold.hold_id}
+        if name == "confirm_slot_booking":
+            slot = _require_slot(self._slot)
+            guest = _require_guest(args)
+            return await _guarded(
+                "confirm_failed",
+                slot.confirm,
                 _require_str(args, "hold_id"),
                 guest,
                 _idempotency_key(args),
@@ -188,6 +318,8 @@ class Dispatcher:
         if name == "answer_faq":
             if self._faq is None:
                 raise ProviderError("tools: no FAQ backend configured")
-            question = _require_str(args, "question")[:500]
-            return {"passages": self._faq(question)}
+            question = args.get("question")
+            if not isinstance(question, str) or not question.strip():
+                raise ProviderError("tools: bad arg 'question'")
+            return {"passages": self._faq(question[:500])}
         raise ProviderError(f"tools: unknown tool {name!r}")

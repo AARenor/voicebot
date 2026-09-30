@@ -525,5 +525,127 @@ class TestGateFormats(unittest.TestCase):
             ingest(db, [{"title": "no ids"}])
 
 
+class TestSlotTrack(unittest.TestCase):
+    def _slot_dispatcher(self, handler):
+        from app.booking.easyappointments import EasyAppointmentsAdapter
+
+        return Dispatcher(
+            slot=EasyAppointmentsAdapter(
+                "https://spa.example", "k", transport=httpx.MockTransport(handler)
+            )
+        )
+
+    def test_slot_round_trip(self):
+        def handler(request):
+            url = str(request.url.path)
+            if url.endswith("/availabilities"):
+                return httpx.Response(200, json=["17:00"])
+            if url.endswith("/customers"):
+                return httpx.Response(201, json={"id": 7})
+            if url.endswith("/services/6"):
+                return httpx.Response(200, json={"id": 6, "duration": 60})
+            if url.endswith("/appointments"):
+                return httpx.Response(201, json={"id": 42})
+            raise AssertionError(f"unexpected {url}")
+
+        dispatcher = self._slot_dispatcher(handler)
+        slots = run(
+            dispatcher.dispatch(
+                "search_slots", {"service": "6", "date": "2026-10-01", "provider": "2"}
+            )
+        )
+        self.assertEqual(len(slots["slots"]), 1)
+        hold = run(
+            dispatcher.dispatch("hold_slot", {"slot_id": slots["slots"][0]["slotId"]})
+        )
+        self.assertIn("hold_", hold["hold_id"])
+        confirmed = run(
+            dispatcher.dispatch(
+                "confirm_slot_booking",
+                {
+                    "hold_id": hold["hold_id"],
+                    "guest": {"firstName": "Mari", "phone": "+372"},
+                },
+            )
+        )
+        self.assertTrue(confirmed["ok"])
+
+    def test_json_string_args_accepted(self):
+        dispatcher = Dispatcher(stay=FakeStay())
+        out = run(
+            dispatcher.dispatch(
+                "search_availability",
+                '{"checkin": "2026-10-12", "checkout": "2026-10-14"}',
+            )
+        )
+        self.assertEqual(len(out["offers"]), 1)
+
+    def test_error_codes_closed(self):
+        dispatcher = Dispatcher(stay=FakeStay())
+        with self.assertRaises(ProviderError) as ctx:
+            run(dispatcher.dispatch("hold_offer", {"price_quote_id": "nope"}))
+        self.assertEqual(str(ctx.exception), "tools: hold_invalid")
+
+
+class TestTtsFailure(unittest.TestCase):
+    def test_tts_500_degrades_with_flag(self):
+        def handler(request):
+            if "issueToken" in str(request.url):
+                return httpx.Response(200, text="t")
+            return httpx.Response(500, text="down")
+
+        tts = AzureTtsClient(
+            "k",
+            "northeurope",
+            "et-EE-AnuNeural",
+            "et-EE",
+            transport=httpx.MockTransport(handler),
+        )
+        llm = scripted_chat([{"content": "Tere!"}])
+        result = run(
+            turn.run_turn(b"RIFF", groq_stt(), llm, tts, Dispatcher(stay=FakeStay()))
+        )
+        self.assertEqual(result["audio"], b"")
+        self.assertTrue(result["tts_failed"])
+        self.assertIn("Tere!", result["reply"])
+
+
+class TestSecondaryRedaction(unittest.TestCase):
+    def test_guest_pii_absent_from_secondary(self):
+        from app.turn import _redact_for_secondary
+
+        messages = [
+            {"role": "user", "content": "Tere, olen Mari Maasikas."},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "function": {
+                            "name": "confirm_booking",
+                            "arguments": {
+                                "guest": {"firstName": "Mari", "phone": "+3725123456"}
+                            },
+                        },
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": '{"ok": true}'},
+        ]
+        redacted = _redact_for_secondary(messages)
+        blob = str(redacted)
+        # Tool-call args and tool output (guest PII carriers) are gone…
+        self.assertNotIn("+3725123456", blob)
+        self.assertNotIn("tool_calls", blob)
+        self.assertNotIn("confirm_booking", blob)
+        # …while user speech itself still reaches the failover brain
+        # (documented trade-off: prose, never tool payloads).
+        self.assertIn(
+            "Tere, olen Mari Maasikas.",
+            str([m for m in redacted if m["role"] == "user"]),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

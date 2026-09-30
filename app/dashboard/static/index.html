@@ -86,8 +86,12 @@
   <header class="top">
     <h1>Voicebot — operaatori töölaud</h1>
     <span class="pill" id="livekit">… livekit</span>
-    <span class="pill">demo</span>
+    <span class="pill" id="mode">…</span>
   </header>
+
+  <div class="panel" id="demo-banner" hidden>
+    DEMO režiim — kinnitused ja tühistamised ei kirjuta PMS-i.
+  </div>
 
   <section class="panel" aria-label="Hoiud">
     <h2>Ootel hoiud</h2>
@@ -176,6 +180,11 @@ async function loadHolds() {
         b.className = cls;
         b.dataset.id = id;  // raw ID in dataset, no JS-string interpolation
         b.dataset.act = what;
+        if (window.IS_DEMO) {
+          // Demo holds are sticky notes: no PMS writes behind them.
+          b.disabled = true;
+          b.title = "DEMO režiim — nupp ei kirjuta PMS-i";
+        }
         act.appendChild(b);
       }
     }
@@ -233,12 +242,21 @@ async function loadMeta() {
 }
 async function loadStatus() {
   // Independent of metrics/config: badge must refresh even if they fail.
+  // Server-driven: demo flag decides the banner + button state.
   try {
-    const {wired} = await api("/api/status");
+    const status = await api("/api/status");
+    const wired = status.wired || {};
     const dot = $("livekit");
-    const on = !!(wired && wired.livekit);
+    const on = !!wired.livekit;
     dot.textContent = on ? "● livekit" : "○ livekit";
     dot.className = "pill " + (on ? "on" : "off");
+    const demo = !!status.demo;
+    const mode = $("mode");
+    mode.textContent = demo ? "DEMO" : "LIVE";
+    mode.className = "pill " + (demo ? "off" : "on");
+    const banner = $("demo-banner");
+    banner.hidden = !demo;
+    window.IS_DEMO = demo;
   } catch (_) { /* status optional on old builds */ }
 }
 loadHolds().catch((e) => alert("Laadimine ebaõnnestus: " + e.message));

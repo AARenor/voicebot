@@ -1,0 +1,10 @@
+# Phase 2 voice/media ML deps (NOT installed in the pilot image).
+# Pinned when first wired: pipecat-ai 1.12.0, livekit, faster-whisper
+# (pulls torch/CUDA — needs GPU sizing first).
+pipecat-ai>=1.3
+livekit>=1.0
+livekit-agents>=1.0
+faster-whisper>=1.0
+groq>=0.9
+redis>=5.0
+pydantic>=2.0

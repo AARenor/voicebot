@@ -3,7 +3,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
-    VOICEBOT_PROD=1
+    VOICEBOT_PROD=1 \
+    CALLS_DB=/data/calls.db
 
 WORKDIR /app
 
@@ -11,7 +12,10 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 10001 voicebot
+    && useradd -m -u 10001 voicebot \
+    && mkdir -p /data && chown voicebot:voicebot /data
+
+VOLUME ["/data"]
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

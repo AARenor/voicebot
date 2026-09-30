@@ -161,9 +161,15 @@ class EasyAppointmentsAdapter(SlotAdapter):
             return {"ok": False, "error": "hold_expired_or_unknown"}
         if not self._holds.reserve(idempotency_key):
             return {"ok": False, "error": "confirm_in_progress"}
+        if not self._holds.reserve(f"confirm:{hold_id}"):
+            self._holds.release_pending(idempotency_key)
+            return {"ok": False, "error": "hold_already_confirming"}
         try:
             slot = hold.payload["slot"]
-            customer_id = await self._ensure_customer(guest)
+            customer_id = self._holds.get_memo(idempotency_key, "customerId")
+            if customer_id is None:
+                customer_id = await self._ensure_customer(guest)
+                self._holds.memo(idempotency_key, "customerId", customer_id)
             minutes = await self._service_duration(str(slot["serviceId"]))
             start = _parse_start(slot["start"])
             body = {
@@ -182,12 +188,15 @@ class EasyAppointmentsAdapter(SlotAdapter):
             raise_for_provider(response, "easy.confirm")
         except Exception:
             self._holds.release_pending(idempotency_key)
+            self._holds.release_pending(f"confirm:{hold_id}")
             raise
         try:
             result = {"ok": True, "booking": response.json()}
         except ValueError as exc:
             self._holds.release_pending(idempotency_key)
+            self._holds.release_pending(f"confirm:{hold_id}")
             raise ProviderError(f"easy.confirm: bad payload: {exc}") from exc
+        self._holds.release(hold_id)  # consumed: no reconfirm with new key
         return self._holds.record(idempotency_key, result)
 
     async def cancel(self, booking_id: str, idempotency_key: str) -> dict:

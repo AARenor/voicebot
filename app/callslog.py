@@ -3,8 +3,10 @@
 Thread-safe (one RLock around all DB access; double-checked singleton
 init). Parameterized writes/reads only. Demo rows carry source='demo'
 and are visually marked; real rows are source='real'. Caller numbers
-are masked at write (PII never persists full). File DBs are created
-0600 with parent dirs made as needed.
+are masked at write (PII never persists full); summaries may still
+carry caller-spoken names — covered by the 30-day retention + DPIA
+wording in ARCHITECTURE.md:51. File DBs are created 0600 with parent
+dirs made as needed.
 """
 
 from __future__ import annotations
@@ -133,6 +135,8 @@ def log_call(
 
 
 def list_calls(db: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    if isinstance(limit, bool):
+        limit = 50
     try:
         limit = max(1, min(int(limit), 200))
     except (TypeError, ValueError):
@@ -158,13 +162,13 @@ def list_calls(db: sqlite3.Connection, limit: int = 50) -> list[dict]:
 
 
 def get_default() -> sqlite3.Connection:
-    """Process-wide log (CALLS_DB path or memory), seeded once."""
+    """Process-wide log (CALLS_DB path or memory). Never seeds: callers
+    seed explicitly (server seeds demo rows only in demo mode)."""
     global _default
     if _default is None:
         with _LOCK:
             if _default is None:
                 _default = open_log(os.environ.get("CALLS_DB", ":memory:"))
-                seed_demo(_default)
     return _default
 
 

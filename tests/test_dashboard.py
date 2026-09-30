@@ -124,6 +124,23 @@ class TestDashboard(unittest.TestCase):
         finally:
             os.environ["OPERATOR_TOKEN"] = "test-token"
 
+    def test_zenoti_survives_livekit_configured(self):
+        # R2 P1-1: slot fallback must not be coupled to the LiveKit branch.
+        from app.server import build_stack
+
+        old = dict(os.environ)
+        try:
+            os.environ["LIVEKIT_URL"] = "http://livekit:7880"
+            os.environ["LIVEKIT_API_KEY"] = "robotkey"
+            os.environ["ZENOTI_API_KEY"] = "z"
+            stack = build_stack()
+            self.assertIsNotNone(stack["livekit"])
+            self.assertIsNotNone(stack["slot"])
+            self.assertEqual(type(stack["slot"]).__name__, "ZenotiAdapter")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
     def test_status_reports_livekit_wiring(self):
         from app.server import build_stack
 
@@ -140,6 +157,43 @@ class TestDashboard(unittest.TestCase):
         finally:
             os.environ.clear()
             os.environ.update(old)
+
+    def test_turn_demo_gated_and_bad_body(self):
+        auth = {"Authorization": "Bearer test-token"}
+        response = self.client.post("/api/turn", json={"text": "Tere!"}, headers=auth)
+        self.assertEqual(response.status_code, 503)
+        response = self.client.post("/api/turn", json={}, headers=auth)
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/turn", json={"text": "Tere!"})
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post("/api/turn", json={"text": "x" * 501}, headers=auth)
+        self.assertEqual(response.status_code, 413)
+
+    def test_turn_text_path_live(self):
+        import base64
+
+        from app.booking.tools import Dispatcher
+
+        class FakeLlm:
+            def chat(self, messages, tools=None):
+                return {"content": "Tere! Kuidas saan aidata?"}
+
+        class FakeTts:
+            def synthesize(self, text):
+                return b"AUDIO:" + text.encode()[:8]
+
+        app = self.client
+        stack = app.app.state.stack
+        stack["llm_primary"] = FakeLlm()
+        stack["tts"] = FakeTts()
+        stack["dispatcher"] = Dispatcher()
+        auth = {"Authorization": "Bearer test-token"}
+        response = self.client.post("/api/turn", json={"text": "Tere!"}, headers=auth)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("Tere!", body["reply"])
+        self.assertTrue(base64.b64decode(body["audio_b64"]))
+        self.assertEqual(body["tools_used"], 0)
 
 
 if __name__ == "__main__":

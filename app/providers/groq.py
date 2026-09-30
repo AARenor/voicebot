@@ -7,6 +7,8 @@ console.groq.com/docs/speech-to-text + /docs/text-chat patterns):
 Free tier: whisper 20 RPM / 2K RPD / 7.2K ASH / 28.8K ASD (2026-09-29);
 429s carry retry-after — caller retries with backoff (Groq → Gemini →
 OpenRouter chain lives in pipeline, not here).
+Sync httpx.Client: concurrent async turns serialize on I/O — acceptable
+for the single-worker pilot; move to AsyncClient with Phase 2 volume.
 """
 
 from __future__ import annotations

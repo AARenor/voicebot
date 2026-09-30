@@ -3,13 +3,19 @@ services:
     build: .
     ports:
       - "8000:8000"
+    volumes:
+      - calls-data:/data
     env_file:
       - .env
     environment:
       PORT: "8000"
+      CALLS_DB: /data/calls.db
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os,urllib.request; urllib.request.urlopen(f'http://127.0.0.1:' + os.environ.get('PORT','8000') + '/health', timeout=4)\""]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  calls-data:
