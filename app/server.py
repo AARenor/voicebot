@@ -29,6 +29,7 @@ def build_stack() -> dict:
         "tts": None,
         "stay": None,
         "slot": None,
+        "livekit": None,
     }
     if os.environ.get("GROQ_API_KEY"):
         stack["stt"] = GroqClient(os.environ["GROQ_API_KEY"])
@@ -69,6 +70,13 @@ def build_stack() -> dict:
         stack["slot"] = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"], os.environ["EASY_API_KEY"]
         )
+    if os.environ.get("LIVEKIT_URL") and os.environ.get("LIVEKIT_API_KEY"):
+        # Self-hosted media plane (livekit:7880 on the coolify network).
+        # Reachability is verified at deploy; status only reports config.
+        stack["livekit"] = {
+            "url": os.environ["LIVEKIT_URL"],
+            "api_key": os.environ["LIVEKIT_API_KEY"],
+        }
     stack["demo"] = stack["stt"] is None
     return stack
 
@@ -93,7 +101,14 @@ def create_app():
         return {
             "wired": {
                 name: stack[name] is not None
-                for name in ("stt", "llm_primary", "tts", "stay", "slot")
+                for name in (
+                    "stt",
+                    "llm_primary",
+                    "tts",
+                    "stay",
+                    "slot",
+                    "livekit",
+                )
             },
             "demo": stack["demo"],
         }

@@ -124,6 +124,23 @@ class TestDashboard(unittest.TestCase):
         finally:
             os.environ["OPERATOR_TOKEN"] = "test-token"
 
+    def test_status_reports_livekit_wiring(self):
+        from app.server import build_stack
+
+        old = dict(os.environ)
+        try:
+            for key in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
+                os.environ.pop(key, None)
+            self.assertFalse(build_stack()["livekit"] is not None)
+            os.environ["LIVEKIT_URL"] = "http://livekit:7880"
+            os.environ["LIVEKIT_API_KEY"] = "robotkey"
+            wired = build_stack()["livekit"]
+            self.assertEqual(wired["url"], "http://livekit:7880")
+            self.assertNotIn("SECRET", str(wired).upper().replace("API_SECRET", ""))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
 
 if __name__ == "__main__":
     unittest.main()
