@@ -40,23 +40,71 @@ Non-negotiable invariants:
 | HTTP voice turn | `POST /api/turn` performs Groq STT/chat and Azure TTS; text and audio paths verified | Working, but not a telephone media loop |
 | LLM | Groq `openai/gpt-oss-20b` works, including tool calls | Primary only; no configured secondary |
 | Speech | Groq Whisper and Azure `et-EE-AnuNeural` work | Non-streaming HTTP clients |
-| FAQ | SQLite FTS repository, thread-safe inside one process | Working |
-| Call log | SQLite file, masked peers, 30-day pruning | Single-process only |
+| FAQ | SQLite FTS repository is thread-safe, but generic demo policies are always seeded and advertised | Not property-approved; block live answers |
+| Call log | SQLite masks only peer IDs; complete heard/reply summaries are stored and publicly readable at `/api/calls` | P0 privacy blocker |
 | Dashboard commands | Demo queue; writes fail closed outside demo | Not connected to booking-provider commands |
-| LiveKit server | Self-hosted server, SIP service, and Redis run on the internal Docker network | Internal connectivity only |
+| LiveKit server | Operator-managed LiveKit, SIP, and Redis containers were runtime-verified on the host, but their manifests/config live outside this repository | Internal only; not repo-reproducible (R-017) |
 | Public telephone ingress | Carrier account/number is pending; no public SIP/RTP ports, trunk, or dispatch rule | Not operational |
 | Continuous call agent | No LiveKit Agents worker; `app/pipeline.py` is a descriptor skeleton | Not implemented |
 | Hotel booking | Apaleo, Mews, Cloudbeds, and QloApps drivers are stubs | No operational `StayAdapter` |
-| Spa booking | Easy!Appointments driver is implemented but no live instance is configured | No live slot booking |
+| Spa booking | Easy!Appointments driver marks itself operational, but same-slot exclusion, confirmation-time revalidation, and ambiguous-write recovery are unproved | Must not be enabled for live writes |
 | Persistent booking state | In-memory hold/idempotency ledger | Lost on restart; cannot coordinate replicas |
-| Concurrency | Three concurrent production HTTP turns passed; phone concurrency is untested | Telephone claim remains blocked |
+| Concurrency | [Three concurrent production HTTP turns](docs/evidence/2026-09-30-http-concurrency-smoke.md) passed; this is diagnostic HTTP only | Phone concurrency blocked (Q-01/Q-07) |
 
 `/api/status` currently reports wiring and derived capabilities. In particular,
 `livekit: true` means credentials are configured; it does **not** mean a phone
 call can reach an agent. `serving_demo_data: true` remains intentional until
 real operator and booking data replace the demo store.
 
+Live traffic is blocked by the P0/P1 items in
+[`docs/architecture/risk-register.md`](docs/architecture/risk-register.md).
+The public call-summary exposure is verified on the deployed site, not merely a
+theoretical code finding.
+
 ## 3. Target topology
+
+### System context
+
+```mermaid
+flowchart LR
+    Guest[Guest / caller] -->|PSTN call| Carrier[Estonian DID + SIP carrier]
+    Carrier -->|SIP + RTP| Voicebot[Voicebot system]
+    Staff[Reception staff] -->|HTTPS| Voicebot
+    Voicebot -->|STT / LLM / TTS| AI[Groq + Azure]
+    Voicebot -->|availability + booking writes| Booking[Hotel / spa booking system]
+    Voicebot -->|warm transfer| Human[Human receptionist]
+```
+
+### Container view
+
+```mermaid
+flowchart LR
+    Carrier[Carrier / SIP edge]
+    Staff[Operator browser]
+    AI[Groq + Azure]
+    PMS[Booking provider]
+    Human[Human handoff]
+
+    subgraph Voicebot
+      SIP[LiveKit SIP]
+      LK[LiveKit server]
+      Agent[LiveKit Agents workers]
+      Web[FastAPI dashboard/API]
+      Redis[(Redis)]
+      DB[(Postgres target)]
+    end
+
+    Carrier --> SIP --> LK --> Agent
+    Agent --> AI
+    Agent --> PMS
+    Agent --> Human
+    Agent --> Redis
+    Agent --> DB
+    Staff --> Web
+    Web --> Redis
+    Web --> DB
+    Web -. read/projection .-> PMS
+```
 
 ```text
 Telephone/media plane
@@ -86,10 +134,11 @@ The web/API container is not in the real-time media path. It serves the
 operator UI, configuration-safe status, and internal event/command endpoints.
 The call worker is deployed separately and scales independently.
 
-## 4. One real-time framework: LiveKit Agents
+## 4. Provisional real-time framework: LiveKit Agents
 
-Use **LiveKit Agents** as the call runtime. Do not put Pipecat and LiveKit
-Agents in the same production call path.
+The provisional choice is **LiveKit Agents** as the only call runtime. Do not
+put Pipecat and LiveKit Agents in the same production call path unless a spike
+proves a named LiveKit capability gap.
 
 Why:
 
@@ -110,14 +159,33 @@ When the worker lands, remove Pipecat from the active dependency plan and
 replace the descriptor-only `app/pipeline.py` with the real LiveKit session
 configuration.
 
+This is not an accepted implementation decision yet. Before pinning packages,
+a time-boxed spike must prove:
+
+1. inbound SIP or loopback room dispatch to one job per call;
+2. two simultaneous isolated calls;
+3. Estonian Groq STT + Azure Anu output and measured first-audio latency;
+4. barge-in/endpointing behavior on Estonian names, dates, and prices;
+5. forced 429/TTS-failure behavior with audible fallback;
+6. graceful drain and an explicit policy for state loss on crash redispatch.
+
+Decision rationale and alternatives:
+[`ADR-0001`](docs/decisions/0001-provisional-livekit-agents.md).
+
 Official references:
 
 - [Voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai-quickstart/)
 - [Agent server](https://docs.livekit.io/agents/server/)
 - [Groq STT plugin](https://docs.livekit.io/agents/models/stt/plugins/groq/)
+- [Groq LLM plugin](https://docs.livekit.io/agents/models/llm/plugins/groq/)
 - [Azure Speech TTS plugin](https://docs.livekit.io/agents/models/tts/plugins/azure/)
+- [Silero VAD plugin](https://docs.livekit.io/agents/logic/turns/vad/)
 
-## 5. Inbound call lifecycle
+## 5. Target inbound call lifecycle — not implemented
+
+The current HTTP path does not implement this lifecycle and stores turn text
+unconditionally (R-001). Every step below is target behavior gated by the
+LiveKit worker spike and Gate 0.
 
 1. The carrier admits the call within its purchased channel count. Excess calls
    follow a configured human/queue/voicemail overflow route.
@@ -186,19 +254,31 @@ Shared rules:
 - after an unknown write outcome, query provider truth before retrying;
 - never treat a catalogue scrape or FAQ result as bookable inventory.
 
+An adapter's `operational` flag is a release assertion, not a declaration by
+the class author. Easy!Appointments currently violates this rule: it advertises
+itself after credentials are present without confirmation-time slot revalidation
+or a proven same-slot conflict. Keep it unconfigured for live traffic until the
+risk gates in R-003/R-004 pass.
+
+Every hold and idempotency key is owned by a call/session namespace. Possession
+of a hold ID alone must never authorize another caller to confirm or cancel it.
+
 ### Hackathon provider decision
 
-1. **Preferred single-system demo:** BOUK 14-day trial, only if the trial grants
+1. **Preferred single-system candidate:** BOUK 14-day trial, only if it grants
    documented write API access for rooms and hourly services.
-2. **Guaranteed open-source fallback:** QloApps for room nights plus
-   Easy!Appointments for spa slots.
+2. **Open-source fallback candidates:** QloApps for room nights plus
+   Easy!Appointments for spa slots, only after deployed write-path tests.
 3. Do not block the hackathon on Apaleo/Mews partner onboarding.
 
 ### Production connector targets
 
 - SALBOS is the strongest Pärnu spa-hotel target.
 - BOUK is confirmed at multiple Pärnu accommodation properties.
-- D-EDGE is present at Hestia Strand.
+- D-EDGE is present at Hestia Strand. Its [official developer portal](https://docs.d-edge.com/overview/get-started/explore-our-apis)
+  exposes
+  Quotation and Booking Engine APIs plus a credential-free mock; production
+  access requires a signed partnership.
 - Apaleo/Mews/Cloudbeds/Zenoti remain later generic connectors, not current
   demo dependencies.
 
@@ -211,7 +291,7 @@ missed-call opportunity are in
 | State | Current | Target | Authority |
 | --- | --- | --- | --- |
 | Conversation and consent | Request/call memory | Agent subprocess, destroyed at end | Call context |
-| Holds and idempotency | Process memory | Redis with TTL and atomic reservation | Booking provider on confirm |
+| Holds and idempotency | Process memory, no caller owner | Redis with TTL, caller ownership, deterministic key, atomic reservation | Booking provider on confirm |
 | Provider rate budgets | None | Redis token buckets | Provider headers/limits |
 | FAQ content | SQLite | Postgres or controlled content store | Property-approved content |
 | Call/booking events | SQLite | Postgres | Append-only application events |
@@ -223,17 +303,19 @@ workers may scale separately once Redis-backed holds and rate limits exist.
 
 ## 9. Failure policy
 
-| Failure | Caller behavior | System behavior |
-| --- | --- | --- |
-| Carrier channels full | Human/queue/voicemail overflow | Count `carrier_overflow` |
-| Agent capacity full | Immediate overflow, never silence | Reject before room acceptance where possible |
-| STT error/empty audio | Short repeat prompt | No LLM or booking call |
-| LLM 429/transient | Brief prerecorded wait, then secondary or handoff | Honor `retry-after`; circuit-break repeated failures |
-| TTS failure | Prerecorded fallback/handoff | Do not return silent success |
-| Booking slot/room race | Explain it is no longer available; offer refreshed options | Requery provider; one atomic winner |
-| Unknown booking write result | Ask caller to wait; do not repeat blindly | Read provider by idempotency/reference before retry |
-| Worker deployment/restart | Active calls drain before shutdown | Stop new jobs, allow deadline, then terminate |
-| Dashboard command unavailable | Staff sees read-only state | Fail closed; no demo mutation in live mode |
+| Failure | Caller behavior | System behavior | Status |
+| --- | --- | --- | --- |
+| Carrier channels full | Human/queue/voicemail overflow | Count `carrier_overflow` | Target; carrier unverified |
+| Agent capacity full | Immediate overflow, never silence | Reject before room acceptance where possible | Target; no worker |
+| STT error/empty audio | Short repeat prompt | No LLM or booking call | Current HTTP behavior |
+| LLM 429/transient | Brief prerecorded wait, then secondary or handoff | Honor `retry-after`; circuit-break repeated failures | Target; no secondary/static prompt |
+| TTS failure | Prerecorded fallback/handoff | Do not return silent success | Target; current path returns empty audio |
+| Booking slot/room race | Explain it is no longer available; offer refreshed options | Requery provider; one atomic winner | Target; unproved |
+| Unknown booking write result | Ask caller to wait; do not repeat blindly | Read provider by idempotency/reference before retry | Target; absent |
+| Worker deployment/restart | Active calls drain before shutdown | Stop new jobs, allow deadline, then terminate | Target; no worker |
+| Dashboard command unavailable | Staff sees read-only state | Fail closed; no demo mutation in live mode | Partly current; mode inconsistencies tracked |
+| Generic/unapproved FAQ | Explain that property policy is unavailable; transfer if needed | Do not advertise FAQ tool | Target; generic FAQ currently advertised |
+| Agent crash redispatch | Apologize/restart or transfer; never reconstruct booking state from guesswork | Recover durable state or fail closed | Target; policy absent |
 
 Static disclosure, repeat, overload, and handoff prompts should be prerecorded
 so a provider outage does not require another API call.
@@ -243,9 +325,16 @@ so a provider outage does not require another API call.
 - Disclose that the caller is speaking with AI at call start.
 - Recording/transcription is off until the approved Estonian/EU notice,
   consent, purpose, retention, access, and deletion policy is implemented.
+- The current call-log code has a 30-day technical pruning default. This is not
+  an approved legal retention policy; owner, lawful basis, backups, deletion,
+  and DPIA status remain Gate 0 work (R-018).
 - Mask phone numbers before storage; do not put raw caller IDs in room names.
 - Keep transcripts out of general application logs and LLM traces by default.
+- Protect every endpoint returning real call, guest, or booking data with
+  operator authentication and rate limits.
 - Send only the minimum guest fields required by the booking provider.
+- Enforce an allowlisted guest schema and reject payment-card/PAN/CVV/expiry
+  fields at the first trust boundary.
 - Never collect PAN/CVV by voice. Send a provider-hosted payment link or use a
   PCI-scoped tokenized checkout.
 - Scope operator commands with a runtime bearer token and audit successful
@@ -269,6 +358,10 @@ so a provider outage does not require another API call.
 - public firewall restricted to required protocols and carrier IP ranges where
   the carrier publishes stable ranges.
 
+Current media manifests are operator-managed at a host path outside this Git
+repository. Before a pilot, add sanitized pinned manifests here or a versioned
+external deployment inventory so topology and drift are reviewable.
+
 ### Agent deployment
 
 - separate LiveKit Agents container/process;
@@ -282,12 +375,13 @@ LiveKit server/SIP versions before the first external call test.
 
 ## 12. Service levels and evidence gates
 
-Hackathon targets:
+Hackathon **aspirational targets**; none is a telephone-runtime claim until its
+quality scenario below passes:
 
 | Area | Target / gate |
 | --- | --- |
-| Call setup | p95 < 5 seconds from carrier INVITE to greeting |
-| Turn latency | Measure p50/p95; target first audio p50 <= 1.5s, p95 <= 3s |
+| Call setup | Aspirational: p95 < 5 seconds from carrier INVITE to greeting; measure at SIP edge and first audio |
+| Turn latency | Aspirational: first audio p50 <= 1.5s, p95 <= 3s; measure inside AgentSession |
 | Concurrent calls | 3 complete calls; caller four follows tested overflow |
 | Disclosure | 100% of calls receive AI notice |
 | Price safety | 100% of spoken prices tied to current provider quote |
@@ -299,12 +393,39 @@ Hackathon targets:
 “Done” requires real carrier calls, not only HTTP tests or configured status
 flags.
 
+### Quality scenarios
+
+| ID | Context and stimulus | Required response and measurable evidence | Current status |
+| --- | --- | --- | --- |
+| Q-01 Isolation | Three callers speak and create different holds concurrently | No room/history/guest/hold crosses sessions; automated two/three-session test | Blocked: no call worker/owner field |
+| Q-02 Inventory race | Two calls confirm the same last room/slot | Exactly one remote booking; loser receives typed conflict and refreshed choices | Blocked: no real race test |
+| Q-03 Ambiguous write | Provider commits, client times out, process restarts, retry arrives | Provider query/reconciliation returns original result; no second booking | Blocked: process memory only |
+| Q-04 Provider outage | STT/LLM/TTS returns 429/5xx during a call | Caller hears prerecorded wait/fallback or is transferred; never silent success | Blocked: TTS returns empty audio |
+| Q-05 Privacy | Caller speaks name, phone, email, health request, or card-like digits | Unauthenticated reads denied; forbidden fields rejected; stored event contains no raw values | Blocked: public raw summaries |
+| Q-06 Truthful readiness | Credentials are present but invalid/unreachable | Status says configured but not reachable/operational, with timestamp and safe reason | Blocked: non-null means ready |
+| Q-07 Deployment | SIGTERM arrives during three active calls | New jobs stop; calls drain within configured maximum; no duplicate booking | Blocked: no worker |
+| Q-08 Provider change | Add one supported booking provider | New adapter + contract tests; no changes to core dialogue/tool policy | Design accepted, unproved |
+
+Google SRE guidance treats SLOs as measured user outcomes, not declarations.
+Latency rows remain aspirational until the first real-call dataset exists.
+
 ## 13. Execution plan
+
+### Gate 0 — remove live-traffic blockers
+
+1. Authenticate real call/guest/booking reads and stop storing raw dialogue by
+   default.
+2. Enforce guest-field allowlists and reject payment-like data.
+3. Disable generic FAQ and Easy!Appointments live tools until property and race
+   gates pass.
+4. Add caller ownership and durable idempotency/reconciliation design.
+5. Implement audible static fallback and truthful readiness states.
+6. Add a one-process startup guard until state migration is complete.
 
 ### Gate A — booking proof
 
 1. Activate BOUK trial and verify official write API access.
-2. If unavailable, deploy QloApps + Easy!Appointments.
+2. If unavailable, evaluate and deploy QloApps + Easy!Appointments candidates.
 3. Implement only the selected adapters.
 4. Pass availability, quote, confirm, cancel, expiry, retry, and race tests.
 
@@ -335,17 +456,20 @@ flags.
 
 ## 14. Architecture decisions
 
+Linked ADR rows have standalone rationale. `DEC-*` rows are inline constraints,
+not full ADRs; promote one to a file when it becomes costly or contentious.
+
 | ID | Decision | Status |
 | --- | --- | --- |
-| ADR-001 | Self-host LiveKit media/SIP; carrier remains replaceable | Accepted |
-| ADR-002 | Use LiveKit Agents as the only real-time agent framework | Accepted |
-| ADR-003 | Separate hotel-night and appointment-slot adapters | Accepted |
-| ADR-004 | Hide non-operational booking tools from the LLM | Implemented |
-| ADR-005 | One room/job/context per call; hackathon cap 3 | Accepted, not phone-tested |
-| ADR-006 | Booking provider is inventory/price truth | Accepted |
-| ADR-007 | One web replica until Redis/Postgres migration | Implemented operational constraint |
-| ADR-008 | BOUK trial first; open-source dual-system fallback | Pending trial API verification |
-| ADR-009 | Dashboard is read-only/demo until command service exists | Implemented |
+| [ADR-0001](docs/decisions/0001-provisional-livekit-agents.md) | LiveKit Agents as sole runtime | Proposed; spike required |
+| [ADR-0002](docs/decisions/0002-separate-stay-slot-adapters.md) | Separate hotel-night and appointment-slot adapters | Accepted; implementations gated |
+| [ADR-0003](docs/decisions/0003-provider-truth-idempotency.md) | Provider truth with durable local coordination | Accepted principle; incomplete |
+| DEC-004 | Self-host LiveKit media/SIP; carrier remains replaceable | Accepted target; manifests external |
+| DEC-005 | Hide non-operational booking tools from the LLM | Implemented except unsafe Easy opt-in (R-003) |
+| DEC-006 | One room/job/context per call; hackathon cap 3 | Accepted target, not phone-tested |
+| DEC-007 | One web replica until Redis/Postgres migration | Procedural constraint only; executable guard pending |
+| DEC-008 | BOUK trial first; open-source dual-system candidates | Pending API/write verification |
+| DEC-009 | Dashboard is read-only/demo until command service exists | Partly implemented; mode inconsistencies tracked |
 
 ## 15. Open decisions that block implementation
 
@@ -357,5 +481,13 @@ flags.
 4. Approved property content: services, prices, policies, hours, and staff.
 5. Recording/transcription consent and retention policy.
 6. Secondary LLM provider before public tests.
+7. Cancellation ownership: caller self-service, operator-only, or deferred.
+
+## 16. Risks and technical debt
+
+The ranked register is
+[`docs/architecture/risk-register.md`](docs/architecture/risk-register.md).
+No live rollout proceeds with an open P0. P1 items require resolution before a
+property pilot. Risks close only with linked executable evidence.
 
 Everything else is implementation work, not an unresolved architecture choice.

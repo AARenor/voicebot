@@ -29,13 +29,16 @@ The deployed `/api/turn` path already offloads blocking STT, LLM, and TTS calls
 from the event loop (`app/turn.py`) and has a concurrent-turn regression test.
 On 2026-09-30, three concurrent production text turns all returned HTTP 200
 with generated audio in **3.09 seconds wall time** (individual completion times
-1.77s, 2.07s, and 3.06s).
+1.77s, 2.07s, and 3.06s). Command and sanitized output:
+[`../evidence/2026-09-30-http-concurrency-smoke.md`](../evidence/2026-09-30-http-concurrency-smoke.md).
 
 That does **not** mean three phone calls work today:
 
 - LiveKit and LiveKit SIP run internally, but SIP/RTP ports are not public.
 - No carrier inbound trunk or dispatch rule exists yet.
-- The continuous LiveKit/Pipecat call worker is not implemented;
+- The continuous LiveKit Agents worker is not implemented; Pipecat is not in
+  the provisional path, and ADR-0001 option 2 is fallback only if the spike
+  rejects LiveKit Agents;
   `app/pipeline.py` still describes Phase 2 wiring.
 - The web app runs one Uvicorn worker and one Coolify replica.
 - `HoldLedger` is thread-safe in one process but explicitly loses state on
@@ -254,3 +257,7 @@ Alert before limits, not after: active calls >= 3, LLM RPM >= 27, STT RPM >=
 
 No concurrency claim is production-ready until steps 2–8 pass with the actual
 carrier and booking system.
+
+Open release blockers outside pure capacity (public call summaries, payment
+fields, caller ownership, same-slot safety, and truthful readiness) are tracked
+in [`../architecture/risk-register.md`](../architecture/risk-register.md).

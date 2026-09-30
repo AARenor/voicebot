@@ -258,9 +258,12 @@ Production work requires property/vendor credentials and documentation.
 
 ### D-EDGE
 
-Hestia Hotel Strand's current official booking buttons point to D-EDGE's
-`secure-hotel-booking.com` engine. D-EDGE advertises GraphQL connectivity but
-does not offer a public self-service write sandbox suitable for this hackathon.
+[Hestia Hotel Strand's official site](https://www.hestiahotels.com/strand/en/)
+currently points its booking buttons to D-EDGE's
+`secure-hotel-booking.com` engine (checked 2026-09-30). D-EDGE's official
+[developer portal](https://docs.d-edge.com/overview/get-started/explore-our-apis)
+provides a credential-free mock Booking Engine API; production access requires
+a signed partnership.
 
 ## BOUK trial and API implications
 

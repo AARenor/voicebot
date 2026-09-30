@@ -3,10 +3,10 @@
 Thread-safe (one RLock around all DB access; double-checked singleton
 init). Parameterized writes/reads only. Demo rows carry source='demo'
 and are visually marked; real rows are source='real'. Caller numbers
-are masked at write (PII never persists full); summaries may still
-carry caller-spoken names — covered by the 30-day retention + DPIA
-wording in ARCHITECTURE.md:51. File DBs are created 0600 with parent
-dirs made as needed.
+are masked at write, but summaries may still carry caller PII. The
+30-day prune is a technical default, not an approved retention policy
+(ARCHITECTURE.md section 10, R-018). File DBs are created 0600 with
+parent dirs made as needed.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ def open_log(path: str = ":memory:") -> sqlite3.Connection:
 
 
 def prune(db: sqlite3.Connection, retention_days: int = 30) -> int:
-    """Delete rows older than retention_days (ARCHITECTURE.md:51 policy).
+    """Delete rows older than retention_days (technical default; see R-018).
 
     `at` is zero-padded "%Y-%m-%d %H:%M", so lexicographic compare works.
     Returns rows deleted.

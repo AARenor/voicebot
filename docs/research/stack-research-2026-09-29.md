@@ -18,9 +18,9 @@ document remains available in Git commit `c52d948`.
   adapter contracts.
 - Apaleo, Mews, Cloudbeds, and Zenoti are credible later connectors but require
   property/vendor access and write-path verification.
-- QloApps and Easy!Appointments remain open-source demo options; current
-  QloApps webservice documentation supersedes the old claim that no booking API
-  exists.
+- QloApps and Easy!Appointments remain open-source demo options; the
+  [QloApps webservice documentation](https://devdocs.qloapps.com/webservice/advanced-api-uses)
+  (accessed 2026-09-30) supersedes the old claim that no booking API exists.
 - Prices may be spoken only from a live provider quote identifier.
 - FreeSWITCH/Jambonz/experimental agent gateways were rejected for the initial
   path because LiveKit already covers SIP and adding a second media stack would
@@ -40,7 +40,7 @@ document remains available in Git commit `c52d948`.
   Architecture v1.0 selects LiveKit Agents only.
 - The initial hackathon plan centered on Apaleo/Mews. Local research now makes
   a BOUK trial the preferred one-system demo, with QloApps + Easy!Appointments
-  as the guaranteed open-source fallback.
+  as open-source fallback candidates that still require deployed write tests.
 - Pärnu adoption is now evidenced property by property in
   [`parnu-booking-systems.md`](parnu-booking-systems.md), including stale BOUK
   migrations and SALBOS dominance among major spa hotels.

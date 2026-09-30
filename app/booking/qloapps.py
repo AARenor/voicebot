@@ -1,8 +1,9 @@
 """QloApps demo double (StayAdapter, $0 dev only).
 
 OSL-3.0 PrestaShop fork (PHP/MySQL), Docker webkul/qloapps_docker.
-No public booking REST found — adapter maps rate tables directly;
-NEVER run live inventory on it without mapping availability/rate tables.
+Official webservice docs include hotel ARI and booking resources:
+https://devdocs.qloapps.com/webservice/advanced-api-uses (accessed 2026-09-30).
+NEVER run live inventory without deployed availability/write-path tests.
 Network-copyleft: legal read before multi-tenant hosting.
 """
 

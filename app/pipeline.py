@@ -1,7 +1,8 @@
-"""Voice pipeline skeleton: VAD -> STT -> LLM tools -> TTS.
+"""Non-operational voice-routing candidate descriptors.
 
-Per-language routing (ET-first). Heavy deps imported lazily inside
-build_pipeline() so module import stays light for tests/checks.
+The provisional runtime is LiveKit Agents (ARCHITECTURE.md section 4 and
+ADR-0001). Pipecat is fallback option 2 only if the measured LiveKit spike
+fails. Nothing in this module constructs media, provider, or agent objects.
 
 Turn shape: Silero VAD gates barge-in; STT finals via VAD chunks;
 LLM tokens stream into sentence-chunked TTS; filler
@@ -14,7 +15,7 @@ from __future__ import annotations
 
 SUPPORTED_LANGUAGES = ("et", "en", "ru")
 
-# ET -> managed neural first, free local failover chain.
+# PHASE2_CANDIDATES_NOT_WIRED: ET -> managed neural + local fallbacks.
 # ET entries MUST resolve to et-EE voices (fail closed otherwise).
 TTS_ROUTE = {
     "et": ("azure-anu-kert", "google-et-EE-Standard-A", "pockettts-et", "piper-et"),
@@ -25,14 +26,14 @@ TTS_ROUTE = {
 # Voices allowed on the ET chain. Anything else fails closed (P1-4).
 ET_VOICE_ALLOW = ("azure-anu-kert", "google-et-EE", "pockettts-et", "piper-et")
 
-# STT: managed streaming where barge-in matters, TalTech int8 finals for ET.
+# PHASE2_CANDIDATES_NOT_WIRED: STT research options.
 STT_ROUTE = {
     "live": "deepgram-or-assemblyai-streaming",
     "et_final": "taltech-whisper-large-v3-turbo-et-verbatim-2604-ct2",
     "fallback": "groq-whisper-large-v3-turbo",
 }
 
-# LLM: intent/tools primary, guest-facing ET fallback chain. Never one vendor.
+# PHASE2_CANDIDATES_NOT_WIRED: historical LLM research options.
 LLM_ROUTE = {
     "primary": "groq-llama-8b",
     "secondary": "gemini-flash-lite",
@@ -47,10 +48,10 @@ def detect_language(partial_transcript: str, default: str = "et") -> str:
 
 
 def build_pipeline(language: str = "et") -> dict:
-    """Assemble the Pipecat pipeline for one call. Returns stage descriptors.
+    """Return non-operational research descriptors for tests/documentation.
 
-    Real wiring (Pipecat frames, LiveKit transport, Silero analyzer,
-    faster-whisper server, Groq client, streaming TTS) lands in Phase 2.
+    This does not assemble Pipecat or LiveKit. Replace it only after the
+    provisional LiveKit Agents spike selects and pins the real runtime.
     """
     lang = language if language in SUPPORTED_LANGUAGES else "et"
     chain = TTS_ROUTE[lang]
