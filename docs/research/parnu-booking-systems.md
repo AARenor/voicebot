@@ -17,19 +17,21 @@ from vendor customer lists and stale indexed booking pages.
   ESTONIA Resort/Medical Spa, Wasa Resort, Tervise Paradiis, Tervis Medical
   Spa, and Viiking expose SALBOS-style hotel/spa booking shops or are listed by
   SALBOS as users.
-- For the hackathon, BOUK is still the best locally relevant single-system
-  trial: its product supports daily, hourly, and monthly room/service inventory,
-  and its current frontend states a 14-day full-feature trial without a credit
-  card. Official API access is normally part of the Professional plan, so trial
-  API access must be confirmed before implementation.
+- For the hackathon, BOUK is a locally relevant connector only if ED Hotels
+  supplies free supported sandbox/API access. Its pricing page advertises
+  “Try it free” and “Full access. No credit card required,” but does not state a
+  trial duration; API access/support is confined to the Professional plan with
+  a €250 monthly minimum. Do not buy that plan solely for the hackathon.
 - No public Pärnu switchboard dataset reports actual missed calls. A transparent
   benchmark-transfer model estimates **3,581–7,163 missed booking-intent calls**
   across Pärnu city accommodation properties during June–August, with a 30%
   midpoint of **5,372**. This is a planning estimate, not an observed local
   statistic; assumptions and the broader all-call scenario are below.
-- **No evidence of an Estonian QloApps deployment was found.** Do not claim
-  that Estonian hotels use QloApps. It remains a technically suitable
-  open-source demo backend only.
+- **No current Pärnu hotel or spa deployment of QloApps or Easy!Appointments
+  was confirmed.** Exact-name and technical-fingerprint searches, followed by
+  checks of the official booking links for the 10-property BOUK cohort and the
+  major Pärnu spa hotels, produced no match. Both products remain suitable
+  open-source demo backends, not locally validated production connectors.
 
 ## Summer missed-call demand model
 
@@ -265,24 +267,94 @@ currently points its booking buttons to D-EDGE's
 provides a credential-free mock Booking Engine API; production access requires
 a signed partnership.
 
-## BOUK trial and API implications
+## QloApps and Easy!Appointments deployment check
+
+Re-checked **2026-10-01**. The question was whether either open-source product
+has a demonstrable current user among Pärnu hotels or spas, not merely whether
+the software can be used in hospitality.
+
+### Method and confirmation threshold
+
+The check combined:
+
+1. Exact product-name searches in English and Estonian for `QloApps`,
+   `Powered by QloApps`, `Easy!Appointments`, and `easyappointments` together
+   with Pärnu/Parnu, Estonia/Eesti, hotel/hotell, and spa/spaa.
+2. Technical-fingerprint searches for common QloApps and Easy!Appointments
+   routes and identifiers.
+3. Live inspection of the official property and booking pages for the ten
+   confirmed Pärnu-city BOUK properties above and Visit Pärnu's nine named spa
+   hotels.
+
+A property would be confirmed only if its current official site linked to a
+live deployment or the live booking page exposed an unambiguous product
+attribution or technical fingerprint. Search-result text alone was not enough.
+
+### Result
+
+| Product | Confirmed current Pärnu hotel/spa users | Evidence-based decision |
+| --- | ---: | --- |
+| QloApps | **0 found** | No official property link, live booking page, exact-name result, or technical fingerprint identified a Pärnu deployment. Do not claim local adoption. |
+| Easy!Appointments | **0 found** | No official property link, live appointment page, exact-name result, or technical fingerprint identified a Pärnu deployment. Do not claim local adoption. |
+
+This is a bounded negative finding, not proof that an unindexed private install
+cannot exist. Easy!Appointments is self-hosted and customizable, so branding
+can be removed; a deployment used only by staff could also be invisible from
+the public web.
+
+### What the checked properties use instead
+
+- The ten current accommodation properties in the BOUK cohort above link to
+  **BOUK** from their official sites.
+- Hedon's [hotel](https://hotel.hedonspa.com/et/) and
+  [spa](https://online.hedonspa.com/et/) booking pages explicitly credit
+  **SALBOS**.
+- ESTONIA [Resort](https://resort.spaestonia.ee/et/) and
+  [Medical](https://medical.spaestonia.ee/et/) hotel-booking pages explicitly
+  credit **SALBOS**.
+- Wasa's [hotel](https://hotel.wasahotels.ee/et/) and
+  [spa](https://spa.wasahotels.ee/et/) booking pages explicitly credit
+  **SALBOS**.
+- Tervise Paradiis's [hotel](https://hotel.terviseparadiis.ee/et/) and
+  [spa](https://spa.terviseparadiis.ee/) booking pages expose SALBOS identifiers
+  and explicitly credit **SALBOS**.
+- Tervis Medical Spa's [hotel](https://hotel.spatervis.ee/en/) and
+  [treatment](https://spa.spatervis.ee/en/) booking pages explicitly credit
+  **SALBOS**.
+- Viiking's [hotel](https://hotel.viiking.ee/et/) and
+  [spa](https://spa.viiking.ee/et/) booking pages explicitly credit
+  **SALBOS**.
+- Hestia Hotel Strand's official booking buttons link to D-EDGE's
+  [`secure-hotel-booking.com`](https://www.secure-hotel-booking.com/Hestia-Hotel-Strand/JLY6/en-GB)
+  engine.
+
+The practical implication is that QloApps and Easy!Appointments are useful for
+a free, writable hackathon environment, but neither gives the demo a verified
+local-customer story. Use the provider-neutral adapters for the demo and retain
+BOUK/SALBOS as the relevant Pärnu production connector targets.
+
+## BOUK demo and API-cost implications
 
 Official BOUK sources:
 
 - [Features](https://bouk.io/product/features): one system for room or service
   inventory sold daily, hourly, or monthly; unified calendar; multi-service
   booking; property and spa positioning.
-- [Pricing](https://bouk.io/pricing): full-access trial, no credit card,
-  cancel anytime; API access/support is listed in the Professional plan.
+- [Pricing](https://bouk.io/pricing): “Try it free,” full access without a
+  credit card, and cancel anytime. Public minimums are €25/month for Essential,
+  €75/month for Standard, and €250/month for Professional; API access/support
+  is listed only in Professional.
 - [Customers](https://bouk.io/customers): broad Estonian adoption.
 - [Terms](https://bouk.io/page/terms): service is operated by OpenHotels OÜ
   under Estonian law.
 
-The current production frontend bundle states: “14 days free trial for all
-features, no credit card required.” Because API access is normally a
-Professional-plan feature, verify that the trial exposes official API
-credentials/docs before writing the BOUK adapter. Do not build against
-undocumented browser endpoints as a production integration.
+No current official page checked states a 14-day duration, and the public
+website does not establish that API credentials are included in a free
+self-service signup. Anonymous requests to the usual API documentation paths
+(`api.bouk.io/docs`, `/swagger`, `/swagger/index.html`, and `/openapi.json`)
+return HTTP 401. Request a free supported sandbox and API documentation from ED
+Hotels before writing the BOUK adapter. Do not purchase Professional only for
+the hackathon, and do not build against undocumented browser endpoints.
 
 ## Recommended claims
 
@@ -306,6 +378,8 @@ Unsafe — do not claim:
 - “Hedon, Viiking, or Wasa currently use BOUK.”
 - “SALBOS booking writes are available through its public WooCommerce API.”
 - “Estonian hotels use QloApps.”
+- “Pärnu hotels or spas use Easy!Appointments.”
+- “BOUK currently promises a 14-day self-service API trial.”
 - “Pärnu hotels miss 5,372 booking calls every summer.” The number is a model
   midpoint, not a measured fact.
 
