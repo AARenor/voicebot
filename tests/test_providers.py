@@ -202,12 +202,30 @@ class TestAzureTts(unittest.TestCase):
 
 class TestEasyAppointments(unittest.TestCase):
     def adapter(self, handler):
+        import os
+        import tempfile
+
         return EasyAppointmentsAdapter(
-            "https://spa.example", "k", transport=httpx.MockTransport(handler)
+            "https://spa.example",
+            "k",
+            transport=httpx.MockTransport(handler),
+            state_db=os.path.join(
+                tempfile.mkdtemp(prefix="easy-prov-"), "easy-booking.db"
+            ),
+            allow_writes=True,
         )
 
     def test_search_slots_real_shape(self):
         def handler(request):
+            url = str(request.url.path)
+            if url.endswith("/services"):
+                return httpx.Response(
+                    200, json=[{"id": 6, "name": "Massage", "duration": 60}]
+                )
+            if url.endswith("/providers"):
+                return httpx.Response(
+                    200, json=[{"id": 2, "firstName": "Anna", "services": [6]}]
+                )
             self.assertIn("/api/v1/availabilities", str(request.url))
             self.assertEqual(request.url.params["serviceId"], "6")
             return httpx.Response(200, json=["17:00", "18:00"])
@@ -221,6 +239,14 @@ class TestEasyAppointments(unittest.TestCase):
 
         def handler(request):
             url = str(request.url.path)
+            if url.endswith("/services"):
+                return httpx.Response(
+                    200, json=[{"id": 6, "name": "Massage", "duration": 60}]
+                )
+            if url.endswith("/providers"):
+                return httpx.Response(
+                    200, json=[{"id": 2, "firstName": "Anna", "services": [6]}]
+                )
             if url.endswith("/availabilities"):
                 return httpx.Response(200, json=["17:00", "18:00"])
             if url.endswith("/services/6"):
@@ -269,7 +295,16 @@ class TestEasyAppointments(unittest.TestCase):
         slots = run(adapter.search_slots("6", "2026-10-01"))
         hold = run(adapter.create_hold(slots[0]["slotId"]))
         result = run(
-            adapter.confirm(hold.hold_id, {"firstName": "Mari", "phone": "+372"}, "k2")
+            adapter.confirm(
+                hold.hold_id,
+                {
+                    "firstName": "Mari",
+                    "lastName": "Maasikas",
+                    "email": "mari@example.ee",
+                    "phone": "+372",
+                },
+                "k2",
+            )
         )
         self.assertTrue(result["ok"])
         self.assertTrue(any(u.endswith("/customers") for u in seen))
@@ -316,9 +351,15 @@ class TestEasyAppointments(unittest.TestCase):
         with self.assertRaises(RetryableProviderError):
             run(adapter.search_slots("6", "2026-10-01"))
 
-    def test_500_then_retry_same_key_succeeds(self):
-        # P0-1 regression: a failed attempt must NOT poison the key.
-        attempts = []
+    def test_500_then_retry_same_key_stays_unknown_until_reconciled(self):
+        # Fail-closed regression: an ambiguous 500 must NOT be retried as a
+        # blind second POST. The same key stays unknown until exactly one
+        # remote record matches the durable marker, then replays success.
+        import hashlib
+
+        posts = []
+        remote: list = []
+        key = "flaky-key"
 
         def handler(request):
             url = str(request.url.path)
@@ -326,22 +367,35 @@ class TestEasyAppointments(unittest.TestCase):
                 return httpx.Response(200, json=["17:00"])
             if url.endswith("/services/6"):
                 return httpx.Response(200, json={"id": 6, "duration": 60})
-            if url.endswith("/appointments"):
-                attempts.append(1)
-                if len(attempts) == 1:
+            if url.endswith("/appointments") and request.method == "POST":
+                posts.append(1)
+                if len(posts) == 1:
+                    # Server stored the booking but the reply was lost.
+                    marker = (
+                        "vb-"
+                        + hashlib.sha256(
+                            (f"https://spa.example/index.php/api/v1|{key}").encode()
+                        ).hexdigest()[:16]
+                    )
+                    remote.append(
+                        {"id": 44, "notes": f"[voicebot {marker}] reconciled"}
+                    )
                     return httpx.Response(500, text="flaky")
-                return httpx.Response(201, json={"id": 44})
+                raise AssertionError("must never re-POST a pending key")
+            if url.endswith("/appointments"):
+                return httpx.Response(200, json=remote)
             raise AssertionError(f"unexpected {url}")
 
         adapter = self.adapter(handler)
         try:
             slots = run(adapter.search_slots("6", "2026-10-01"))
             hold = run(adapter.create_hold(slots[0]["slotId"]))
-            with self.assertRaises(RetryableProviderError):
-                run(adapter.confirm(hold.hold_id, {"customerId": 5}, "flaky-key"))
-            result = run(adapter.confirm(hold.hold_id, {"customerId": 5}, "flaky-key"))
+            first = run(adapter.confirm(hold.hold_id, {"customerId": 5}, key))
+            self.assertEqual(first["error"], "write_outcome_unknown")
+            result = run(adapter.confirm(hold.hold_id, {"customerId": 5}, key))
             self.assertTrue(result["ok"])
-            self.assertEqual(len(attempts), 2)
+            self.assertEqual(result["booking"]["id"], 44)
+            self.assertEqual(len(posts), 1)
         finally:
             run(adapter.close())
 

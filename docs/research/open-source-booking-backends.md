@@ -102,17 +102,21 @@ provider-side idempotency key or temporary hold primitive. Therefore:
 - prove that concurrent creates for the same slot produce exactly one booking;
 - after a timeout or unknown write outcome, query appointments before retrying;
 - test update and delete against the deployed version, not only mocks; and
-- correct the [current adapter's](../../app/booking/easyappointments.py) unsafe
-  `operational=True` assertion before configuring live traffic, and do not
-  re-enable it until the
+- keep the [adapter](../../app/booking/easyappointments.py) non-operational by
+  default; its explicit synthetic-demo opt-in is not permission for real traffic
+  until the
   [R-003 race and R-004 reconciliation gates](../architecture/risk-register.md)
   pass.
 
-The current adapter still needs live 1.6.0 tests for availability, customer and
-appointment creation, cancellation, authorization failure, malformed payloads,
-same-slot contention, and commit-then-timeout reconciliation. The underlying
-API's update operation also needs a direct integration smoke test; rescheduling
-is not currently part of the `SlotAdapter` contract.
+**Installation follow-through (2026-10-01):** the pinned private 1.6.0 service
+and [runbook](../../deploy/easyappointments/README.md) now exist. Opt-in
+`tests/test_easyappointments_installed.py` passes availability, customer/
+appointment lifecycle, cancellation, authorization failure, malformed payloads,
+same-slot contention and committed-write timeout/restart reconciliation. PUT
+update is tested directly (send both start/end); rescheduling is still not in
+`SlotAdapter`. Exact 1.6.0 source and the installed behavior confirm REST POST
+does not enforce overlap exclusion: the SQLite/file-lock journal protects only
+our controlled single-host writer. Production gates remain open.
 
 ## First-party sources
 

@@ -1,8 +1,11 @@
-"""Easy!Appointments demo double (SlotAdapter, spa side only).
+"""Easy!Appointments controlled demo REST adapter (SlotAdapter, spa only).
 
 GPL-3.0. Shapes below follow the real openapi.yml v1.0.0 (fetched
 2026-09-30 from github.com/alextselegidis/easyappointments):
   GET /availabilities?providerId&serviceId&date -> 200: string[] (times)
+  GET /services -> 200: ServiceRecord[] ({id, name, duration, price, ...})
+  GET /providers -> 200: ProviderRecord[] ({id, firstName, services, ...})
+  GET /appointments -> 200: AppointmentRecord[] (reconciliation read/filter)
   POST /appointments (AppointmentPayload) -> 201: AppointmentRecord
   DELETE /appointments/{id} -> 204 (404 treated as success: idempotent)
   AppointmentPayload: {start, end, customerId, providerId, serviceId,
@@ -12,20 +15,57 @@ GPL-3.0. Shapes below follow the real openapi.yml v1.0.0 (fetched
 Single-resource slots — never rooms. Self-host per property.
 Auth scheme + API prefix are constructor params: VERIFY both against the
 property's openapi.yml at deploy (defaults match upstream layout).
+
+Safety (spec 2026-10-01): upstream 1.6.0 REST creation does NOT reject
+overlaps, so this demo is the sole booking writer. Writes serialize across
+adapter instances/processes via a file lock next to the SQLite journal,
+recheck remote availability inside the lock, and record a durable pending
+row (deterministic opaque marker in notes) BEFORE the single POST. A key
+that is pending stays fail-closed: reconcile via GET /appointments exact
+marker match, never a blind second POST — even after restart or timeout.
+The journal stores minimal customer/booking IDs and outcomes, never guest fields.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import asyncio
+import hashlib
+import json
+import os
+import sqlite3
+import time
 
 import httpx
 
 from .base import Hold, HoldLedger, SlotAdapter, UnknownQuoteError
-from ..providers.errors import ProviderError, raise_for_provider
+from ..providers.errors import (
+    ProviderError,
+    RetryableProviderError,
+    raise_for_provider,
+)
+
+DEFAULT_STATE_DB = "/data/easy-booking.db"
 
 
-def _parse_start(value: str) -> datetime:
+def _require_key(value, where: str) -> str:
+    if not isinstance(value, str) or not value or len(value) > 128:
+        raise ProviderError(f"{where}: bad idempotency_key")
+    return value
+
+
+def _clean_error(error: str) -> str:
+    """Strip backend body echoes from recorded errors (journal PII rule).
+
+    Typed messages from this module carry no guest data, but PMS error
+    bodies may echo the submitted payload — never persist that.
+    """
+    return str(error).split(" body=", 1)[0][:300]
+
+
+def _parse_start(value: str):
     """Accept our slot format with or without seconds (API emits both)."""
+    from datetime import datetime
+
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
         try:
             return datetime.strptime(str(value), fmt)
@@ -54,8 +94,128 @@ def _path_segment(value: str) -> str:
     return str(value)
 
 
+def _is_int_like(value) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        return int(str(value)) > 0
+    except (ValueError, TypeError):
+        return False
+
+
+class _Journal:
+    """Durable idempotency journal (SQLite). No guest PII stored."""
+
+    def __init__(self, path: str) -> None:
+        parent = os.path.dirname(os.path.abspath(path))
+        os.makedirs(parent, exist_ok=True)
+        self._path = path
+        with sqlite3.connect(path, timeout=10) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS easy_writes("
+                "idempotency_key TEXT PRIMARY KEY, status TEXT NOT NULL,"
+                " marker TEXT NOT NULL, booking_id TEXT,"
+                " result TEXT, updated_at REAL NOT NULL)"
+            )
+            conn.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._path, timeout=10)
+
+    def get(self, key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT status, marker, booking_id, result, updated_at"
+                " FROM easy_writes WHERE idempotency_key=?",
+                (key,),
+            ).fetchone()
+        if row is None:
+            return None
+        status, marker, booking_id, result, updated_at = row
+        parsed = None
+        if result:
+            try:
+                parsed = json.loads(result)
+            except ValueError:
+                parsed = None
+        return {
+            "status": status,
+            "marker": marker,
+            "booking_id": booking_id,
+            "result": parsed,
+            "updated_at": updated_at,
+        }
+
+    def put_pending(self, key: str, marker: str) -> None:
+        self.put_result(key, marker, "pending_appointment", None, None)
+
+    def pending_appointments(self, exclude: str) -> list[tuple[str, str]]:
+        """Unresolved appointment writes besides `exclude` (global block)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT idempotency_key, marker FROM easy_writes"
+                " WHERE status LIKE 'pending%' AND idempotency_key != ?",
+                (exclude,),
+            ).fetchall()
+        return [(str(k), str(m)) for k, m in rows]
+
+    def put_result(
+        self,
+        key: str,
+        marker: str,
+        status: str,
+        booking_id: str | None,
+        result: dict | None,
+    ) -> None:
+        now = time.time()
+        blob = json.dumps(result) if result is not None else None
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO easy_writes(idempotency_key, status, marker,"
+                " booking_id, result, updated_at) VALUES(?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(idempotency_key) DO UPDATE SET status=?,"
+                " marker=?, booking_id=?, result=?, updated_at=?",
+                (
+                    key,
+                    status,
+                    marker,
+                    booking_id,
+                    blob,
+                    now,
+                    status,
+                    marker,
+                    booking_id,
+                    blob,
+                    now,
+                ),
+            )
+            conn.commit()
+
+
+def _acquire_lock(lock_path: str, timeout: float):
+    """Blocking file-lock acquisition (run via to_thread, never on loop)."""
+    import fcntl
+
+    parent = os.path.dirname(os.path.abspath(lock_path))
+    os.makedirs(parent, exist_ok=True)
+    handle = open(lock_path, "a+b")
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return handle
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("easy.confirm: lock busy")
+                time.sleep(0.05)
+    except Exception:
+        handle.close()
+        raise
+
+
 class EasyAppointmentsAdapter(SlotAdapter):
-    operational = True
+    operational = False  # opt in via allow_writes (demo-write gate)
 
     def __init__(
         self,
@@ -64,6 +224,9 @@ class EasyAppointmentsAdapter(SlotAdapter):
         auth_scheme: str = "Bearer ",
         api_prefix: str = "/index.php/api/v1",
         transport: httpx.BaseTransport | None = None,
+        state_db: str | None = None,
+        allow_writes: bool = False,
+        lock_timeout: float = 10.0,
     ) -> None:
         self._base = base_url.rstrip("/") + api_prefix
         self._key = api_key
@@ -74,6 +237,16 @@ class EasyAppointmentsAdapter(SlotAdapter):
             timeout=30.0,
             transport=transport,
         )
+        self._journal = _Journal(
+            state_db or os.environ.get("EASY_STATE_DB", DEFAULT_STATE_DB)
+        )
+        self._lock_path = self._journal._path + ".lock"
+        self._lock_timeout = lock_timeout
+        self._write_lock = asyncio.Lock()  # in-process sibling of the file lock
+        self._catalog_cache: dict | None = None
+        self._catalog_at = 0.0
+        # Instance-gated: credentials alone never advertise booking tools.
+        self.operational = bool(allow_writes)
 
     def __repr__(self) -> str:
         return "EasyAppointmentsAdapter(redacted)"
@@ -81,13 +254,191 @@ class EasyAppointmentsAdapter(SlotAdapter):
     async def close(self) -> None:
         await self._http.aclose()
 
+    # -- catalogue ----------------------------------------------------
+    async def _get(self, suffix: str, params: dict | None = None):
+        try:
+            return await self._http.get(f"{self._base}{suffix}", params=params)
+        except (httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+            raise RetryableProviderError(
+                f"easy: transport: {type(exc).__name__}"
+            ) from exc
+
+    def _marker(self, idempotency_key: str) -> str:
+        digest = hashlib.sha256(f"{self._base}|{idempotency_key}".encode()).hexdigest()[
+            :16
+        ]
+        return f"vb-{digest}"
+
+    async def _catalogue(self) -> dict:
+        now = time.monotonic()
+        if self._catalog_cache is not None and now - self._catalog_at < 300:
+            return self._catalog_cache
+        services_resp = await self._get("/services")
+        raise_for_provider(services_resp, "easy.catalogue.services")
+        providers_resp = await self._get("/providers")
+        raise_for_provider(providers_resp, "easy.catalogue.providers")
+        try:
+            services = services_resp.json()
+            providers = providers_resp.json()
+            if isinstance(services, dict) and "data" in services:
+                services = services["data"]
+            if isinstance(providers, dict) and "data" in providers:
+                providers = providers["data"]
+            if not isinstance(services, list) or not isinstance(providers, list):
+                raise ProviderError("easy.catalogue: bad payload")
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ProviderError(f"easy.catalogue: bad payload: {exc}") from exc
+        catalog = {"services": services, "providers": providers}
+        self._catalog_cache = catalog
+        self._catalog_at = now
+        return catalog
+
+    async def get_slot_catalogue(self) -> dict:
+        """Read-only service/provider catalogue (model never invents IDs)."""
+        catalog = await self._catalogue()
+        services = []
+        for record in catalog["services"]:
+            if not isinstance(record, dict):
+                continue
+            try:
+                sid = int(record["id"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            services.append(
+                {
+                    "id": sid,
+                    "name": str(record.get("name", "")),
+                    "duration": record.get("duration"),
+                    "price": record.get("price"),
+                    "currency": record.get("currency", "EUR"),
+                }
+            )
+        providers = []
+        for record in catalog["providers"]:
+            if not isinstance(record, dict):
+                continue
+            try:
+                pid = int(record["id"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            name = str(
+                record.get("name", "")
+                or " ".join(
+                    str(record.get(k, "")).strip() for k in ("firstName", "lastName")
+                ).strip()
+            )
+            providers.append(
+                {"id": pid, "name": name, "services": record.get("services")}
+            )
+        return {"services": services, "providers": providers}
+
+    def _match_name(self, records: list, value: str, keys: tuple) -> str | None:
+        wanted = str(value).strip().lower()
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            candidates = []
+            for key in keys:
+                text = str(record.get(key, "")).strip().lower()
+                if text:
+                    candidates.append(text)
+            # Full "firstName lastName" display names are searchable too.
+            full = (
+                (
+                    str(record.get("firstName", "")).strip()
+                    + " "
+                    + str(record.get("lastName", "")).strip()
+                )
+                .strip()
+                .lower()
+            )
+            if full:
+                candidates.append(full)
+            if wanted in candidates:
+                try:
+                    return str(int(record["id"]))
+                except (KeyError, ValueError, TypeError):
+                    continue
+        return None
+
+    async def _resolve_ids(
+        self, service: str, provider: str | None
+    ) -> tuple[str, str | None]:
+        service_id: str | None = None
+        provider_id: str | None = None
+        if _is_int_like(service):
+            service_id = str(int(str(service)))
+        if provider is not None and _is_int_like(provider):
+            provider_id = str(int(str(provider)))
+        if service_id is not None and (provider is None or provider_id is not None):
+            if provider_id is not None:
+                # Strict compatibility: an unreadable catalogue, an unknown
+                # provider id, or a missing/invalid services list is a closed
+                # failure — never a silent pass.
+                catalog = await self._catalogue()
+                if not self._provider_compatible(catalog, provider_id, service_id):
+                    raise ProviderError("easy.search_slots: provider cannot do service")
+            return service_id, provider_id
+        # Name resolution via official catalogue (no invention).
+        catalog = await self._catalogue()
+        if service_id is None:
+            resolved = self._match_name(catalog["services"], service, ("name",))
+            if resolved is None:
+                raise ProviderError(f"easy.search_slots: unknown service: {service!r}")
+            service_id = resolved
+        if provider is not None and provider_id is None:
+            resolved = self._match_name(
+                catalog["providers"],
+                provider,
+                ("name", "firstName", "lastName", "email"),
+            )
+            if resolved is None:
+                raise ProviderError(
+                    f"easy.search_slots: unknown provider: {provider!r}"
+                )
+            provider_id = resolved
+        if provider_id is not None and not self._provider_compatible(
+            catalog, provider_id, service_id
+        ):
+            raise ProviderError("easy.search_slots: provider cannot do service")
+        return service_id, provider_id
+
+    @staticmethod
+    def _provider_compatible(catalog: dict, provider_id: str, service_id: str) -> bool:
+        for record in catalog["providers"]:
+            if not isinstance(record, dict):
+                continue
+            try:
+                if str(int(record["id"])) != provider_id:
+                    continue
+            except (KeyError, ValueError, TypeError):
+                continue
+            offered = record.get("services")
+            if not isinstance(offered, list):
+                return False  # missing/invalid constraint: fail closed
+            try:
+                return str(int(service_id)) in {str(int(s)) for s in offered}
+            except (ValueError, TypeError):
+                return False
+        return False  # unknown provider id: fail closed
+
+    # -- slots --------------------------------------------------------
     async def search_slots(
         self, service: str, date: str, provider: str | None = None
     ) -> list[dict]:
-        params: dict = {"serviceId": service, "date": date}
-        if provider is not None:
-            params["providerId"] = provider
-        response = await self._http.get(f"{self._base}/availabilities", params=params)
+        from datetime import datetime
+
+        if not isinstance(service, str) or not service.strip():
+            raise ProviderError("easy.search_slots: bad service")
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except (ValueError, TypeError) as exc:
+            raise ProviderError(f"easy.search_slots: bad date: {exc}") from exc
+        service_id, provider_id = await self._resolve_ids(service, provider)
+        params: dict = {"serviceId": service_id, "date": date}
+        if provider_id is not None:
+            params["providerId"] = provider_id
+        response = await self._get("/availabilities", params=params)
         raise_for_provider(response, "easy.search_slots")
         try:
             times = response.json()
@@ -102,11 +453,11 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 start = f"{date} {t}" if " " not in str(t) else str(t)
                 # '|' separator: service ids are integer-like, never contain
                 # it; empty provider stays empty (no '-' collision).
-                slot_id = f"{service}|{provider or ''}|{start}"
+                slot_id = f"{service_id}|{provider_id or ''}|{start}"
                 slot = {
                     "slotId": slot_id,
-                    "serviceId": service,
-                    "providerId": provider,
+                    "serviceId": service_id,
+                    "providerId": provider_id,
                     "date": date,
                     "start": start,
                 }
@@ -126,23 +477,170 @@ class EasyAppointmentsAdapter(SlotAdapter):
             "email": guest.get("email", ""),
             "phone": guest.get("phone", ""),
         }
-        response = await self._http.post(f"{self._base}/customers", json=body)
+        try:
+            response = await self._http.post(f"{self._base}/customers", json=body)
+        except (httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+            raise RetryableProviderError(
+                f"easy.ensure_customer: {type(exc).__name__}"
+            ) from exc
         raise_for_provider(response, "easy.ensure_customer")
         try:
-            return int(response.json()["id"])
-        except (KeyError, ValueError, TypeError) as exc:
-            raise ProviderError(f"easy.ensure_customer: bad payload: {exc}") from exc
+            customer_id = response.json()["id"]
+            if not _is_int_like(customer_id):
+                raise ValueError("invalid id")
+            return int(customer_id)
+        except (KeyError, ValueError, TypeError):
+            # A malformed successful write may already have committed. Do not
+            # persist a conversion error containing backend-controlled data.
+            raise RetryableProviderError(
+                "easy.ensure_customer: malformed response"
+            ) from None
 
     async def _service_duration(self, service_id: str) -> int:
-        response = await self._http.get(f"{self._base}/services/{service_id}")
+        try:
+            response = await self._http.get(f"{self._base}/services/{service_id}")
+        except (httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+            raise RetryableProviderError(f"easy.service: {type(exc).__name__}") from exc
         raise_for_provider(response, "easy.service")
         try:
             return int(response.json()["duration"])
-        except (KeyError, ValueError, TypeError) as exc:
-            raise ProviderError(f"easy.service: bad payload: {exc}") from exc
+        except (KeyError, ValueError, TypeError):
+            raise ProviderError("easy.service: bad payload") from None
+
+    async def _availability_times(
+        self, service_id: str, provider_id: str | None, date: str
+    ) -> list[str]:
+        params: dict = {"serviceId": service_id, "date": date}
+        if provider_id is not None:
+            params["providerId"] = provider_id
+        response = await self._get("/availabilities", params=params)
+        raise_for_provider(response, "easy.confirm.recheck")
+        try:
+            times = response.json()
+            if isinstance(times, dict) and "data" in times:
+                times = times["data"]
+            if not isinstance(times, list):
+                raise ProviderError("easy.confirm.recheck: bad payload")
+            return [f"{date} {t}" if " " not in str(t) else str(t) for t in times]
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ProviderError(f"easy.confirm.recheck: bad payload: {exc}") from exc
+
+    async def _reconcile(self, marker: str) -> dict | None:
+        """Match exactly one remote record by bounded marker token.
+
+        Returns None (stay unknown) on read errors, malformed payloads,
+        zero matches, ambiguous multiple matches, or a match without a
+        positive integer id.
+        """
+        token = f"[voicebot {marker}]"
+        try:
+            response = await self._get("/appointments")
+        except ProviderError:
+            return None
+        if response.status_code >= 400:
+            return None
+        try:
+            records = response.json()
+            if isinstance(records, dict) and "data" in records:
+                records = records["data"]
+            if not isinstance(records, list):
+                return None
+        except (ValueError, TypeError, AttributeError):
+            return None
+        matches = [
+            record
+            for record in records
+            if isinstance(record, dict) and token in str(record.get("notes", ""))
+        ]
+        if len(matches) != 1:
+            return None
+        if not _is_int_like(matches[0].get("id")):
+            return None
+        return matches[0]
+
+    @staticmethod
+    def _filter_guest(guest: dict) -> dict:
+        """Strict slot guest: customerId, or first+last+email+phone.
+
+        A display `name` maps into first/last on a whitespace split. Only
+        trusted keys pass; the journal never sees raw guest data.
+        """
+        if not isinstance(guest, dict) or not guest:
+            raise ProviderError("easy.confirm: bad guest")
+        if guest.get("customerId") is not None:
+            _required_int(guest.get("customerId"), "customerId")
+            return {"customerId": int(str(guest["customerId"]))}
+        guest = dict(guest)
+        if (not guest.get("firstName") or not guest.get("lastName")) and isinstance(
+            guest.get("name"), str
+        ):
+            parts = guest["name"].split()
+            if len(parts) >= 2:
+                guest.setdefault("firstName", parts[0])
+                guest.setdefault("lastName", " ".join(parts[1:]))
+        for field in ("firstName", "lastName", "email", "phone"):
+            value = guest.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ProviderError(
+                    "easy.confirm: guest needs customerId or"
+                    " (firstName + lastName + email + phone)"
+                )
+        clean = {
+            k: guest[k].strip()
+            for k in ("firstName", "lastName", "email", "phone")
+            if isinstance(guest.get(k), str) and guest[k].strip()
+        }
+        notes = guest.get("notes")
+        if isinstance(notes, str) and notes.strip():
+            clean["notes"] = notes.strip()[:200]
+        return clean
+
+    @staticmethod
+    def _snapshot_slot(hold) -> dict:
+        """Validate the held slot snapshot; corrupt keys fail closed."""
+        slot = hold.payload.get("slot") if isinstance(hold.payload, dict) else None
+        if not isinstance(slot, dict):
+            raise ProviderError("easy.confirm: bad slot snapshot")
+        try:
+            service_id = str(slot["serviceId"])
+            raw_provider = slot.get("providerId")
+            date = str(slot["date"])
+            start = str(slot["start"])
+        except KeyError as exc:
+            raise ProviderError(f"easy.confirm: bad slot snapshot: {exc}") from exc
+        if not _is_int_like(service_id) or (
+            raw_provider not in (None, "") and not _is_int_like(raw_provider)
+        ):
+            raise ProviderError("easy.confirm: bad slot ids")
+        from datetime import datetime
+
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except (ValueError, TypeError) as exc:
+            raise ProviderError(f"easy.confirm: bad slot date: {exc}") from exc
+        _parse_start(start)  # raises closed ProviderError on garbage
+        return {
+            "service_id": str(int(service_id)),
+            "provider_id": (
+                None if raw_provider in (None, "") else str(int(str(raw_provider)))
+            ),
+            "date": date,
+            "start": start,
+        }
+
+    def _success_result(self, record: dict) -> dict:
+        """Commit a booking only on a positive integer id."""
+        booking_id = record.get("id")
+        if not _is_int_like(booking_id):
+            raise ProviderError("easy.confirm: bad payload: no id")
+        return {"ok": True, "booking": {"id": record.get("id", booking_id)}}
 
     async def create_hold(self, slot_id: str) -> Hold:
-        # $0 demo: no price — never utter one on this track.
+        # $0 demo: no price — never utter one on this track. A hold is a
+        # local snapshot of live search output, not a remote reservation:
+        # the slot is rechecked against the PMS at confirm time.
+        if not isinstance(slot_id, str) or not slot_id:
+            raise UnknownQuoteError(str(slot_id))
         try:
             slot = self._slots[slot_id]
         except KeyError:
@@ -155,72 +653,286 @@ class EasyAppointmentsAdapter(SlotAdapter):
         )
 
     async def confirm(self, hold_id: str, guest: dict, idempotency_key: str) -> dict:
+        _require_key(idempotency_key, "easy.confirm")
+        if not self.operational:
+            raise ProviderError("easy.confirm: writes not enabled")
+        marker = self._marker(idempotency_key)
+        journal = self._journal.get(idempotency_key)
+        if journal is not None and journal["status"] == "success":
+            return journal["result"] or {"ok": True}
+        if journal is not None and journal["status"] == "failed":
+            raise ProviderError(
+                (journal["result"] or {}).get("error", "easy.confirm: failed")
+            )
+        if journal is not None and journal["status"].startswith("pending"):
+            return await self._settle_pending(idempotency_key, journal, hold_id)
         replayed = self._holds.check_replay(idempotency_key)
         if replayed is not None:
             return replayed
         hold = self._holds.get(hold_id)
         if hold is None:
             return {"ok": False, "error": "hold_expired_or_unknown"}
-        if not self._holds.reserve(idempotency_key):
-            return {"ok": False, "error": "confirm_in_progress"}
-        if not self._holds.reserve(f"confirm:{hold_id}"):
-            self._holds.release_pending(idempotency_key)
-            return {"ok": False, "error": "hold_already_confirming"}
+        clean_guest = self._filter_guest(guest)
+        snapshot = self._snapshot_slot(hold)
+        async with self._write_lock:
+            try:
+                lock = await asyncio.to_thread(
+                    _acquire_lock, self._lock_path, self._lock_timeout
+                )
+            except (TimeoutError, OSError):
+                return {"ok": False, "error": "confirm_in_progress"}
+            try:
+                return await self._confirm_locked(
+                    idempotency_key, marker, hold_id, snapshot, clean_guest
+                )
+            finally:
+                try:
+                    lock.close()
+                except Exception:
+                    pass
+
+    async def _settle_pending(self, key: str, row: dict, hold_id: str) -> dict:
+        # Crash/timeout window: NEVER blindly POST again. Only a uniquely
+        # matched remote record may resolve the write.
+        if row["status"] == "pending_customer":
+            # Customer writes have no supported idempotency primitive. An
+            # uncertain create requires operator recovery, never a new POST.
+            return {"ok": False, "error": "write_outcome_unknown"}
+        matched = await self._reconcile(row["marker"])
+        if matched is None:
+            return {"ok": False, "error": "write_outcome_unknown"}
+        result = self._success_result(matched)
+        self._journal.put_result(
+            key, row["marker"], "success", result["booking"]["id"], result
+        )
+        self._holds.record(key, result)
+        if hold_id:
+            self._holds.release(hold_id)
+        return result
+
+    def _fail(self, key: str, marker: str, error: str) -> dict:
+        result = {"ok": False, "error": _clean_error(error)}
+        self._journal.put_result(key, marker, "failed", None, result)
+        return self._holds.record(key, result)
+
+    async def _confirm_locked(
+        self,
+        key: str,
+        marker: str,
+        hold_id: str,
+        snapshot: dict,
+        clean_guest: dict,
+    ) -> dict:
+        # Re-read the journal UNDER the lock: a same-key concurrent waiter
+        # must return replay/reconcile — never overwrite success with stale.
+        journal = self._journal.get(key)
+        if journal is not None and journal["status"] == "success":
+            return journal["result"] or {"ok": True}
+        if journal is not None and journal["status"] == "failed":
+            raise ProviderError(
+                (journal["result"] or {}).get("error", "easy.confirm: failed")
+            )
+        if journal is not None and journal["status"].startswith("pending"):
+            return await self._settle_pending(key, journal, hold_id)
+        # Global appointment block: while ANY appointment write is unresolved,
+        # a new key must not POST (timeout-while-processing would overlap).
+        # Other pendings reconcile read-only here; unresolved blocks closed.
+        for other_key, other_marker in self._journal.pending_appointments(key):
+            if self._journal.get(other_key)["status"] == "pending_customer":
+                return {"ok": False, "error": "write_outcome_unknown"}
+            matched = await self._reconcile(other_marker)
+            if matched is None:
+                return {"ok": False, "error": "write_outcome_unknown"}
+            result = self._success_result(matched)
+            self._journal.put_result(
+                other_key, other_marker, "success", result["booking"]["id"], result
+            )
+            self._holds.record(other_key, result)
+        service_id = snapshot["service_id"]
+        provider_id = snapshot["provider_id"]
+        # Duration and start validate BEFORE any customer side effect.
         try:
-            slot = hold.payload["slot"]
-            customer_id = self._holds.get_memo(idempotency_key, "customerId")
+            minutes = await self._service_duration(service_id)
+        except RetryableProviderError:
+            return {"ok": False, "error": "write_outcome_unknown"}
+        except ProviderError as exc:
+            result = self._fail(key, marker, str(exc))
+            raise ProviderError(result["error"])
+        if minutes <= 0:
+            result = self._fail(key, marker, "easy.service: bad duration")
+            raise ProviderError(result["error"])
+        try:
+            times = await self._availability_times(
+                service_id, provider_id, snapshot["date"]
+            )
+        except RetryableProviderError:
+            # Ambiguous recheck: fail closed without a journal row.
+            return {"ok": False, "error": "write_outcome_unknown"}
+        except ProviderError as exc:
+            result = self._fail(key, marker, str(exc))
+            raise ProviderError(result["error"])
+        if snapshot["start"] not in times:
+            return self._fail(key, marker, "slot_stale")
+        if not self._holds.reserve(key):
+            return {"ok": False, "error": "confirm_in_progress"}
+        recorded = False
+        try:
+            customer_id = (
+                (journal.get("result") or {}).get("customerId")
+                if journal is not None and journal["status"] == "customer_ready"
+                else self._holds.get_memo(key, "customerId")
+            )
             if customer_id is None:
-                customer_id = await self._ensure_customer(guest)
-                self._holds.memo(idempotency_key, "customerId", customer_id)
-            minutes = await self._service_duration(str(slot["serviceId"]))
-            start = _parse_start(slot["start"])
+                if clean_guest.get("customerId") is None:
+                    # Persist BEFORE creating a customer: task cancellation,
+                    # process death and fresh-key retries must not duplicate it.
+                    self._journal.put_result(
+                        key, marker, "pending_customer", None, None
+                    )
+                try:
+                    customer_id = await self._ensure_customer(clean_guest)
+                except RetryableProviderError:
+                    return {"ok": False, "error": "write_outcome_unknown"}
+                except ProviderError as exc:
+                    result = self._fail(key, marker, str(exc))
+                    raise ProviderError(result["error"])
+                self._holds.memo(key, "customerId", customer_id)
+                self._journal.put_result(
+                    key, marker, "customer_ready", None, {"customerId": customer_id}
+                )
+            from datetime import timedelta
+
+            start = _parse_start(snapshot["start"])
+            notes = f"[voicebot {marker}]"
+            extra = clean_guest.get("notes", "")
+            if extra:
+                notes = f"{notes} {extra[:200]}"
             body = {
                 "start": start.strftime("%Y-%m-%d %H:%M:%S"),
                 "end": (start + timedelta(minutes=minutes)).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
                 "customerId": customer_id,
-                "providerId": _optional_int(slot.get("providerId")),
-                "serviceId": _required_int(slot.get("serviceId"), "serviceId"),
-                "notes": guest.get("notes", ""),
+                "providerId": _optional_int(provider_id),
+                "serviceId": _required_int(service_id, "serviceId"),
+                "notes": notes,
                 "status": "Booked",
             }
             body = {k: v for k, v in body.items() if v is not None}
-            response = await self._http.post(f"{self._base}/appointments", json=body)
-            raise_for_provider(response, "easy.confirm")
-        except Exception:
-            self._holds.release_pending(idempotency_key)
-            self._holds.release_pending(f"confirm:{hold_id}")
-            raise
-        try:
-            result = {"ok": True, "booking": response.json()}
-        except ValueError as exc:
-            self._holds.release_pending(idempotency_key)
-            self._holds.release_pending(f"confirm:{hold_id}")
-            raise ProviderError(f"easy.confirm: bad payload: {exc}") from exc
-        self._holds.release(hold_id)  # consumed: no reconfirm with new key
-        return self._holds.record(idempotency_key, result)
+            # Durable appointment pending sits ADJACENT to the single POST.
+            self._journal.put_pending(key, marker)
+            try:
+                response = await self._http.post(
+                    f"{self._base}/appointments", json=body
+                )
+            except (httpx.HTTPError, OSError, asyncio.TimeoutError):
+                return {"ok": False, "error": "write_outcome_unknown"}
+            try:
+                raise_for_provider(response, "easy.confirm")
+            except RetryableProviderError:
+                # 429/5xx: commit state ambiguous — stay pending.
+                return {"ok": False, "error": "write_outcome_unknown"}
+            except ProviderError as exc:
+                # Known 4xx: terminal, never retry this key blindly.
+                result = self._fail(key, marker, str(exc))
+                raise ProviderError(result["error"])
+            try:
+                record = response.json()
+                if not isinstance(record, dict):
+                    raise ProviderError("easy.confirm: bad payload: no id")
+                result = self._success_result(record)
+            except (ValueError, ProviderError):
+                # Malformed 201: commit ambiguous — stay pending.
+                return {"ok": False, "error": "write_outcome_unknown"}
+            self._journal.put_result(
+                key, marker, "success", result["booking"]["id"], result
+            )
+            self._holds.release(hold_id)  # consumed: no reconfirm with new key
+            result = self._holds.record(key, result)
+            recorded = True
+            return result
+        finally:
+            if not recorded:
+                self._holds.release_pending(key)
 
     async def cancel(self, booking_id: str, idempotency_key: str) -> dict:
-        replayed = self._holds.check_replay(idempotency_key)
+        _require_key(idempotency_key, "easy.cancel")
+        if not self.operational:
+            raise ProviderError("easy.cancel: writes not enabled")
+        namespaced = f"cancel:{idempotency_key}"
+        replayed = self._holds.check_replay(namespaced)
         if replayed is not None:
             return replayed
-        if not self._holds.reserve(idempotency_key):
-            return {"ok": False, "error": "cancel_in_progress"}
-        try:
-            booking_ref = _path_segment(booking_id)
-            response = await self._http.delete(
-                f"{self._base}/appointments/{booking_ref}"
+        journal = self._journal.get(namespaced)
+        if journal is not None and journal["status"] == "success":
+            return journal["result"] or {"ok": True}
+        if journal is not None and journal["status"] == "failed":
+            raise ProviderError(
+                (journal["result"] or {}).get("error", "easy.cancel: failed")
             )
-            if response.status_code == 404:
-                # Already gone: idempotent cancel counts as success.
-                return self._holds.record(
-                    idempotency_key,
-                    {"ok": True, "booking_id": booking_id, "already_gone": True},
+        booking_ref = _path_segment(booking_id)
+        async with self._write_lock:
+            try:
+                lock = await asyncio.to_thread(
+                    _acquire_lock, self._lock_path, self._lock_timeout
                 )
-            raise_for_provider(response, "easy.cancel")
-        except Exception:
-            self._holds.release_pending(idempotency_key)
-            raise
-        result = {"ok": True, "booking_id": booking_id}
-        return self._holds.record(idempotency_key, result)
+            except (TimeoutError, OSError):
+                return {"ok": False, "error": "cancel_in_progress"}
+            try:
+                # Re-read under the lock: a concurrent waiter replays.
+                replayed = self._holds.check_replay(namespaced)
+                if replayed is not None:
+                    return replayed
+                journal = self._journal.get(namespaced)
+                if journal is not None and journal["status"] == "success":
+                    return journal["result"] or {"ok": True}
+                if journal is not None and journal["status"] == "failed":
+                    raise ProviderError(
+                        (journal["result"] or {}).get("error", "easy.cancel: failed")
+                    )
+                if not self._holds.reserve(namespaced):
+                    return {"ok": False, "error": "cancel_in_progress"}
+                recorded = False
+                try:
+                    try:
+                        response = await self._http.delete(
+                            f"{self._base}/appointments/{booking_ref}"
+                        )
+                    except (httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
+                        raise RetryableProviderError(
+                            f"easy.cancel: {type(exc).__name__}"
+                        ) from exc
+                    if response.status_code == 404:
+                        # Already gone: idempotent cancel counts as success.
+                        result = {
+                            "ok": True,
+                            "booking_id": booking_id,
+                            "already_gone": True,
+                        }
+                    else:
+                        raise_for_provider(response, "easy.cancel")
+                        result = {"ok": True, "booking_id": booking_id}
+                    self._journal.put_result(
+                        namespaced, "cancel", "success", booking_id, result
+                    )
+                    result = self._holds.record(namespaced, result)
+                    recorded = True
+                    return result
+                except ProviderError as exc:
+                    if not isinstance(exc, RetryableProviderError):
+                        self._journal.put_result(
+                            namespaced,
+                            "cancel",
+                            "failed",
+                            None,
+                            {"ok": False, "error": _clean_error(str(exc))},
+                        )
+                    raise
+                finally:
+                    if not recorded:
+                        self._holds.release_pending(namespaced)
+            finally:
+                try:
+                    lock.close()
+                except Exception:
+                    pass

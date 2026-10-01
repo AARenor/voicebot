@@ -239,10 +239,16 @@ class TestDashboard(unittest.TestCase):
         from app.booking.easyappointments import EasyAppointmentsAdapter
 
         closed = []
+        import os
+        import tempfile
+
         adapter = EasyAppointmentsAdapter(
             "https://x.example",
             "k",
             transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])),
+            state_db=os.path.join(
+                tempfile.mkdtemp(prefix="easy-dash-"), "easy-booking.db"
+            ),
         )
         orig_close = adapter.close
 

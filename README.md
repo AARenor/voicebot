@@ -23,7 +23,7 @@ voicebot/
       cloudbeds.py    # third (stub)
       zenoti.py       # spa parallel (stub)
       qloapps.py      # $0 demo double (stub)
-      easyappointments.py  # $0 demo double (REAL REST: avail/appts)
+      easyappointments.py  # real spa REST adapter, opt-in demo + durable writes
     knowledge/        # SQLite FTS FAQ ingest + retrieve + ET seed
     callslog.py       # SQLite turn/call log (masked peers, 30d retention)
     dashboard/        # staff holds queue (live API) + static UI
@@ -36,6 +36,15 @@ voicebot/
 3. `python -m app.server` (dashboard + HTTP voice-turn demo)
 4. Telephone phase: approved Estonian DID/trunk -> self-hosted LiveKit SIP ->
    individual room dispatch -> LiveKit Agents worker.
+
+## Installed booking demo
+
+Easy!Appointments **1.6.0** runs as a private separate service with persistent
+MySQL storage. The existing HTTP dialogue uses `SlotAdapter` → `Dispatcher` →
+the documented REST API for catalogue, slots, booking and cancellation.
+See [installation and operator runbook](deploy/easyappointments/README.md).
+This is synthetic spa data, not hotel room inventory or a telephone deployment.
+Canonical repository: **Parnuhakk/voicebot** (branch `master`).
 
 ## Rules
 

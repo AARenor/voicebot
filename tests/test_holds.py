@@ -73,12 +73,21 @@ class TestIdempotency(unittest.TestCase):
 
 class TestSlotHoldsPriceless(unittest.TestCase):
     def test_slot_and_demo_holds_have_no_price(self):
+        import os
+        import tempfile
+
         from app.booking.easyappointments import EasyAppointmentsAdapter
         from app.booking.qloapps import QloAppsAdapter
         from app.booking.zenoti import ZenotiAdapter
 
         z = asyncio.run(ZenotiAdapter("k").create_hold("slot1"))
-        easy = EasyAppointmentsAdapter("http://x", "k")
+        easy = EasyAppointmentsAdapter(
+            "http://x",
+            "k",
+            state_db=os.path.join(
+                tempfile.mkdtemp(prefix="easy-holds-"), "easy-booking.db"
+            ),
+        )
         easy._slots["slot2"] = {
             "slotId": "slot2",
             "serviceId": "6",

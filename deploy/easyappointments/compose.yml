@@ -1,0 +1,55 @@
+name: voicebot-booking
+services:
+  easyappointments:
+    image: alextselegidis/easyappointments:1.6.0@sha256:ab35b8872d5d3328fa3afb641a89a75f3c6f96f3fb98d6d6d3447fff9d357fa1
+    entrypoint: ["apache2-foreground"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:80"
+    environment:
+      BASE_URL: http://localhost:8088
+      DB_HOST: booking-db
+      DB_NAME: easyappointments
+      DB_USERNAME: easyappointments
+      DB_PASSWORD: ${EASY_DB_PASSWORD:?Supply runtime database password}
+    volumes:
+      - ./config.php:/var/www/html/config.php:ro
+      - booking-storage:/var/www/html/storage
+    networks:
+      booking:
+      coolify:
+        aliases:
+          - voicebot-easyappointments
+    depends_on:
+      booking-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1/index.php/booking"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  booking-db:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: easyappointments
+      MYSQL_USER: easyappointments
+      MYSQL_PASSWORD: ${EASY_DB_PASSWORD:?Supply runtime database password}
+      MYSQL_ROOT_PASSWORD: ${EASY_DB_ROOT_PASSWORD:?Supply runtime root password}
+    volumes:
+      - booking-db:/var/lib/mysql
+    networks:
+      - booking
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql --user=\"$$MYSQL_USER\" --database=\"$$MYSQL_DATABASE\" --execute='SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+volumes:
+  booking-db:
+  booking-storage:
+networks:
+  booking:
+    internal: true
+  coolify:
+    external: true

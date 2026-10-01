@@ -223,7 +223,7 @@ async def _run_dialogue(
     )
 
     tool_results = []
-    for _round in range(2):  # at most two tool rounds, then render
+    for _round in range(4):  # catalogue → search → hold → confirm; bounded
         tool_calls = answer.get("tool_calls") or []
         if not tool_calls:
             break
@@ -264,7 +264,13 @@ async def _run_dialogue(
             _sync_chat, llm_primary, llm_secondary, messages, available_tools
         )
         fallback_used = fallback_used or fallback_round
-    reply = (answer.get("content") or "").strip()
+    if answer.get("tool_calls"):
+        # The model still wants work beyond the bound: do not speak a claim
+        # whose requested tool was never executed.
+        reply = PRICE_HANDOFF.get(lang, PRICE_HANDOFF["et"])
+        fallback_used = True
+    else:
+        reply = (answer.get("content") or "").strip()
 
     if not reply:
         reply = FILLER.get(lang, FILLER["et"])

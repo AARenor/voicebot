@@ -8,9 +8,12 @@ carry a price_quote_id — never from embeddings or LLM invention.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import uuid
+
+import httpx
 
 from .base import SlotAdapter, StayAdapter, UnknownQuoteError
 from ..providers.errors import ProviderError
@@ -98,7 +101,8 @@ TOOL_HOLD_SLOT = {
     "type": "function",
     "function": {
         "name": "hold_slot",
-        "description": "Hold one time slot (no charge).",
+        "description": "Hold one time slot as a local snapshot (no charge; "
+        "not a remote reservation — availability is rechecked at confirm).",
         "parameters": {
             "type": "object",
             "required": ["slot_id"],
@@ -111,7 +115,8 @@ TOOL_CONFIRM_SLOT = {
     "type": "function",
     "function": {
         "name": "confirm_slot_booking",
-        "description": "Confirm a held slot.",
+        "description": "Confirm a held slot. Guest must carry customerId, "
+        "or firstName + lastName + email + phone.",
         "parameters": {
             "type": "object",
             "required": ["hold_id", "guest"],
@@ -124,6 +129,32 @@ TOOL_CONFIRM_SLOT = {
     },
 }
 
+TOOL_CANCEL_SLOT = {
+    "type": "function",
+    "function": {
+        "name": "cancel_slot_booking",
+        "description": "Cancel a slot booking by booking id (idempotent).",
+        "parameters": {
+            "type": "object",
+            "required": ["booking_id"],
+            "properties": {
+                "booking_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+        },
+    },
+}
+
+TOOL_CATALOGUE = {
+    "type": "function",
+    "function": {
+        "name": "get_slot_catalogue",
+        "description": "List spa services and providers with numeric ids "
+        "(resolve names to ids; never invent ids).",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
 BOOKING_TOOLS = [
     TOOL_SEARCH,
     TOOL_HOLD,
@@ -132,6 +163,8 @@ BOOKING_TOOLS = [
     TOOL_SEARCH_SLOTS,
     TOOL_HOLD_SLOT,
     TOOL_CONFIRM_SLOT,
+    TOOL_CANCEL_SLOT,
+    TOOL_CATALOGUE,
 ]
 
 
@@ -152,12 +185,16 @@ async def _guarded(code: str, call, *args):
 
     PMS internals (HTTP bodies, KeyErrors on snapshot keys) must never
     reach LLM context or speech — full detail belongs in server logs.
+    Transport failures (httpx/OSError/timeouts) also map to the closed
+    code so the model never sees stack traces.
     """
     try:
         return await call(*args)
     except UnknownQuoteError:
         raise ProviderError(f"tools: {code}") from None
     except ProviderError:
+        raise ProviderError(f"tools: {code}") from None
+    except (httpx.HTTPError, OSError, asyncio.TimeoutError, TimeoutError):
         raise ProviderError(f"tools: {code}") from None
 
 
@@ -202,6 +239,42 @@ def _require_guest(args: dict) -> dict:
     if not (has_name and has_contact):
         raise ProviderError("tools: guest needs customerId or (name + phone/email)")
     return guest
+
+
+_SLOT_GUEST_ALLOW = frozenset(
+    {"firstName", "lastName", "name", "email", "phone", "notes", "customerId"}
+)
+
+
+def _require_slot_guest(args: dict) -> dict:
+    """Slot-track guest: customerId, or first+last+email+phone (strict).
+
+    A display `name` maps into first/last on a whitespace split. Trusted
+    keys only — nothing beyond what the PMS customer/appointment calls
+    need, and no raw guest data ever reaches the journal.
+    """
+    guest = _require_guest(args)
+    extra = set(guest) - _SLOT_GUEST_ALLOW
+    if extra:
+        raise ProviderError("tools: guest carries untrusted fields")
+    if guest.get("customerId") is not None:
+        return {k: guest[k] for k in guest if k in _SLOT_GUEST_ALLOW}
+    mapped = dict(guest)
+    if (not mapped.get("firstName") or not mapped.get("lastName")) and isinstance(
+        mapped.get("name"), str
+    ):
+        parts = mapped["name"].split()
+        if len(parts) >= 2:
+            mapped.setdefault("firstName", parts[0])
+            mapped.setdefault("lastName", " ".join(parts[1:]))
+    for field in ("firstName", "lastName", "email", "phone"):
+        value = mapped.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ProviderError(
+                "tools: guest needs customerId or"
+                " (firstName + lastName + email + phone)"
+            )
+    return {k: mapped[k] for k in mapped if k in _SLOT_GUEST_ALLOW}
 
 
 def _idempotency_key(args: dict) -> str:
@@ -254,7 +327,15 @@ class Dispatcher:
         if self._stay is not None and getattr(self._stay, "operational", False):
             tools.extend((TOOL_SEARCH, TOOL_HOLD, TOOL_CONFIRM))
         if self._slot is not None and getattr(self._slot, "operational", False):
-            tools.extend((TOOL_SEARCH_SLOTS, TOOL_HOLD_SLOT, TOOL_CONFIRM_SLOT))
+            tools.extend(
+                (
+                    TOOL_SEARCH_SLOTS,
+                    TOOL_HOLD_SLOT,
+                    TOOL_CONFIRM_SLOT,
+                    TOOL_CANCEL_SLOT,
+                    TOOL_CATALOGUE,
+                )
+            )
         return tools
 
     async def dispatch(self, name: str, args: dict) -> dict:
@@ -325,7 +406,7 @@ class Dispatcher:
             return {"hold_id": hold.hold_id}
         if name == "confirm_slot_booking":
             slot = _require_slot(self._slot)
-            guest = _require_guest(args)
+            guest = _require_slot_guest(args)
             return await _guarded(
                 "confirm_failed",
                 slot.confirm,
@@ -333,6 +414,20 @@ class Dispatcher:
                 guest,
                 _idempotency_key(args),
             )
+        if name == "cancel_slot_booking":
+            slot = _require_slot(self._slot)
+            return await _guarded(
+                "cancel_failed",
+                slot.cancel,
+                _require_str(args, "booking_id"),
+                _idempotency_key(args),
+            )
+        if name == "get_slot_catalogue":
+            slot = _require_slot(self._slot)
+            describe = getattr(slot, "get_slot_catalogue", None)
+            if not callable(describe):
+                raise ProviderError("tools: catalogue not configured")
+            return await _guarded("catalogue_failed", describe)
         if name == "answer_faq":
             if self._faq is None:
                 raise ProviderError("tools: no FAQ backend configured")

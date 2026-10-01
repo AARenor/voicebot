@@ -72,9 +72,22 @@ def build_stack() -> dict:
     elif os.environ.get("CLOUDBEDS_API_KEY"):
         stack["stay"] = CloudbedsAdapter(os.environ["CLOUDBEDS_API_KEY"])
     if os.environ.get("EASY_BASE_URL") and os.environ.get("EASY_API_KEY"):
-        stack["slot"] = EasyAppointmentsAdapter(
-            os.environ["EASY_BASE_URL"], os.environ["EASY_API_KEY"]
-        )
+        # Sole-writer demo gate: credentials alone never advertise booking
+        # tools. Explicit opt-in plus a persistent journal are required
+        # (upstream 1.6.0 creation does not reject overlaps).
+        if os.environ.get("EASY_DEMO_WRITES") == "1":
+            try:
+                stack["slot"] = EasyAppointmentsAdapter(
+                    os.environ["EASY_BASE_URL"],
+                    os.environ["EASY_API_KEY"],
+                    auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+                    api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+                    state_db=os.environ.get("EASY_STATE_DB", "/data/easy-booking.db"),
+                    allow_writes=True,
+                )
+            except Exception:
+                # Journal unwritable: stay unwired, never half-operational.
+                stack["slot"] = None
     if os.environ.get("LIVEKIT_URL") and os.environ.get("LIVEKIT_API_KEY"):
         # Self-hosted media plane (livekit:7880 on the coolify network).
         # Reachability is verified at deploy; status only reports config.

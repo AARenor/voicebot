@@ -633,11 +633,19 @@ class TestGateFormats(unittest.TestCase):
 
 class TestSlotTrack(unittest.TestCase):
     def _slot_dispatcher(self, handler):
+        import os
+        import tempfile
+
         from app.booking.easyappointments import EasyAppointmentsAdapter
 
+        tmp = tempfile.mkdtemp(prefix="easy-gate-")
         return Dispatcher(
             slot=EasyAppointmentsAdapter(
-                "https://spa.example", "k", transport=httpx.MockTransport(handler)
+                "https://spa.example",
+                "k",
+                transport=httpx.MockTransport(handler),
+                state_db=os.path.join(tmp, "easy-booking.db"),
+                allow_writes=True,
             )
         )
 
@@ -660,6 +668,14 @@ class TestSlotTrack(unittest.TestCase):
     def test_slot_round_trip(self):
         def handler(request):
             url = str(request.url.path)
+            if url.endswith("/services"):
+                return httpx.Response(
+                    200, json=[{"id": 6, "name": "Massage", "duration": 60}]
+                )
+            if url.endswith("/providers"):
+                return httpx.Response(
+                    200, json=[{"id": 2, "firstName": "Anna", "services": [6]}]
+                )
             if url.endswith("/availabilities"):
                 return httpx.Response(200, json=["17:00"])
             if url.endswith("/customers"):
@@ -686,7 +702,12 @@ class TestSlotTrack(unittest.TestCase):
                 "confirm_slot_booking",
                 {
                     "hold_id": hold["hold_id"],
-                    "guest": {"firstName": "Mari", "phone": "+372"},
+                    "guest": {
+                        "firstName": "Mari",
+                        "lastName": "Maasikas",
+                        "email": "mari@example.ee",
+                        "phone": "+372",
+                    },
                 },
             )
         )

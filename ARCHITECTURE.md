@@ -255,10 +255,12 @@ Shared rules:
 - never treat a catalogue scrape or FAQ result as bookable inventory.
 
 An adapter's `operational` flag is a release assertion, not a declaration by
-the class author. Easy!Appointments currently violates this rule: it advertises
-itself after credentials are present without confirmation-time slot revalidation
-or a proven same-slot conflict. Keep it unconfigured for live traffic until the
-risk gates in R-003/R-004 pass.
+the class author. Easy!Appointments now defaults to non-operational. Its explicit
+`EASY_DEMO_WRITES=1` gate permits only the controlled synthetic demo with a
+persistent SQLite write journal. Confirmation rechecks provider availability
+inside a file lock. The real-instance tests cover same-slot contention and
+commit-then-timeout/restart reconciliation; they do not certify independent UI
+writes, multiple hosts, real guest privacy or caller ownership.
 
 Every hold and idempotency key is owned by a call/session namespace. Possession
 of a hold ID alone must never authorize another caller to confirm or cancel it.
@@ -277,6 +279,16 @@ of a hold ID alone must never authorize another caller to confirm or cancel it.
 
 The first-party comparison and rejection reasons are in
 [`docs/research/open-source-booking-backends.md`](docs/research/open-source-booking-backends.md).
+
+**Installed topology (2026-10-01):** the private `voicebot-booking` Compose
+project runs pinned Easy!Appointments 1.6.0 and persistent MySQL. The booking
+service is `voicebot-easyappointments:80` on the Coolify network; its admin UI
+binds only to host loopback port 8088 and MySQL has no published host port.
+The existing org repository **Parnuhakk/voicebot** supplies the Python image.
+`build_stack` → `Dispatcher` → `SlotAdapter` connects the four-round HTTP
+dialogue to the documented REST API. `/data/easy-booking.db` persists write
+outcomes on the voicebot data volume; local holds still expire on restart.
+See the [deployment/operator runbook](deploy/easyappointments/README.md).
 
 ### Production connector targets
 
@@ -423,13 +435,19 @@ Latency rows remain aspirational until the first real-call dataset exists.
 1. Authenticate real call/guest/booking reads and stop storing raw dialogue by
    default.
 2. Enforce guest-field allowlists and reject payment-like data.
-3. Disable generic FAQ and Easy!Appointments live tools until property and race
-   gates pass.
+3. Disable generic FAQ and real-property Easy!Appointments tools until property
+   and privacy gates pass; synthetic demo writes require explicit opt-in.
 4. Add caller ownership and durable idempotency/reconciliation design.
 5. Implement audible static fallback and truthful readiness states.
 6. Add a one-process startup guard until state migration is complete.
 
 ### Gate A — booking proof
+
+The synthetic 1.6.0 installation and opt-in contract suite are now provided:
+`tests/test_easyappointments_installed.py` verifies API lifecycle, factory/
+Dispatcher/dialogue integration, same-slot contention and timeout/restart
+reconciliation. Production release still requires the R-003/R-004 universal
+writer/inventory and ownership gates; this is not a telephone proof.
 
 1. Deploy stable Easy!Appointments 1.6.0 and configure a demo service,
    provider, and working schedule.

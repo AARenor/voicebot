@@ -5,8 +5,8 @@ port 8000. No secrets are baked into the image (see `.dockerignore`).
 
 ## 0. Prereqs
 
-- This folder (`voicebot/`) pushed to a git repo Coolify can read.
-  If not a repo yet: `git init && git add . && git commit -m ...` + push.
+- Canonical repository: `Parnuhakk/voicebot`, branch `master`.
+  Coolify's repository source must use the organization, not the former personal repo.
 - DNS `robot.arleserver.cfd` → your Coolify server IP (A record).
 - Coolify server with a configured wildcard or per-domain TLS (Let's Encrypt).
 
@@ -34,7 +34,8 @@ SIP_TRUNK_ADDRESS=...  SIP_AUTH_USERNAME=...  SIP_AUTH_PASSWORD=...  SIP_INBOUND
 APALEO_CLIENT_ID=...  APALEO_CLIENT_SECRET=...
 MEWS_CLIENT_TOKEN=...  MEWS_ACCESS_TOKEN=...  MEWS_CLIENT=...  MEWS_API_BASE_URL=...
 CLOUDBEDS_API_KEY=...  ZENOTI_API_KEY=...
-EASY_BASE_URL=...  EASY_API_KEY=...
+EASY_BASE_URL=http://voicebot-easyappointments  EASY_API_KEY=...
+EASY_DEMO_WRITES=1  EASY_STATE_DB=/data/easy-booking.db
 AZURE_SPEECH_KEY=...  AZURE_REGION=...  AZURE_VOICE=et-EE-AnuNeural  AZURE_LANG=et-EE
 LANGFUSE_PUBLIC_KEY=...  LANGFUSE_SECRET_KEY=...  OTEL_EXPORTER_OTLP_ENDPOINT=...
 CALLS_DB=/data/calls.db
@@ -42,11 +43,19 @@ VOICEBOT_PROD=1
 ```
 Never commit these — Coolify env only (mirrors `.env.example`).
 
-Single-process assumption: in-memory HoldLedger + demo STORE diverge if
+The Easy values above enable **only the synthetic, operator-authenticated demo**.
+Leave `EASY_DEMO_WRITES=0` for an unverified instance or real guest/property
+traffic. The separately deployed booking stack joins the `coolify` network;
+PHP/MySQL are not embedded in the voicebot image. Its admin UI binds only to
+loopback port 8088. [Booking runbook](deploy/easyappointments/README.md).
+
+Single-process assumption: in-memory search/hold snapshots + demo STORE diverge if
 replicas scale past 1 — keep Coolify replicas at exactly 1.
 
 Scale continuous-call **agent workers** separately from this web/API container.
-Do not increase web replicas until holds/idempotency use Redis and logs use
+The Easy write journal persists on `/data` and its file lock coordinates a
+shared single-host journal. This does not make search/hold state distributed.
+Do not increase web replicas until holds use Redis and logs use
 Postgres or a single-writer service. See
 [`docs/operations/concurrency-and-capacity.md`](docs/operations/concurrency-and-capacity.md).
 
