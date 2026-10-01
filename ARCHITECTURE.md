@@ -47,8 +47,8 @@ Non-negotiable invariants:
 | Public telephone ingress | Carrier account/number is pending; no public SIP/RTP ports, trunk, or dispatch rule | Not operational |
 | Continuous call agent | No LiveKit Agents worker; `app/pipeline.py` is a descriptor skeleton | Not implemented |
 | Hotel booking | Apaleo, Mews, Cloudbeds, and QloApps drivers are stubs | No operational `StayAdapter` |
-| Spa booking | Easy!Appointments driver marks itself operational, but same-slot exclusion, confirmation-time revalidation, and ambiguous-write recovery are unproved | Must not be enabled for live writes |
-| Persistent booking state | In-memory hold/idempotency ledger | Lost on restart; cannot coordinate replicas |
+| Spa booking | Private Easy!Appointments 1.6.0 installed; real HTTP catalogue/search/hold/confirm/cancel and synthetic race/recovery tests pass | Explicit demo-write opt-in; not real-property or independent-writer readiness |
+| Persistent booking state | Easy customer/appointment outcomes persist in SQLite on `/data`; file lock coordinates the single-host writer; hold/search snapshots remain in memory | Outcome replay survives restart; holds do not; no distributed/caller-owned state |
 | Concurrency | [Three concurrent production HTTP turns](docs/evidence/2026-09-30-http-concurrency-smoke.md) passed; this is diagnostic HTTP only | Phone concurrency blocked (Q-01/Q-07) |
 
 `/api/status` currently reports wiring and derived capabilities. In particular,
@@ -313,7 +313,8 @@ missed-call opportunity are in
 | State | Current | Target | Authority |
 | --- | --- | --- | --- |
 | Conversation and consent | Request/call memory | Agent subprocess, destroyed at end | Call context |
-| Holds and idempotency | Process memory, no caller owner | Redis with TTL, caller ownership, deterministic key, atomic reservation | Booking provider on confirm |
+| Holds | Process memory, no caller owner | Redis with TTL, caller ownership, atomic reservation | Booking provider on confirm |
+| Easy write outcomes | Persistent SQLite journal/file lock; opaque markers, pending prerequisite/appointment writes and durable replay | Caller-owned durable requests and provider/universal-writer exclusion across hosts | Booking provider reads plus local coordination |
 | Provider rate budgets | None | Redis token buckets | Provider headers/limits |
 | FAQ content | SQLite | Postgres or controlled content store | Property-approved content |
 | Call/booking events | SQLite | Postgres | Append-only application events |
@@ -332,8 +333,8 @@ workers may scale separately once Redis-backed holds and rate limits exist.
 | STT error/empty audio | Short repeat prompt | No LLM or booking call | Current HTTP behavior |
 | LLM 429/transient | Brief prerecorded wait, then secondary or handoff | Honor `retry-after`; circuit-break repeated failures | Target; no secondary/static prompt |
 | TTS failure | Prerecorded fallback/handoff | Do not return silent success | Target; current path returns empty audio |
-| Booking slot/room race | Explain it is no longer available; offer refreshed options | Requery provider; one atomic winner | Target; unproved |
-| Unknown booking write result | Ask caller to wait; do not repeat blindly | Read provider by idempotency/reference before retry | Target; absent |
+| Booking slot/room race | Explain it is no longer available; offer refreshed options | Easy demo rechecks under single-host lock; typed stale-slot loser | Verified synthetic slot writer; independent writes/rooms remain target |
+| Unknown booking write result | Ask caller to wait; do not repeat blindly | Durable pending state; unique appointment marker read/reconcile; uncertain customer creates require operator recovery | Verified Easy demo timeout/restart/fresh-key fail-closed behavior; caller/production gates remain |
 | Worker deployment/restart | Active calls drain before shutdown | Stop new jobs, allow deadline, then terminate | Target; no worker |
 | Dashboard command unavailable | Staff sees read-only state | Fail closed; no demo mutation in live mode | Partly current; mode inconsistencies tracked |
 | Generic/unapproved FAQ | Explain that property policy is unavailable; transfer if needed | Do not advertise FAQ tool | Target; generic FAQ currently advertised |
@@ -369,7 +370,8 @@ so a provider outage does not require another API call.
 
 - FastAPI dashboard and internal APIs;
 - one replica during the hackathon;
-- persistent volume only for current SQLite call log;
+- persistent `/data` volume for SQLite call log and Easy write journal;
+- separate pinned private Easy PHP/MySQL stack with persistent booking volumes;
 - health endpoint proves process health, not downstream provider health.
 
 ### Media deployment
@@ -412,16 +414,17 @@ quality scenario below passes:
 | Provider failure | Forced 429/error produces fallback or handoff, not silence |
 | Demo proof | Booking appears inside the selected booking system |
 
-“Done” requires real carrier calls, not only HTTP tests or configured status
-flags.
+Full telephone acceptance requires real carrier calls, not only HTTP tests or
+configured status flags. The separately verified booking installation/HTTP demo
+does not close this telephone gate.
 
 ### Quality scenarios
 
 | ID | Context and stimulus | Required response and measurable evidence | Current status |
 | --- | --- | --- | --- |
 | Q-01 Isolation | Three callers speak and create different holds concurrently | No room/history/guest/hold crosses sessions; automated two/three-session test | Blocked: no call worker/owner field |
-| Q-02 Inventory race | Two calls confirm the same last room/slot | Exactly one remote booking; loser receives typed conflict and refreshed choices | Blocked: no real race test |
-| Q-03 Ambiguous write | Provider commits, client times out, process restarts, retry arrives | Provider query/reconciliation returns original result; no second booking | Blocked: process memory only |
+| Q-02 Inventory race | Two calls confirm the same last room/slot | Exactly one remote booking; loser receives typed conflict and refreshed choices | Synthetic single-host Easy writer test passed; real calls/independent writers/room inventory still blocked |
+| Q-03 Ambiguous write | Provider commits, client times out, process restarts, retry arrives | Provider query/reconciliation returns original result; no second booking | Easy journal/reconciliation and fresh-interpreter replay passed; production caller/multi-host recovery still blocked |
 | Q-04 Provider outage | STT/LLM/TTS returns 429/5xx during a call | Caller hears prerecorded wait/fallback or is transferred; never silent success | Blocked: TTS returns empty audio |
 | Q-05 Privacy | Caller speaks name, phone, email, health request, or card-like digits | Unauthenticated reads denied; forbidden fields rejected; stored event contains no raw values | Blocked: public raw summaries |
 | Q-06 Truthful readiness | Credentials are present but invalid/unreachable | Status says configured but not reachable/operational, with timestamp and safe reason | Blocked: non-null means ready |
@@ -497,20 +500,21 @@ not full ADRs; promote one to a file when it becomes costly or contentious.
 | --- | --- | --- |
 | [ADR-0001](docs/decisions/0001-provisional-livekit-agents.md) | LiveKit Agents as sole runtime | Proposed; spike required |
 | [ADR-0002](docs/decisions/0002-separate-stay-slot-adapters.md) | Separate hotel-night and appointment-slot adapters | Accepted; implementations gated |
-| [ADR-0003](docs/decisions/0003-provider-truth-idempotency.md) | Provider truth with durable local coordination | Accepted principle; incomplete |
+| [ADR-0003](docs/decisions/0003-provider-truth-idempotency.md) | Provider truth with durable local coordination | Implemented for controlled Easy demo; production ownership/distribution incomplete |
 | DEC-004 | Self-host LiveKit media/SIP; carrier remains replaceable | Accepted target; manifests external |
-| DEC-005 | Hide non-operational booking tools from the LLM | Implemented except unsafe Easy opt-in (R-003) |
+| DEC-005 | Hide non-operational booking tools from the LLM | Implemented; Easy defaults off and requires explicit verified-demo opt-in |
 | DEC-006 | One room/job/context per call; hackathon cap 3 | Accepted target, not phone-tested |
 | DEC-007 | One web replica until Redis/Postgres migration | Procedural constraint only; executable guard pending |
-| DEC-008 | Easy!Appointments 1.6.0 for the spa-demo; QloApps only for mandatory room semantics | Selected; deployed write-path verification pending |
+| DEC-008 | Easy!Appointments 1.6.0 for the spa-demo; QloApps only for mandatory room semantics | Installed and deployed HTTP write path verified; production release gates remain |
 | DEC-009 | Dashboard is read-only/demo until command service exists | Partly implemented; mode inconsistencies tracked |
 
 ## 15. Open decisions that block implementation
 
 1. Carrier approval: assigned number, direct SIP destination support, source IP
    ranges, codecs, and simultaneous channel count.
-2. Easy!Appointments test instance: configured services/providers and a
-   runtime API credential for the full booking lifecycle suite.
+2. Real-property booking authorization and universal writer/inventory
+   exclusion. The synthetic Easy instance, schedule, runtime credential and
+   lifecycle proof are complete; they do not authorize production traffic.
 3. Human handoff destination and operating hours.
 4. Approved property content: services, prices, policies, hours, and staff.
 5. Recording/transcription consent and retention policy.
