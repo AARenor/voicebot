@@ -32,6 +32,11 @@ from vendor customer lists and stale indexed booking pages.
   checks of the official booking links for the 10-property BOUK cohort and the
   major Pärnu spa hotels, produced no match. Both products remain suitable
   open-source demo backends, not locally validated production connectors.
+- A broader first-party comparison of open-source schedulers and hotel systems
+  selects **Easy!Appointments 1.6.0 for the hackathon's spa-treatment demo**.
+  QloApps remains the fallback only if multi-night room inventory becomes
+  mandatory. See
+  [`open-source-booking-backends.md`](open-source-booking-backends.md).
 
 ## Summer missed-call demand model
 
@@ -328,9 +333,11 @@ the public web.
   [`secure-hotel-booking.com`](https://www.secure-hotel-booking.com/Hestia-Hotel-Strand/JLY6/en-GB)
   engine.
 
-The practical implication is that QloApps and Easy!Appointments are useful for
-a free, writable hackathon environment, but neither gives the demo a verified
-local-customer story. Use the provider-neutral adapters for the demo and retain
+The practical implication is that neither product gives the demo a verified
+local-customer story. The broader open-source comparison selects
+Easy!Appointments for the spa-treatment hackathon demo because its supported
+API and data model fit the chosen scope directly. Keep QloApps only as the
+room-inventory fallback, preserve the provider-neutral adapters, and retain
 BOUK/SALBOS as the relevant Pärnu production connector targets.
 
 ## BOUK demo and API-cost implications

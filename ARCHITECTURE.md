@@ -1,6 +1,6 @@
 # Estonian hotel and spa voicebot — architecture
 
-Status: **v1.0 truth-first architecture, 2026-09-30**.
+Status: **v1.0 truth-first architecture, updated 2026-10-01**.
 
 This document separates what is running from what is planned. A component is
 not “ready” because credentials exist or a container starts; it is ready only
@@ -265,11 +265,18 @@ of a hold ID alone must never authorize another caller to confirm or cancel it.
 
 ### Hackathon provider decision
 
-1. **Preferred single-system candidate:** BOUK 14-day trial, only if it grants
-   documented write API access for rooms and hourly services.
-2. **Open-source fallback candidates:** QloApps for room nights plus
-   Easy!Appointments for spa slots, only after deployed write-path tests.
-3. Do not block the hackathon on Apaleo/Mews partner onboarding.
+1. **Selected backend:** self-hosted Easy!Appointments 1.6.0 for a
+   spa-treatment or consultation slot demo, only after deployed write-path
+   tests.
+2. **Room-specific fallback:** QloApps only if multi-night inventory, nightly
+   rates, and occupancy become mandatory.
+3. Cal.diy and LibreBooking have writable open-source APIs, but add deployment
+   or domain-model complexity without improving the selected demo.
+4. Do not buy BOUK Professional or block the hackathon on proprietary partner
+   onboarding. BOUK, SALBOS, and D-EDGE remain production connector targets.
+
+The first-party comparison and rejection reasons are in
+[`docs/research/open-source-booking-backends.md`](docs/research/open-source-booking-backends.md).
 
 ### Production connector targets
 
@@ -424,10 +431,16 @@ Latency rows remain aspirational until the first real-call dataset exists.
 
 ### Gate A — booking proof
 
-1. Activate BOUK trial and verify official write API access.
-2. If unavailable, evaluate and deploy QloApps + Easy!Appointments candidates.
-3. Implement only the selected adapters.
-4. Pass availability, quote, confirm, cancel, expiry, retry, and race tests.
+1. Deploy stable Easy!Appointments 1.6.0 and configure a demo service,
+   provider, and working schedule.
+2. Store the Settings-issued API credential only in the runtime environment.
+3. Validate the existing adapter against the real instance for availability,
+   create, cancel, authorization failure, retry, and malformed payloads; smoke
+   test the API's update operation separately because rescheduling is not in
+   the current `SlotAdapter` contract.
+4. Pass same-slot race and commit-then-timeout reconciliation tests before
+   enabling live writes.
+5. Evaluate QloApps only if room-night semantics return to scope.
 
 ### Gate B — telephone proof
 
@@ -468,15 +481,15 @@ not full ADRs; promote one to a file when it becomes costly or contentious.
 | DEC-005 | Hide non-operational booking tools from the LLM | Implemented except unsafe Easy opt-in (R-003) |
 | DEC-006 | One room/job/context per call; hackathon cap 3 | Accepted target, not phone-tested |
 | DEC-007 | One web replica until Redis/Postgres migration | Procedural constraint only; executable guard pending |
-| DEC-008 | BOUK trial first; open-source dual-system candidates | Pending API/write verification |
+| DEC-008 | Easy!Appointments 1.6.0 for the spa-demo; QloApps only for mandatory room semantics | Selected; deployed write-path verification pending |
 | DEC-009 | Dashboard is read-only/demo until command service exists | Partly implemented; mode inconsistencies tracked |
 
 ## 15. Open decisions that block implementation
 
 1. Carrier approval: assigned number, direct SIP destination support, source IP
    ranges, codecs, and simultaneous channel count.
-2. BOUK trial: official API credentials/docs and permission to create/cancel
-   test bookings.
+2. Easy!Appointments test instance: configured services/providers and a
+   runtime API credential for the full booking lifecycle suite.
 3. Human handoff destination and operating hours.
 4. Approved property content: services, prices, policies, hours, and staff.
 5. Recording/transcription consent and retention policy.

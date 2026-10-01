@@ -38,9 +38,12 @@ document remains available in Git commit `c52d948`.
   gate.
 - Pipecat plus LiveKit Agents duplicated call lifecycle responsibilities.
   Architecture v1.0 selects LiveKit Agents only.
-- The initial hackathon plan centered on Apaleo/Mews. Local research now makes
-  a BOUK trial the preferred one-system demo, with QloApps + Easy!Appointments
-  as open-source fallback candidates that still require deployed write tests.
+- The initial hackathon plan centered on Apaleo/Mews, then a BOUK trial.
+  BOUK's API/support is Professional-only, so the final open-source comparison
+  selects Easy!Appointments 1.6.0 for a spa-slot demo. QloApps is retained only
+  if room-night semantics become mandatory. Both still require deployed write
+  tests; see
+  [`open-source-booking-backends.md`](open-source-booking-backends.md).
 - Pärnu adoption is now evidenced property by property in
   [`parnu-booking-systems.md`](parnu-booking-systems.md), including stale BOUK
   migrations and SALBOS dominance among major spa hotels.
