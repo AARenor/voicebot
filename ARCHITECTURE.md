@@ -289,6 +289,9 @@ The existing org repository **Parnuhakk/voicebot** supplies the Python image.
 dialogue to the documented REST API. `/data/easy-booking.db` persists write
 outcomes on the voicebot data volume; local holds still expire on restart.
 See the [deployment/operator runbook](deploy/easyappointments/README.md).
+The [installation evidence](docs/operations/easyappointments-verification-2026-10-01.md)
+includes a deployed operator-authenticated text turn with real Groq/Azure,
+three booking tools, independent appointment readback and nonempty audio.
 
 ### Production connector targets
 

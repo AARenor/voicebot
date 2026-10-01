@@ -36,6 +36,33 @@ data, paid vendor onboarding, public booking domain or telephone worker.
 | Compose parse in clean environment | rejects missing credentials; passes with explicitly supplied runtime values; no resolved config printed |
 | `php -l /var/www/html/config.php` | passed; missing/empty required runtime environment fails rather than using image defaults |
 | `.env.local`, `.env.production`, SQLite ignore rules | `git check-ignore` passed; protected credential store mode **600** |
+| Intended-file / link / secret gate | 23 intended staged files, 21 local links, credential-pattern scan and staged whitespace check passed; `.opencode/` excluded |
+
+## Deployed end-to-end proof
+
+Code commit **`9a8d1d2`** was pushed to **Parnuhakk/voicebot** and deployed by
+Coolify application 13, deployment `hmtaktfbf8tcargom8f3ro0x` (**finished**).
+The running non-root container reports that source commit, the explicit demo
+opt-in and `/data/easy-booking.db`; it reads the real private catalogue and
+advertises all five slot tools. `/health` and `/api/status` return 200;
+unauthenticated `/api/turn` returns 403.
+
+An authenticated synthetic Estonian **text** request to the deployed
+`POST /api/turn`, using the configured real **Groq LLM and Azure TTS**, returned:
+
+```text
+HTTP 200
+tools_used: 3
+fallback_used: false
+tts_failed: false
+audio_present: true
+```
+
+Independent Easy API readback found exactly one newly created appointment
+(reference **21**), with service 1, provider 2 and synthetic customer 3. The
+verification then deleted only that test appointment. This proves deployed
+search → hold → confirm and nonempty synthesized audio. It does not test
+microphone/STT audio, SIP/carrier transport or real guest traffic.
 
 ## Failure behavior
 
@@ -54,8 +81,9 @@ both start and end. No rescheduling tool was added to SlotAdapter.
 
 This verifies the controlled single-host writer, not atomic upstream exclusion
 against independent admin/UI/API writers. The original privacy/caller ownership,
-multi-host state and telephone/SIP gates remain open. The booking proof's LLM/TTS
-doubles do not certify real speech-provider or carrier behavior.
+multi-host state and telephone/SIP gates remain open. Automated booking tests
+use LLM/TTS doubles; the separate deployed smoke above also verifies one real
+LLM/TTS text-turn execution, not sustained capacity or carrier behavior.
 
 Operational entry point: [booking runbook](../../deploy/easyappointments/README.md).
 Canonical repository and Coolify source: **Parnuhakk/voicebot**, branch `master`.
