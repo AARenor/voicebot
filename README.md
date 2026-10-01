@@ -46,6 +46,14 @@ See [installation and operator runbook](deploy/easyappointments/README.md).
 This is synthetic spa data, not hotel room inventory or a telephone deployment.
 Canonical repository: **Parnuhakk/voicebot** (branch `master`).
 
+## Website architecture
+
+The website hosts the app, but its visible holds/metrics are still synthetic;
+the real booking pipeline and a provider-backed bookings panel are different
+capabilities. See the [verified research and safe panel contract](docs/research/website-booking-architecture/DESIGN.md)
+and [interactive architecture](.archify/architecture-website-booking-20261001-213712/website-booking.html).
+The panel is a researched proposal, not an implemented feature.
+
 ## Rules
 
 - ET-first per-language routing; never send ET to non-ET voices.

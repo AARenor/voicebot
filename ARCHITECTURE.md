@@ -309,6 +309,37 @@ missed-call opportunity are in
 [`docs/research/parnu-booking-systems.md`](docs/research/parnu-booking-systems.md).
 
 ## 8. State ownership and persistence
+### Website control plane and booking visibility
+
+`https://robot.arleserver.cfd` serves the static operator dashboard and FastAPI
+API in the same Coolify deployment. Two paths must not be conflated:
+
+1. **Implemented booking path:** authenticated HTTP client → `POST /api/turn`
+   → `run_turn` → `Dispatcher` → guarded `SlotAdapter` → private Easy REST
+   → authoritative MySQL. The journal on `/data` coordinates writes/recovery.
+2. **Implemented visual path:** browser → status/holds/calls/metrics GETs.
+   Holds and metrics come from `demo.STORE`, not the booking adapter. Calls come
+   from SQLite summaries. The current page has no voice-turn form or provider
+   booking panel. `/api/bookings` does not exist (verified404/absent OpenAPI).
+
+**Proposed next slice, not implemented:** operator-authenticated,
+`Cache-Control: no-store` provider schedule read → explicit allowlisted DTO →
+read-only bookings panel. No direct DB/browser-provider access, embedded admin,
+extra event bus or independent booking writer. Read capability must be separate
+from the write opt-in so disabling booking does not require disabling visibility.
+Protect existing call reads and minimize summaries before real guest use;
+public Cloudflare403 for one client is not an authorization boundary.
+
+The [three-round research](docs/research/website-booking-architecture/RESEARCH.md),
+[implementation/test contract](docs/research/website-booking-architecture/DESIGN.md)
+and [verification evidence](docs/research/website-booking-architecture/EVIDENCE.md)
+cover safe data fields, errors, polling, Tallinn DST, demo/live labels and gates.
+This is a researched design, not a claim that the panel is deployed.
+The [interactive current-system diagram](.archify/architecture-website-booking-20261001-213712/website-booking.html)
+is pinned to inspected source, with validated browser evidence; its next-slice
+notes are explicitly proposed rather than extra current data paths.
+
+### Persistence boundaries
 
 | State | Current | Target | Authority |
 | --- | --- | --- | --- |

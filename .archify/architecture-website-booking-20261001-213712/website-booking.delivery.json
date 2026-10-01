@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "1361acc0-fb83-4c90-9ee2-393068bec911",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/arle/voicebot/.archify/architecture-website-booking-20261001-213712/candidate.json",
+  "output": "/home/arle/voicebot/.archify/architecture-website-booking-20261001-213712/website-booking.html",
+  "specification": {
+    "sha256": "bf10ebfe211bbecda9690b0ba9e0ce34ef5295cffeec2ab802edd3323c3d1477",
+    "bytes": 6278
+  },
+  "artifact": {
+    "sha256": "4820dc100abaac1cc54ba9ffa922a41bf85409d3b4fe08f25b6cb60b29eaf62c",
+    "bytes": 775376
+  }
+}

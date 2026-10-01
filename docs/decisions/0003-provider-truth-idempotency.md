@@ -1,6 +1,6 @@
 # ADR-0003: Booking provider is truth; local state coordinates only
 
-- Status: **Accepted principle; implementation incomplete**
+- Status: **Accepted; implemented for controlled single-host Easy demo, production incomplete**
 - Date: 2026-09-30
 
 ## Context
@@ -17,11 +17,22 @@ whether a remote provider committed the booking.
 
 ## Decision outcome
 
-Choose option 3. Redis stores short-lived holds, caller ownership, pending keys,
-rate budgets, and cached idempotent results. The booking provider remains the
+Choose option 3. In the distributed target, Redis stores short-lived holds,
+caller ownership, pending keys, rate budgets, and cached idempotent results.
+The installed single-host Easy demo instead uses ephemeral holds and a durable
+SQLite write journal/file lock. Customer and appointment writes persist pending
+state before side effects; uncertainty blocks new confirmations until safe
+reconciliation or operator recovery. This does not establish caller ownership,
+cross-host exclusion or inventory protection against independent writers.
+The booking provider remains the
 only inventory and booking authority. Confirmation revalidates inventory and
 price. Ambiguous writes are queried by provider correlation/customer/time
 before any retry.
+
+Operator website projections must read provider truth through private
+allowlisted APIs. The demo queue, local hold and journal are not a bookings
+calendar. See [website design](../research/website-booking-architecture/DESIGN.md)
+for the researched, not-yet-implemented read-only panel and its test contract.
 
 ## Consequences
 

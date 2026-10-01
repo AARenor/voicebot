@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Robot website and booking pipeline",
+    "subtitle": "Current implementation · operator website ≠ provider booking calendar · synthetic single-host demo",
+    "output": ".archify/architecture-website-booking-20261001-213712/website-booking.html",
+    "quality_profile": "showcase",
+    "visual_preset": "blueprint",
+    "animation": "none",
+    "repository": {
+      "url": "https://github.com/Parnuhakk/voicebot.git",
+      "revision": "5e1c10c868d8fdceeae2184b8503811ce9e6288e",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {"id":"website","type":"frontend","label":"robot.arleserver.cfd","sublabel":"Operator browser · static UI","tag":"GET-only page today","pos":[0,230],"size":[220,100],"sources":[{"path":"app/server.py","line":180,"end_line":185},{"path":"app/dashboard/static/index.html","line":440,"end_line":488}]},
+    {"id":"dashboard","type":"backend","label":"Dashboard API","sublabel":"status / holds / calls / metrics","tag":"GETs currently public","pos":[365,230],"size":[220,100],"sources":[{"path":"app/dashboard/api.py","line":38,"end_line":59},{"path":"app/dashboard/api.py","line":103,"end_line":115},{"path":"app/server.py","line":188,"end_line":209}]},
+    {"id":"demodata","type":"database","label":"Synthetic UI store","sublabel":"In-memory holds and metrics","tag":"Not booking truth","pos":[365,0],"size":[220,100],"sources":[{"path":"app/dashboard/api.py","line":49,"end_line":59},{"path":"app/dashboard/api.py","line":109,"end_line":115}]},
+    {"id":"calllog","type":"database","label":"Call summaries","sublabel":"SQLite on /data","tag":"Read-privacy release gate","pos":[365,490],"size":[220,100],"sources":[{"path":"app/callslog.py","line":122,"end_line":160},{"path":"app/server.py","line":276,"end_line":298},{"path":"Dockerfile","line":3,"end_line":18}]},
+    {"id":"httpclient","type":"external","label":"Authorized HTTP client","sublabel":"Text or audio input","tag":"Not the current UI or SIP","pos":[730,0],"size":[220,100],"sources":[{"path":"app/server.py","line":229,"end_line":267}]},
+    {"id":"turn","type":"backend","label":"HTTP voice turn","sublabel":"run_turn · bounded tool rounds","tag":"Operator auth required","pos":[730,490],"size":[220,100],"sources":[{"path":"app/server.py","line":229,"end_line":267},{"path":"app/turn.py","line":220,"end_line":305},{"path":"app/server.py","line":276,"end_line":298}]},
+    {"id":"speech","type":"external","label":"Groq + Azure","sublabel":"STT / LLM and synthesized speech","tag":"Configured HTTP providers","pos":[730,780],"size":[220,100],"sources":[{"path":"app/server.py","line":36,"end_line":72},{"path":"app/turn.py","line":220,"end_line":305}]},
+    {"id":"slots","type":"backend","label":"Slot tools + adapter","sublabel":"Dispatcher → EasyAppointments","tag":"Explicit demo-write opt-in","pos":[1095,490],"size":[220,100],"sources":[{"path":"app/server.py","line":74,"end_line":110},{"path":"app/booking/tools.py","line":349,"end_line":431},{"path":"app/booking/easyappointments.py","line":638,"end_line":856}]},
+    {"id":"journal","type":"database","label":"Write journal + lock","sublabel":"Persistent SQLite on /data","tag":"Unknown writes block new keys","pos":[1095,230],"size":[220,100],"sources":[{"path":"app/booking/easyappointments.py","line":93,"end_line":189},{"path":"app/booking/easyappointments.py","line":694,"end_line":856},{"path":"app/server.py","line":74,"end_line":90}]},
+    {"id":"easy","type":"backend","label":"Easy!Appointments 1.6","sublabel":"Private documented REST API","tag":"voicebot-easyappointments","pos":[1095,780],"size":[220,100],"sources":[{"path":"deploy/easyappointments/compose.yml","line":1,"end_line":29},{"path":"app/booking/easyappointments.py","line":272,"end_line":333},{"path":"app/booking/easyappointments.py","line":810,"end_line":827}]},
+    {"id":"mysql","type":"database","label":"Authoritative bookings","sublabel":"MySQL · private persistent volume","tag":"Easy owns appointment records","pos":[1460,780],"size":[220,100],"sources":[{"path":"deploy/easyappointments/compose.yml","line":9,"end_line":14},{"path":"deploy/easyappointments/compose.yml","line":31,"end_line":55},{"path":"deploy/easyappointments/config.php","line":1,"end_line":23}]}
+  ],
+  "boundaries": [
+    {"kind":"region","label":"Single FastAPI deployment · one replica","wraps":["dashboard","turn","slots"],"pad":38},
+    {"kind":"security-group","label":"Private booking stack · host admin UI on loopback8088","wraps":["easy","mysql"],"pad":38}
+  ],
+  "connections": [
+    {"id":"ui_reads","from":"website","to":"dashboard","label":"Same-origin GET reads"},
+    {"id":"demo_reads","from":"dashboard","to":"demodata","label":"Reads demo.STORE","variant":"dashed"},
+    {"id":"calls_reads","from":"dashboard","to":"calllog","label":"Reads summaries"},
+    {"id":"http_input","from":"httpclient","to":"turn","label":"POST /api/turn · operator auth","variant":"security"},
+    {"id":"turn_log","from":"turn","to":"calllog","label":"Logs heard / reply"},
+    {"id":"providers","from":"turn","to":"speech","label":"STT / LLM / TTS"},
+    {"id":"tool_dispatch","from":"turn","to":"slots","label":"Booking tool calls"},
+    {"id":"durable_writes","from":"slots","to":"journal","label":"Pending / replay / lock"},
+    {"id":"provider_requests","from":"slots","to":"easy","label":"Catalogue / slots / guarded writes"},
+    {"id":"booking_storage","from":"easy","to":"mysql","label":"Appointment persistence"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"Current website","items":["The page shows a synthetic queue, metrics and persisted call summaries.","It has no voice-turn form or provider bookings panel; GET privacy needs fixing."]},
+    {"dot":"emerald","title":"Current booking pipeline","items":["Authenticated HTTP turns can search, hold, confirm and cancel synthetic appointments.","Local holds are snapshots, not remote reservations; provider truth wins."]},
+    {"dot":"amber","title":"Researched next slice — not implemented","items":["Protect reads, then add a no-store allowlisted provider schedule panel.","No iframe, second booking writer or blind retry; caller/privacy/SIP gates stay open."]}
+  ]
+}
