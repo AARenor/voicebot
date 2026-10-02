@@ -119,5 +119,31 @@ original 7 plus scoped synthetic verification writes), calls **28 rows**, both
 SQLite integrity checks **ok**. New rows: 15 static native summaries and 12
 static HTTP summaries; no new saved transcripts. Historical rows were retained.
 
-Release commit/push, public HTTP source fingerprints and final redeployment
-readback are recorded below after delivery; local verification is not deployment.
+Release **`ff012024934973b7a13cfd2d862c91d06881eab8`** was committed and pushed to
+`origin/master`; Coolify deployment **`w7k8h4uvmamkd7np96420ypy`** finished for
+application 13 at that exact commit. The replaced web container became healthy.
+
+Post-deployment proof:
+
+- **36 app/demo file hashes** match the checkout in all three runtimes: public
+  web, native worker and Twilio bridge. Public `/` and `/dashboard.js` bytes also
+  match the committed files. `/health` returns `{"ok":true}`.
+- Public `/api/calls`, `/api/bookings` and `/api/catalogue` reject anonymous
+  requests with **403 + no-store**. Conservative carrier status remains false;
+  the unconfigured public Twilio route still returns **503**.
+- The current web and worker mount the same original `/data` volume. Readback
+  immediately after replacement: booking journal **20**, calls **28**, both
+  integrity checks **ok**; no new empty journal or lost historical row.
+- The same full Chromium proof was then repeated on
+  **`https://robot.arleserver.cfd`**, using the current trusted web environment in
+  memory. Every browser assertion above passed again, including real microphone
+  STT/playback, owned consent/create/independent read/cancel, mobile and logout
+  privacy; **zero JavaScript errors**. Its synthetic write was cancelled and its
+  exact new fictional customer cleaned. Additional static audit rows are expected.
+- Secret scan of the 53 intended files found zero known credential patterns or
+  exact trusted runtime/environment credential values; 36 Python ASTs and the
+  changed JSON parsed, `git diff --check` passed. Unrelated `.opencode/` and
+  `:memory:.ses` were left untouched and uncommitted.
+
+This report's follow-up documentation commit does not change runtime source.
+The software/demo goal is verified; a **real incoming Twilio call is not**.

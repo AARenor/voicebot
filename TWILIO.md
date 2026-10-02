@@ -198,7 +198,7 @@ website catchall before the first successful Docker health check.
 Configure the existing assigned number's incoming voice webhook to the **exact**
 HTTPS voice URL above using POST, only after the exposed credential is revoked
 and fresh environment values are injected. No number is purchased or dialled
-by this bridge. Do not change the webhook/account automatically from this lane.
+by this bridge. Account/webhook configuration remains an explicit operator step.
 
 Optional protocol probe:
 
