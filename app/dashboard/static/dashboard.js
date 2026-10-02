@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, turnBusy:false, audioUrl:null, mic:null};
+const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, turnBusy:false, audioUrl:null, mic:null};
 // Retire the old sessionStorage stopgap; never persist a new credential.
 try { sessionStorage.removeItem("voicebot.operatorToken"); localStorage.removeItem("voicebot.operatorToken"); } catch (_) {}
 
@@ -13,7 +13,29 @@ const query = new URLSearchParams(location.search);
 $("booking-date").value = /^\d{4}-\d{2}-\d{2}$/.test(query.get("date") || "") ? query.get("date") : tallinnDay();
 state.page = Math.max(1, Math.min(100, Number(query.get("page")) || 1));
 
-function status(id, text, kind="") { $(id).textContent = text; $(id).className = "status " + kind; }
+function status(id, text, kind="") { $(id).textContent = text; $(id).className = "status " + (id === "booking-status" ? "booking-status " : "") + kind; }
+function presentation() {
+  $("connection-label").textContent = state.connected ? "Operaator ühendatud" : state.credential ? "Ühendan…" : "Ühendamata";
+  $("connection-badge").className = "connection-badge" + (state.connected ? " connected" : "");
+  $("auth-title").textContent = state.connected ? "Töölaud on ühendatud" : "Ühenda oma töölaud";
+  $("auth-description").textContent = state.connected ? "Operaatori seanss on aktiivne." : "Broneeringute, teenuste ja kõneproovi avamiseks.";
+  $("token-field").hidden = state.connected;
+  $("token").disabled = state.connected;
+  $("connect").hidden = state.connected;
+  $("logout").hidden = !state.connected;
+  $("auth-form").setAttribute("aria-busy", String(!!state.credential && !state.connected));
+  $("booking-section").setAttribute("aria-busy", String(state.readBusy));
+  $("demo-section").setAttribute("aria-busy", String(state.turnBusy));
+  $("bookings").hidden = state.bookings.length === 0;
+  $("booking-placeholder").hidden = state.connected && (!!state.fetchedAt || state.bookings.length > 0);
+  $("booking-auth-link").hidden = state.connected;
+  $("booking-placeholder-title").textContent = !state.connected ? "Sinu päeva broneeringud, ühes kohas" : state.bookingError ? "Broneeringuid ei saanud laadida" : "Kontrollin päeva broneeringuid…";
+  $("booking-placeholder-copy").textContent = !state.connected ? "Ühenda operaatori tunnusega, et näha valitud päeva broneeringuid." : state.bookingError ? "Kontrolli ühendust ja vajuta „Uuenda andmeid”." : "Andmed tulevad otse broneerimissüsteemist.";
+  $("catalogue-placeholder").hidden = state.connected;
+  $("demo-placeholder").hidden = !!state.sessionId || $("demo-messages").children.length > 0;
+  $("demo-mic").className = "button mic-button" + (state.mic ? " recording" : "");
+  $("demo-mic").setAttribute("aria-pressed", String(!!state.mic));
+}
 function stopAudio() {
   $("demo-audio").pause(); $("demo-audio").removeAttribute("src"); $("demo-audio").load(); $("demo-audio").hidden = true;
   if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
@@ -27,6 +49,7 @@ function stopMic() {
   mic.processor.disconnect(); mic.source.disconnect(); mic.gain.disconnect();
   mic.context.close().catch(() => {});
   $("demo-mic").textContent = "Luba mikrofon ja räägi";
+  presentation();
   return mic;
 }
 function controls() {
@@ -38,17 +61,18 @@ function controls() {
   for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy;
   $("booking-prev").disabled = !state.connected || state.readBusy || state.page <= 1;
   $("booking-next").disabled = !state.connected || state.readBusy || !state.hasMore || state.page >= 100;
+  presentation();
 }
-function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata.") {
+function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata.", kind="") {
   state.generation++;
   state.controllers.forEach(controller => controller.abort()); state.controllers.clear();
   stopMic(); stopAudio();
-  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, retryAt:0, failures:0, highlightId:null, sessionId:null, turnBusy:false});
+  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, bookingError:false, retryAt:0, failures:0, highlightId:null, sessionId:null, turnBusy:false});
   $("token").value = ""; $("demo-text").value = "";
   document.querySelector("#bookings tbody").replaceChildren();
   for (const id of ["calls", "catalogue", "demo-messages"]) $(id).replaceChildren();
   $("booking-empty").hidden = true;
-  status("auth-status", message);
+  status("auth-status", message, kind);
   status("booking-status", "Andmed on privaatsed. Ühenda esmalt.");
   status("catalogue-status", "Ühenda teenuste vaatamiseks.");
   status("calls-status", "Ühenda päeviku vaatamiseks.");
@@ -69,7 +93,7 @@ async function api(path, opts={}) {
     if (!response.ok) {
       const error = new Error(response.status === 403 || response.status === 401 ? "Tunnus puudub või on vale. Ühenda uuesti." : response.status === 410 ? "Vestlus aegus. Alusta uut vestlust; ära korda ebaselget broneerimist." : response.status === 409 ? "Vestlus töötleb eelmist sõnumit. Oota vastus ära." : response.status === 413 ? "Sõnum või helisalvestis on liiga pikk. Tee lühem proov." : response.status === 400 ? "Kontrolli kuupäeva või sõnumi vormingut." : "Teenus ei ole praegu saadaval. Kontrolli seadistust või proovi hiljem uuesti.");
       error.status = response.status;
-      if (isPrivate && (response.status === 403 || response.status === 401)) logout(error.message);
+      if (isPrivate && (response.status === 403 || response.status === 401)) logout(error.message, "error");
       throw error;
     }
     const data = await response.json();
@@ -87,11 +111,19 @@ async function connect() {
     const data = await api("/api/calls");
     if(generation!==state.generation || !state.credential) return;
     state.connected = true; $("token").value = "";
-    renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus."); controls();
+    renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus.");
+    status("demo-status", "Alusta demovestlust. Vestlus aegub 10 minutiga."); controls();
     await Promise.allSettled([loadBookings(true), loadCatalogue(), loadStatus()]);
   } catch (error) {
-    if (error.name !== "AbortError") logout(error.message);
+    if (error.name !== "AbortError") logout(error.message, "error");
   }
+}
+function localBookingRange(start, end) {
+  // Format the provider's wall time directly; do not convert through device time.
+  const pattern = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})(?::\d{2})?$/;
+  const first = pattern.exec(start || ""), last = pattern.exec(end || "");
+  if (!first || !last || start.slice(0, 10) !== end.slice(0, 10)) return {time:`${start} – ${end}`, date:""};
+  return {time:`${first[4]} – ${last[4]}`, date:`${first[3]}.${first[2]}.${first[1]}`};
 }
 function renderBookings() {
   const tbody = document.querySelector("#bookings tbody"); tbody.replaceChildren();
@@ -100,10 +132,13 @@ function renderBookings() {
     const row = document.createElement("tr");
     row.dataset.bookingId=String(item.id);
     if(String(item.id)===state.highlightId) row.className="highlight";
-    const cells = [["Teenus", item.service_name], ["Teenindaja", item.provider_name], ["Algus ja lõpp", `${item.start_local} – ${item.end_local}`], ["Ajavöönd", item.timezone || "Kinnitamata"], ["Taustsüsteemi olek", item.status], ["Viide", String(item.id)]];
+    const range = localBookingRange(item.start_local, item.end_local);
+    const cells = [["Teenus", item.service_name], ["Teenindaja", item.provider_name], ["Algus ja lõpp", range.time], ["Ajavöönd", item.timezone || "Kinnitamata"], ["Taustsüsteemi olek", item.status], ["Viide", String(item.id)]];
     cells.forEach(([label, text], index) => {
       const cell = document.createElement("td"); cell.dataset.label = label;
       const value = document.createElement("span"); value.textContent = text; cell.append(value);
+      if (index === 4) value.className = "provider-status";
+      if (index === 2 && range.date) { const date = document.createElement("span"); date.className="sub"; date.textContent=range.date; cell.append(date); }
       if (index === 3 && warnings[item.time_state]) { const warning = document.createElement("span"); warning.className="sub"; warning.textContent=warnings[item.time_state]; cell.append(warning); }
       row.append(cell);
     }); tbody.append(row);
@@ -116,7 +151,7 @@ async function loadBookings(force=false) {
   if (!state.connected || state.readBusy || (!force && Date.now() < state.retryAt)) return;
   const generation = state.generation, view = state.view;
   const params = new URLSearchParams({date:$("booking-date").value, page:String(state.page), length:"50"});
-  state.readBusy = true; controls(); status("booking-status", "Laadin taustsüsteemi broneeringuid…");
+  state.readBusy = true; state.bookingError = false; controls(); status("booking-status", "Laadin taustsüsteemi broneeringuid…");
   try {
     const data = await api("/api/bookings?" + params);
     if (generation !== state.generation || !state.connected || view !== state.view) return;
@@ -125,6 +160,7 @@ async function loadBookings(force=false) {
   } catch (error) {
     if (error.name === "AbortError" || generation !== state.generation || view !== state.view) return;
     state.hasMore = false;
+    state.bookingError = true;
     state.retryAt = Date.now() + Math.min(120000, 30000 * 2 ** state.failures++);
     status("booking-status", (state.fetchedAt ? `Aegunud andmed. Viimane edukas laadimine: ${state.fetchedAt}. ` : "Broneeringuid ei õnnestunud kontrollida. ") + error.message, state.fetchedAt ? "stale" : "error");
     $("booking-empty").hidden = true;
@@ -150,7 +186,11 @@ async function loadCatalogue() {
 function renderCalls(calls) {
   $("calls").replaceChildren();
   for (const call of calls) {
-    const item=document.createElement("li"); item.textContent=`${call.at} · ${call.lang} · ${call.outcome}${call.source === "demo" ? " · näidis" : ""}`; $("calls").append(item);
+    const item=document.createElement("li");
+    for (const [text, className] of [[call.at, "call-time"], [call.lang, "call-language"], [call.outcome, "call-outcome"], [call.source === "demo" ? "Näidis" : "", "call-source"]]) {
+      const value=document.createElement("span"); value.textContent=text; value.className=className; item.append(value);
+    }
+    $("calls").append(item);
   }
   status("calls-status", calls.length ? "Toimingute tehnilised tulemused. Näidiskirjed on eraldi märgitud." : "Toiminguid pole.");
 }
@@ -163,7 +203,12 @@ async function loadStatus(path="/api/status") {
     $("mode").textContent = cap.text_turn_ready ? "HTTP kõneproov: kõnepakkujad seadistatud" : "HTTP kõneproov: kõnepakkujad seadistamata";
   } catch (_) { $("mode").textContent="HTTP kõneproov: olek kontrollimata"; }
 }
-function addMessage(label, text) { const item=document.createElement("li"), author=document.createElement("strong"), content=document.createElement("span"); author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item); }
+function addMessage(label, text) {
+  const item=document.createElement("li"), author=document.createElement("strong"), content=document.createElement("span");
+  item.className=label === "Sina" ? "user-message" : "assistant-message";
+  author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item);
+  $("demo-messages").scrollTop=$("demo-messages").scrollHeight;
+}
 async function startDemo() {
   if (!state.connected || state.turnBusy || state.sessionId) return;
   state.turnBusy=true; controls();
@@ -229,6 +274,7 @@ async function toggleMic() {
     if(generation!==state.generation || state.mic!==mic) return;
     mic.timer=setTimeout(()=>{if(state.mic===mic)toggleMic();},15000);
     $("demo-mic").textContent="Lõpeta ja saada heli"; status("demo-status", "Mikrofon salvestab kuni 15 sekundit. Lõpetamiseks vajuta uuesti.");
+    presentation();
   } catch(_) {
     if(state.mic?.stream===stream) stopMic();
     else { stream?.getTracks().forEach(track=>track.stop()); context?.close().catch(()=>{}); }
@@ -236,7 +282,7 @@ async function toggleMic() {
   }
 }
 async function changeView(page=1, highlightId=null) {
-  state.view++; state.page=page; state.highlightId=highlightId; state.bookings=[]; state.fetchedAt=null; state.hasMore=false; renderBookings();
+  state.view++; state.page=page; state.highlightId=highlightId; state.bookings=[]; state.fetchedAt=null; state.hasMore=false; state.bookingError=false; renderBookings();
   const url=new URL(location.href); url.searchParams.set("date",$("booking-date").value); url.searchParams.set("page",String(page)); history.replaceState(null,"",url);
   await loadBookings(true);
 }
@@ -252,4 +298,18 @@ $("demo-form").addEventListener("submit", event=>{event.preventDefault(); const 
 $("demo-mic").addEventListener("click",toggleMic);
 window.addEventListener?.("pagehide",()=>logout());
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMic(); else poll();});
+// Navigation stays useful without scripts; reflect the current anchor when available.
+const navigation = Array.from(document.querySelectorAll?.(".navigation a") || []);
+function updateNavigation() {
+  const current = navigation.find(link => link.getAttribute("href") === location.hash) || navigation[0];
+  for (const link of navigation) {
+    if (link === current) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  }
+}
+window.addEventListener?.("hashchange", updateNavigation);
+updateNavigation();
+$("booking-auth-link").addEventListener("click", event => { event.preventDefault(); $("token").focus(); });
+$("today-label").textContent = new Intl.DateTimeFormat("et-EE", {timeZone:"Europe/Tallinn", day:"numeric", month:"long", year:"numeric"}).format(new Date());
+$("today-label").setAttribute("datetime", tallinnDay());
 controls();

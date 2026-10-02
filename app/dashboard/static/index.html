@@ -1,118 +1,83 @@
 <!doctype html>
 <html lang="et">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#ffffff">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b5c43'/%3E%3Cpath d='M8 9l8 15 8-15' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
-<title>Vastuvõtulaud — Voicebot</title>
-<style>
-  :root { --white:#fff; --surface:#f4f7f5; --ink:#17211c; --graphite:#56615b; --rule:#dde5e0; --pine:#0b5c43; --pine-wash:#e7f2ed; --brass:#75530e; --brass-wash:#fff8e8; --alarm:#a73a32; }
-  * { box-sizing:border-box; }
-  [hidden] { display:none !important; }
-  body { margin:0; color:var(--ink); background:var(--white); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  button,input { font:inherit; }
-  button { cursor:pointer; }
-  button:disabled { cursor:not-allowed; opacity:.5; }
-  button,input,summary { touch-action:manipulation; }
-  :focus-visible { outline:3px solid var(--pine); outline-offset:3px; }
-  .skip { position:absolute; top:-5rem; left:1rem; background:var(--ink); color:var(--white); padding:.6rem; z-index:30; }
-  .skip:focus { top:1rem; }
-  .shiftbar { border-bottom:1px solid var(--rule); }
-  .shiftbar-inner,.page { max-width:1180px; margin:auto; padding:1rem 1.25rem; }
-  .shiftbar-inner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1rem; }
-  h1 { margin:0; font-size:1.25rem; } h2 { margin:0; font-size:1.1rem; } p { max-width:78ch; }
-  .brand p { margin:.1rem 0 0; font-size:.8rem; color:var(--graphite); }
-  .token-control,.controls { display:flex; flex-wrap:wrap; gap:.6rem; align-items:end; }
-  .field { display:grid; gap:.25rem; } label { font-size:.82rem; font-weight:600; }
-  input { min-height:40px; min-width:0; padding:.45rem .6rem; border:1px solid var(--rule); border-radius:6px; color:var(--ink); background:var(--white); }
-  .button { min-height:40px; padding:.45rem .8rem; border:1px solid var(--rule); border-radius:6px; background:var(--white); color:var(--ink); font-weight:600; }
-  .button:hover { background:var(--surface); } .button.primary { background:var(--pine); border-color:var(--pine); color:var(--white); }
-  .button.quiet-danger { color:var(--alarm); }
-  .notice { padding:.85rem 1rem; border-left:4px solid var(--brass); background:var(--brass-wash); color:var(--brass); }
-  .readiness { display:flex; flex-wrap:wrap; gap:.7rem 1.5rem; color:var(--graphite); font-size:.85rem; }
-  .work-panel { margin-top:1.7rem; border-top:2px solid var(--ink); min-width:0; }
-  .panel-head { display:flex; flex-wrap:wrap; gap:.65rem; align-items:baseline; padding:.75rem 0 .5rem; }
-  .panel-head p { margin:0; color:var(--graphite); font-size:.85rem; }
-  .status { color:var(--graphite); font-size:.87rem; min-height:1.3rem; }
-  .status.error { color:var(--alarm); } .status.stale { color:var(--brass); }
-  table { width:100%; border-collapse:collapse; table-layout:fixed; }
-  caption { text-align:left; padding:.75rem 0; color:var(--graphite); font-size:.85rem; }
-  th,td { padding:.65rem .4rem; text-align:left; border-bottom:1px solid var(--rule); overflow-wrap:anywhere; vertical-align:top; }
-  th { font-size:.8rem; color:var(--graphite); } td { font-variant-numeric:tabular-nums; }
-  tr.highlight { background:var(--pine-wash); }
-  .sub { display:block; font-size:.8rem; color:var(--graphite); }
-  .paging { display:flex; flex-wrap:wrap; align-items:center; gap:.8rem; padding:.8rem 0; }
-  .demo-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.65fr); gap:1.5rem; }
-  .demo-copy { color:var(--graphite); margin:.2rem 0 .8rem; }
-  .transcript { max-height:400px; overflow:auto; padding:0; list-style:none; margin:.5rem 0 1rem; }
-  .transcript li { padding:.65rem .8rem; margin:.5rem 0; background:var(--surface); overflow-wrap:anywhere; }
-  .transcript strong { color:var(--pine); display:block; font-size:.8rem; }
-  .demo-form { display:flex; align-items:end; gap:.6rem; } .demo-form .field { flex:1; }
-  audio { width:100%; margin:.6rem 0; } .call-journal { list-style:none; padding:0; } .call-journal li { border-bottom:1px solid var(--rule); padding:.6rem 0; }
-  details { margin-top:1.5rem; } summary { cursor:pointer; font-weight:600; }
-  .empty { padding:.8rem; background:var(--surface); color:var(--graphite); }
-  footer { padding:2rem 0; color:var(--graphite); font-size:.82rem; }
-  @media(max-width:760px) { .demo-layout { grid-template-columns:1fr; } .token-control { width:100%; } .token-control .field { flex:1; } }
-  @media(max-width:640px) {
-    .page,.shiftbar-inner { padding-inline:.8rem; } .demo-form { flex-wrap:wrap; } .demo-form .field { flex-basis:100%; }
-    table,tbody,tr,td { display:block; } thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
-    tbody tr { padding:.6rem 0; border-bottom:1px solid var(--rule); } td { display:grid; grid-template-columns:100px minmax(0,1fr); gap:.5rem; border:0; padding:.25rem 0; }
-    td::before { content:attr(data-label); font-size:.8rem; color:var(--graphite); }
-  }
-  @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173844">
+  <meta name="description" content="Voiceboti operaatori töölaud: spa broneeringud, kõneproov ja toimingupäevik.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23173844'/%3E%3Cpath d='M8 13v6m5-10v14m6-17v20m5-13v6' fill='none' stroke='%2399d5d4' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/dashboard.css">
+  <title>Vastuvõtulaud — Voicebot</title>
 </head>
 <body>
-<a class="skip" href="#main">Hüppa töölauda</a>
-<header class="shiftbar">
-  <div class="shiftbar-inner">
-    <div class="brand"><h1>Vastuvõtulaud</h1><p>Voicebot · operaatori töölaud</p></div>
-    <form class="token-control" id="auth-form">
-      <div class="field"><label for="token">Operaatori tunnus</label><input id="token" name="operator" type="password" autocomplete="off" spellcheck="false" required></div>
-      <button class="button primary" id="connect" type="submit">Ühenda</button>
-      <button class="button quiet-danger" id="logout" type="button" disabled>Logi välja</button>
-    </form>
-  </div>
-</header>
-<main class="page" id="main">
-  <p class="notice"><strong>Meretuule Demo Spa on väljamõeldud.</strong> HTTP kõneproov võib luua ja tühistada sünteetilisi Easy!Appointmentsi broneeringuid. See ei ole telefonikõne ega päris hotelli teenus.</p>
-  <div class="readiness" aria-label="Valmisolek"><span id="livekit">Meediaseadistus: kontrollimata</span><span id="telephone">Telefonikõne: kinnitamata</span><span id="mode">HTTP kõneproov: kontrollimata</span></div>
-  <p class="status" id="auth-status" role="status" aria-live="polite">Privaatsete andmete ja kõneproovi jaoks ühenda operaatori tunnusega. Tunnust hoitakse ainult selle lehe mälus.</p>
-
-  <section class="work-panel" aria-labelledby="bookings-title">
-    <div class="panel-head"><h2 id="bookings-title">Broneeringud</h2><p>Easy!Appointments · sünteetiline demo · kohalik aeg Europe/Tallinn</p></div>
-    <div class="controls">
-      <div class="field"><label for="booking-date">Kuupäev</label><input id="booking-date" name="date" type="date" autocomplete="off"></div>
-      <button class="button" id="refresh" type="button" disabled>Uuenda andmeid</button>
-    </div>
-    <p class="status" id="booking-status" role="status" aria-live="polite">Andmed on privaatsed. Ühenda esmalt.</p>
-    <table id="bookings"><caption>Kõik kontrollitud demo taustsüsteemi broneeringud; külaliste andmeid ei kuvata. Ajad ei ole teisendatud seadme ajavööndisse.</caption><thead><tr><th scope="col">Teenus</th><th scope="col">Teenindaja</th><th scope="col">Algus ja lõpp</th><th scope="col">Ajavöönd</th><th scope="col">Taustsüsteemi olek</th><th scope="col">Viide</th></tr></thead><tbody></tbody></table>
-    <p class="empty" id="booking-empty" hidden>Sellel lehel broneeringuid pole.</p>
-    <div class="paging"><button class="button" id="booking-prev" type="button" disabled>Eelmine leht</button><span id="booking-page">Leht 1 · kuni 50 kirjet</span><button class="button" id="booking-next" type="button" disabled>Järgmine leht</button></div>
-  </section>
-
-  <section class="work-panel" aria-labelledby="demo-title">
-    <div class="panel-head"><h2 id="demo-title">Fiktiivne HTTP kõneproov</h2><p>Tekst või mikrofon → Groq → Azure'i kõne</p></div>
-    <div class="demo-layout">
-      <div>
-        <p class="demo-copy">Alusta vestlust ja küsi sobivat teenust ning aega. Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid.</p>
-        <div class="controls"><button class="button primary" id="demo-start" type="button" disabled>Alusta demovestlust</button><button class="button" id="demo-end" type="button" disabled>Lõpeta vestlus</button></div>
-        <p class="status" id="demo-status" role="status" aria-live="polite">Ühenda esmalt. Vestlus aegub 10 minutiga.</p>
-        <ol class="transcript" id="demo-messages" aria-label="Selle lehe demovestlus"></ol>
-        <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button" id="demo-mic" type="button" disabled>Luba mikrofon ja räägi</button></form>
-        <p class="sub">Mikrofon avaneb ainult nupuvajutusel. Kuni 15 sekundit; teine vajutus lõpetab ja saadab heli. Salvestis ei jää brauserisse.</p>
-        <audio id="demo-audio" controls preload="none" aria-label="Demoabilise vastus" hidden></audio>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 10v4m4-7v10m5-14v18m5-14v10m4-7v4"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18m-14 5h3"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 1V12.5A8.5 8.5 0 0 1 11.5 4H13a8 8 0 0 1 8 7.5Z"/><path d="M8 10h8m-8 4h5"/></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C9 2 2 9 5 16s15 5 15-12Z"/><path d="M4 21 16 9m-6 6v-5m0 5h5"/></symbol>
+    <symbol id="i-journal" viewBox="0 0 24 24"><path d="M8 5h11a2 2 0 0 1 2 2v13H8a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h2v17M5 16h4m5-6h3m-3 4h3"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-2L3 9m0-6v6h6m-5 7a8 8 0 0 0 14 2l3-3m0 6v-6h-6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-9v.1"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3m-4 0h8"/></symbol>
+  </svg>
+  <a class="skip" href="#main">Hüppa töölauda</a>
+  <aside class="sidebar" aria-label="Töölaua külgriba">
+    <a class="brand" href="#main" aria-label="Voicebot, avaleht"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg></span><span>voicebot<span class="brand-caption">Sinu vastuvõtu abiline</span></span></a>
+    <div class="property"><span class="property-icon"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span><div><strong>Meretuule Spa</strong><span>Fiktiivne demokeskkond</span></div></div>
+    <nav class="navigation" aria-label="Töölaua jaotised">
+      <a href="#booking-section" aria-current="location"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg>Broneeringud</a>
+      <a href="#demo-section"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>Kõneproov</a>
+      <a href="#catalogue-section"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg>Teenused</a>
+      <a href="#calls-section"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg>Päevik</a>
+    </nav>
+    <div class="sidebar-bottom"><svg class="coastal-lines" viewBox="0 0 210 90" fill="none" aria-hidden="true"><path d="M-20 35c40-48 64 48 114 0s74 48 130 0M-20 51c40-48 64 48 114 0s74 48 130 0M-20 67c40-48 64 48 114 0s74 48 130 0"/></svg><div class="private-label"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>Privaatne tööruum</div><p>Rahulik vastuvõtt.<br>Selge ülevaade.</p></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>Meretuule Spa</span><span class="breadcrumb-divider">/</span><strong>Operaatori töölaud</strong></div><span class="connection-badge" id="connection-badge"><span class="status-dot"></span><span id="connection-label">Ühendamata</span></span></header>
+    <main class="page" id="main" tabindex="-1">
+      <div class="page-heading"><div><h1>Vastuvõtulaud</h1><p>Hoia broneeringutel silm peal ja proovi oma kõneabilist.</p></div><div class="today"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg><time id="today-label">Europe/Tallinn</time></div></div>
+      <div class="notice"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p><strong>See on demokeskkond.</strong> Meretuule Demo Spa on väljamõeldud. Kõneproov võib luua ja tühistada ainult sünteetilisi broneeringuid.</p><span class="demo-badge">Demo</span></div>
+      <section class="auth-panel" aria-labelledby="auth-title">
+        <div class="auth-heading"><span class="auth-icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span><div><h2 id="auth-title">Ühenda oma töölaud</h2><p id="auth-description">Broneeringute, teenuste ja kõneproovi avamiseks.</p></div></div>
+        <form class="token-control" id="auth-form"><div class="field" id="token-field"><label for="token">Operaatori tunnus</label><input id="token" name="operator" type="password" placeholder="Sisesta oma tunnus" autocomplete="off" spellcheck="false" required aria-describedby="auth-status"></div><button class="button primary" id="connect" type="submit">Ühenda<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="button quiet-danger" id="logout" type="button" disabled hidden>Logi välja</button></form>
+        <p class="status" id="auth-status" role="status" aria-live="polite">Tunnust hoitakse ainult selle lehe mälus.</p>
+      </section>
+      <section class="work-panel bookings-panel" id="booking-section" aria-labelledby="bookings-title">
+        <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg></span><div><h2 id="bookings-title">Broneeringud</h2><p>Sinu valitud päeva ülevaade</p></div></div><span class="source-label">Easy!Appointments</span></div>
+        <div class="booking-toolbar"><div class="controls"><div class="field date-field"><label for="booking-date">Kuupäev</label><input id="booking-date" name="date" type="date" autocomplete="off"></div><span class="timezone"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>Europe/Tallinn</span></div><button class="button" id="refresh" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Uuenda andmeid</button></div>
+        <p class="status booking-status" id="booking-status" role="status" aria-live="polite">Andmed on privaatsed. Ühenda esmalt.</p>
+        <div class="booking-placeholder" id="booking-placeholder"><span class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg></span><h3 id="booking-placeholder-title">Sinu päeva broneeringud, ühes kohas</h3><p id="booking-placeholder-copy">Ühenda operaatori tunnusega, et näha valitud päeva broneeringuid.</p><a class="text-link" id="booking-auth-link" href="#auth-form">Ühenda töölaud<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></div>
+        <div class="table-wrap"><table id="bookings" hidden><caption>Kontrollitud demo taustsüsteemi broneeringud. Külaliste andmeid ei kuvata; ajad on taustsüsteemi kohalikus ajavööndis.</caption><thead><tr><th scope="col">Teenus</th><th scope="col">Teenindaja</th><th scope="col">Algus ja lõpp</th><th scope="col">Ajavöönd</th><th scope="col">Taustsüsteemi olek</th><th scope="col">Viide</th></tr></thead><tbody></tbody></table></div>
+        <p class="empty" id="booking-empty" hidden>Sellel lehel broneeringuid pole. Vali teine kuupäev või alusta demovestlust.</p>
+        <div class="paging"><span id="booking-page">Leht 1 · kuni 50 kirjet</span><div><button class="button compact" id="booking-prev" type="button" disabled>Eelmine leht</button><button class="button compact" id="booking-next" type="button" disabled>Järgmine leht</button></div></div>
+      </section>
+      <div class="conversation-grid">
+        <section class="work-panel demo-panel" id="demo-section" aria-labelledby="demo-title">
+          <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg></span><div><h2 id="demo-title">Proovi kõneabilist</h2><p>Kirjuta sõnum või räägi mikrofoniga</p></div></div><span class="demo-badge">HTTP demo</span></div>
+          <div class="panel-body">
+            <div class="conversation-intro" id="demo-placeholder"><div class="voice-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><h3>Üks vestlus. Lihtsam vastuvõtt.</h3><p>Küsi teenuste kohta, leia sobiv aeg ja proovi broneerimist fiktiivse külalisena.</p></div>
+            <div class="controls demo-actions"><button class="button primary" id="demo-start" type="button" disabled>Alusta demovestlust<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="button" id="demo-end" type="button" disabled>Lõpeta vestlus</button></div>
+            <p class="status" id="demo-status" role="status" aria-live="polite">Ühenda esmalt. Vestlus aegub 10 minutiga.</p>
+            <ol class="transcript" id="demo-messages" aria-label="Selle lehe demovestlus" aria-live="polite" aria-relevant="additions"></ol>
+            <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" placeholder="Näiteks: soovin homme massaaži" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button mic-button" id="demo-mic" type="button" disabled>Luba mikrofon ja räägi</button></form>
+            <p class="sub mic-note"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Mikrofon avaneb nupuvajutusel, kuni 15 sekundiks. Teine vajutus saadab heli.</p>
+            <audio id="demo-audio" controls preload="none" aria-label="Demoabilise vastus" hidden></audio>
+            <details class="demo-guidance"><summary>Kuidas demovestlus töötab?</summary><p>Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.</p></details>
+          </div>
+        </section>
+        <section class="work-panel catalogue-panel" id="catalogue-section" aria-labelledby="catalogue-title"><div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span><div><h2 id="catalogue-title">Spa teenused</h2><p>Teenused ja teenindajad</p></div></div></div><div class="panel-body"><p class="status" id="catalogue-status" role="status" aria-live="polite">Ühenda teenuste vaatamiseks.</p><ul class="catalogue" id="catalogue"></ul><div class="catalogue-placeholder" id="catalogue-placeholder"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg><p>Teenuste loend ilmub siia<br>pärast ühendamist.</p></div><p class="catalogue-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>Vabad ajad kontrollib abiline vestluse käigus. Siinne loend ei kinnita saadavust ega hinda.</p></div></section>
       </div>
-      <aside aria-labelledby="catalogue-title"><h3 id="catalogue-title">Taustsüsteemi teenused</h3><p class="status" id="catalogue-status" role="status" aria-live="polite">Ühenda teenuste vaatamiseks.</p><ul id="catalogue"></ul><p class="sub">Saadavus tuleb taustsüsteemist vestluse ajal. Siinne loend ei luba vaba aega ega hinda.</p></aside>
-    </div>
-  </section>
-
-  <section class="work-panel" aria-labelledby="calls-title"><div class="panel-head"><h2 id="calls-title">Toimingupäevik</h2><p>Ainult tehniline tulemus, mitte vestluse sisu</p></div><ol class="call-journal" id="calls"></ol><p class="status" id="calls-status" role="status" aria-live="polite">Ühenda päeviku vaatamiseks.</p></section>
-  <details><summary>Näidisjärjekord — ei pärine broneerimissüsteemist</summary><p class="sub">Varasemad näidishoiud ja näidismõõdikud ei ole reaalne saadavus ega kvaliteedimõõtmine. HTTP kõneproovi tulemust kontrolli ülal olevast taustsüsteemi tabelist.</p><table id="holds"><caption>Näidishoidude automaatne laadimine on välja lülitatud.</caption><tbody></tbody></table></details>
-  <footer>Privaatne sünteetiline demo · andmed uuenevad iga 30 sekundi järel ainult ühendatud ja nähtaval lehel · telefonivalmidus nõuab eraldi välise kõne tõendit</footer>
-</main>
-<script src="/dashboard.js" defer></script>
-<script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
+      <section class="work-panel journal-panel" id="calls-section" aria-labelledby="calls-title"><div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg></span><div><h2 id="calls-title">Toimingupäevik</h2><p>Tehnilised tulemused, ilma vestluse sisuta</p></div></div><svg class="icon journal-decoration" aria-hidden="true"><use href="#i-clock"/></svg></div><div class="panel-body"><ol class="call-journal" id="calls"></ol><p class="status" id="calls-status" role="status" aria-live="polite">Ühenda päeviku vaatamiseks.</p></div></section>
+      <details class="system-details"><summary>Ühendused ja demokeskkonna teave</summary><div class="readiness" aria-label="Valmisolek"><span id="livekit">Meediaseadistus: kontrollimata</span><span id="telephone">Telefonikõne: kinnitamata</span><span id="mode">HTTP kõneproov: kontrollimata</span></div><p>Seadistatud kõnepakkujad ei kinnita telefonivalmidust. Telefonikõne nõuab eraldi välise kõne tõendit.</p><details class="legacy-details"><summary>Näidisjärjekord — ei pärine broneerimissüsteemist</summary><p>Varasemad näidishoiud ja näidismõõdikud ei ole reaalne saadavus ega kvaliteedimõõtmine. HTTP kõneproovi tulemust kontrolli broneeringute tabelist.</p><table id="holds"><caption>Näidishoidude automaatne laadimine on välja lülitatud.</caption><tbody></tbody></table></details></details>
+      <footer><span><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voicebot · operaatori töölaud</span><span>Ühendatud ja nähtaval lehel uuenevad andmed iga 30 sekundi järel.</span></footer>
+    </main>
+  </div>
+  <script src="/dashboard.js" defer></script>
+  <script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
 </body>
 </html>

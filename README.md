@@ -75,6 +75,30 @@ See the [original panel contract](docs/research/website-booking-architecture/DES
 The [older interactive diagram](.archify/architecture-website-booking-20261001-213712/website-booking.html)
 is a historical source snapshot, not current deployment evidence.
 
+### Dashboard development
+
+The dashboard uses native HTML/CSS/JavaScript, with locally served Figtree fonts
+(SIL Open Font License in `app/dashboard/static/fonts/OFL.txt`). No frontend
+build step or third-party browser requests are required.
+
+Run the local server on port 8765 and check the browser workflow with:
+
+```powershell
+.venv/Scripts/python.exe -m uvicorn app.server:create_app --factory --port 8765
+# In a second terminal, from the repository root:
+New-Item -ItemType Directory -Force output/playwright
+playwright-cli.cmd -s=voicebot-ui open http://127.0.0.1:8765
+playwright-cli.cmd -s=voicebot-ui run-code --filename tests/dashboard_browser_checks.js
+```
+
+The browser check intercepts API calls with local fictional fixtures; it does
+not verify live speech or booking providers. It checks authentication, paging,
+empty/stale states, chat, microphone-denial guidance, logout during a pending
+read, keyboard navigation, reduced motion, and layouts from 320 to 1440 pixels.
+Screenshots go to `output/playwright/`. Committed
+[desktop](docs/evidence/dashboard-redesign/desktop.png) and
+[mobile](docs/evidence/dashboard-redesign/mobile.png) previews use those fixtures.
+
 ## Rules
 
 - ET-first per-language routing; never send ET to non-ET voices.
