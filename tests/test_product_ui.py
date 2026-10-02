@@ -1,13 +1,54 @@
 """Native dashboard auth lifecycle without a frontend framework."""
 
+import hashlib
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
+
+from fastapi.testclient import TestClient
+
+from app.server import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "app/dashboard/static/dashboard.js"
+
+
+def test_dashboard_assets_use_content_versioned_urls() -> None:
+    urls: list[str] = []
+
+    class Parser(HTMLParser):
+        @override
+        def handle_starttag(
+            self, tag: str, attrs: list[tuple[str, str | None]]
+        ) -> None:
+            values = dict(attrs)
+            if tag == "script":
+                url = values.get("src")
+            elif tag == "link" and values.get("rel") == "stylesheet":
+                url = values.get("href")
+            else:
+                return
+            if url:
+                urls.append(url)
+
+    with patch.dict("os.environ", {}, clear=True), TestClient(create_app()) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        Parser().feed(page.text)
+        assert {urlsplit(url).path for url in urls} == {
+            "/dashboard.css",
+            "/dashboard.js",
+        }
+        for url in urls:
+            parts = urlsplit(url)
+            content = (SCRIPT.parent / parts.path.lstrip("/")).read_bytes()
+            version = hashlib.sha256(content).hexdigest()[:12]
+            assert parse_qs(parts.query).get("v") == [version], url
+            assert client.get(url).content == content
 
 
 def test_form_inputs_have_names_and_explicit_autocomplete() -> None:
