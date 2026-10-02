@@ -94,5 +94,42 @@ the actual DIDWW number. The HTTP Cloudflare/Coolify site is not that route.
 `deploy/telephony/README.md` lists exact activation gates. `/api/status.telephone`
 keeps public/carrier verification false; secrets/config flags cannot set them true.
 
-HTTP privacy changes have unit verification here; their public wire verification
-is recorded after the first implementation commit is deployed via Coolify.
+## Delivery and public HTTP wire verification
+
+Implementation commit **`cc7ae5658f1f69f2954399234dce2535e158a4e2`** was pushed to
+`origin/master` and deployed by Coolify application 13. The worker is a separate
+local digest-pinned image; it was deployed and source-fingerprint checked as above.
+The intended-file scan checked all 32 implementation files against actual runtime
+credential values in memory, plus private-key/provider-token patterns, without
+printing values. A pre-existing media identifier used by test fixtures was changed
+to a non-production fixture; the targeted dashboard/privacy suite then passed
+**25 tests**. Only intended files were staged; goal state and unrelated untracked
+`:memory:.ses` were excluded and not deleted.
+
+The first HTTP replacement exposed an existing operational durability defect:
+Dockerfile `VOLUME ["/data"]` without Coolify Persistent Storage provisioned a
+new anonymous volume. Its Easy journal had zero rows; the original worker journal
+had seven. No authenticated writes were sent to that new web instance. Before
+further operation, application 13 was explicitly configured to reference the
+original volume at `/data`, and safely redeployed the same implementation commit.
+The original data was not copied, reset or deleted; unused anonymous volumes were
+left intact. This is now an explicit runbook prerequisite in `COOLIFY.md`.
+
+Final wire/runtime checks passed against healthy container
+`zs7s830dsrlo4j81s0ohgpgc-100119898144`:
+
+- HTTP and worker **same volume name**, both independently read the preserved
+  journal's **7 rows**; both containers healthy. Web server/dashboard source
+  fingerprints match the pushed implementation.
+- Public HTTPS `/api/calls`: anonymous **403**, invalid bearer **403**, operator
+  **200**; all **`Cache-Control: no-store`**. Private body contents withheld.
+- Public HTTPS `/api/turn`: GET method/route error **404**, unauthenticated POST
+  **403**; both **`Cache-Control: no-store`**.
+- Public HTTPS `/api/status`: media credentials configured **true**, public
+  ingress verified **false**, carrier call verified **false**.
+- Complete installed worker graph matches the **79 pinned packages** in the
+  runtime lock; Python syntax parse for app/deployment/tests passes.
+
+This evidence/runbook follow-up is documentation-only; no code differs from the
+verified implementation commit. The goal is carrier-independent runtime BUILD,
+not authorization for a number purchase or a real-property/PSTN release.

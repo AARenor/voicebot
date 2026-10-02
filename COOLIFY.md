@@ -55,6 +55,16 @@ replicas scale past 1 — keep Coolify replicas at exactly 1.
 Scale continuous-call **agent workers** separately from this web/API container.
 The Easy write journal persists on `/data` and its file lock coordinates a
 shared single-host journal. This does not make search/hold state distributed.
+
+**Required:** configure `/data` explicitly under application **Persistent Storage**.
+Dockerfile `VOLUME ["/data"]` alone creates an anonymous volume per replacement
+container; it does not provide redeployment durability. If data already exists,
+reference its exact existing Docker volume name rather than initializing a new
+one. The telephone worker must reference the same volume. Verify both mount names
+and journal row counts after deployment; never silently move either process to a
+new empty journal. This private pilot preserves the original volume; unused
+anonymous volumes were not deleted.
+
 Do not increase web replicas until holds use Redis and logs use
 Postgres or a single-writer service. See
 [`docs/operations/concurrency-and-capacity.md`](docs/operations/concurrency-and-capacity.md).

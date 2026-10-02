@@ -24,6 +24,9 @@ website, not a SIP/RTP endpoint.
   Retries reuse successes and per-call/action keys. Telephone search requires a
   catalogue-backed provider; the backend returns empty availability without one.
 - Same `/data/easy-booking.db` volume as HTTP: never use a per-call journal.
+  Configure the web application's `/data` Persistent Storage explicitly in
+  Coolify; Dockerfile `VOLUME` alone is anonymous and changes on redeployment.
+  See `COOLIFY.md` and verify both mount names after upgrades.
   Easy remains a controlled single-host sole-writer **synthetic** backend, not
   safe against independent admin/API writers or distributed hosts.
 - Complete replies pass a conservative price/currency denylist before TTS;
