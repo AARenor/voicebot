@@ -13,6 +13,12 @@ manage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manage)
 
 
+def test_native_call_log_uses_the_shared_persistent_data_mount():
+    compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
+    assert "CALLS_DB: /data/calls.db" in compose
+    assert "volumes: [booking_state:/data]" in compose
+
+
 def test_docker_failure_is_nonzero_without_sensitive_output(capsys):
     with (
         patch("sys.argv", ["manage", "up", "--source-container", "fixture"]),
@@ -74,3 +80,40 @@ def test_missing_source_fails_in_clean_environment():
     assert result.returncode == 1
     assert result.stdout == ""
     assert "no credentials printed" in result.stderr
+
+
+def test_twilio_uses_separate_project_without_changing_private_media(capsys):
+    with (
+        patch(
+            "sys.argv", ["manage", "up", "--twilio", "--source-container", "fixture"]
+        ),
+        patch.object(manage, "environment", return_value={}),
+        patch.object(
+            manage.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+        ) as run,
+    ):
+        assert manage.main() == 0
+    for invocation in run.call_args_list:
+        command = invocation.args[0]
+        assert command[command.index("-p") + 1] == "voicebot-twilio"
+        assert command[command.index("-f") + 1] == str(
+            ROOT / "deploy/telephony/twilio-compose.yaml"
+        )
+    assert run.call_args_list[-1].args[0][-3:] == ["up", "-d", "--no-build"]
+
+
+def test_twilio_compose_failure_does_not_launch_or_leak(capsys):
+    with (
+        patch(
+            "sys.argv", ["manage", "up", "--twilio", "--source-container", "fixture"]
+        ),
+        patch.object(manage, "environment", return_value={}),
+        patch.object(
+            manage.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 1, stderr="PRIVATE"),
+        ) as run,
+    ):
+        assert manage.main() == 1
+        assert run.call_count == 1
+    assert "PRIVATE" not in capsys.readouterr().err

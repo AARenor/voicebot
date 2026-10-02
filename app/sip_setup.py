@@ -69,19 +69,23 @@ async def provision(client, env=None):
             if getattr(current, field) != getattr(trunk, field):
                 raise ValueError("existing trunk differs; no automatic overwrite")
         trunk = current
-    else:
+    rules = (
+        await client.sip.list_sip_dispatch_rule(api.ListSIPDispatchRuleRequest())
+    ).items
+    existing_rules = [r for r in rules if r.name == rule.name]
+    if len(existing_rules) > 1:
+        raise ValueError("ambiguous managed dispatch")
+    if not existing and existing_rules:
+        # An orphaned managed rule cannot match a newly allocated trunk ID.
+        # Reject before mutation rather than leaving a partial new trunk.
+        raise ValueError("existing dispatch without matching managed trunk")
+    if not existing:
         trunk = await client.sip.create_sip_inbound_trunk(
             api.CreateSIPInboundTrunkRequest(trunk=trunk)
         )
     rule.trunk_ids.append(trunk.sip_trunk_id)
-    rules = (
-        await client.sip.list_sip_dispatch_rule(api.ListSIPDispatchRuleRequest())
-    ).items
-    existing = [r for r in rules if r.name == rule.name]
-    if existing:
-        if len(existing) != 1:
-            raise ValueError("ambiguous managed dispatch")
-        current = existing[0]
+    if existing_rules:
+        current = existing_rules[0]
         for field in (
             "trunk_ids",
             "numbers",

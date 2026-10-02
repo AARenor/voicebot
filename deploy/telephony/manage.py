@@ -1,6 +1,7 @@
 """Local operator: copy runtime environment in memory, never render secrets.
 
 python deploy/telephony/manage.py validate|build|up --source-container NAME
+Add --twilio for the separate HTTPS bridge (validate/up; reuse media image).
 Source must be the existing trusted voicebot container; never use untrusted images.
 """
 
@@ -72,16 +73,27 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=["validate", "build", "up"])
     p.add_argument("--source-container", required=True)
+    p.add_argument(
+        "--twilio",
+        action="store_true",
+        help="HTTPS bridge validate/up; build media image first",
+    )
     args = p.parse_args()
+    if args.twilio and args.action == "build":
+        p.error("build the media worker image without --twilio first")
     try:
         env = environment(args.source_container)
         compose = [
             "docker",
             "compose",
             "-p",
-            "livekit",
+            "voicebot-twilio" if args.twilio else "livekit",
             "-f",
-            str(ROOT / "deploy/telephony/compose.yaml"),
+            str(
+                ROOT
+                / "deploy/telephony"
+                / ("twilio-compose.yaml" if args.twilio else "compose.yaml")
+            ),
         ]
         result = subprocess.run(
             compose + ["config", "-q"], env=env, capture_output=True
@@ -91,7 +103,11 @@ def main():
                 "Compose validation failed (details withheld to protect environment)"
             )
         if args.action == "validate":
-            print("PASS: private media configuration and shared persistent journal")
+            print(
+                "PASS: HTTPS bridge configuration"
+                if args.twilio
+                else "PASS: private media configuration and shared persistent journal"
+            )
             return 0
         cmd = (
             ["build", "worker"]

@@ -7,5 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 ca-cer
 COPY requirements-telephony.lock.txt ./
 RUN pip install --no-cache-dir -r requirements-telephony.lock.txt
 COPY app/ ./app/
+COPY data/demo/ ./data/demo/
 USER voicebot
 CMD ["python", "-m", "app.worker", "start"]

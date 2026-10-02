@@ -50,3 +50,66 @@ def test_existing_trunk_without_duration_limits_fails_closed():
     )
     with pytest.raises(ValueError, match="existing trunk differs"):
         asyncio.run(provision(client, ENV))
+
+
+def test_matching_trunk_and_rule_are_reused_without_creating_objects():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.sip_setup import provision
+
+    trunk, rule = specifications(ENV)
+    trunk.sip_trunk_id = "fixture-trunk"
+    rule.sip_dispatch_rule_id = "fixture-rule"
+    rule.trunk_ids.append(trunk.sip_trunk_id)
+    sip = SimpleNamespace(
+        list_sip_inbound_trunk=AsyncMock(return_value=SimpleNamespace(items=[trunk])),
+        list_sip_dispatch_rule=AsyncMock(return_value=SimpleNamespace(items=[rule])),
+        create_sip_inbound_trunk=AsyncMock(),
+        create_sip_dispatch_rule=AsyncMock(),
+    )
+    assert asyncio.run(provision(SimpleNamespace(sip=sip), ENV)) == (
+        "fixture-trunk",
+        "fixture-rule",
+    )
+    sip.create_sip_inbound_trunk.assert_not_awaited()
+    sip.create_sip_dispatch_rule.assert_not_awaited()
+
+
+def test_matching_trunk_does_not_overwrite_mismatched_dispatch():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.sip_setup import provision
+
+    trunk, rule = specifications(ENV)
+    trunk.sip_trunk_id = "fixture-trunk"
+    rule.trunk_ids.append(trunk.sip_trunk_id)
+    rule.hide_phone_number = False
+    sip = SimpleNamespace(
+        list_sip_inbound_trunk=AsyncMock(return_value=SimpleNamespace(items=[trunk])),
+        list_sip_dispatch_rule=AsyncMock(return_value=SimpleNamespace(items=[rule])),
+        create_sip_dispatch_rule=AsyncMock(),
+    )
+    with pytest.raises(ValueError, match="existing dispatch differs"):
+        asyncio.run(provision(SimpleNamespace(sip=sip), ENV))
+    sip.create_sip_dispatch_rule.assert_not_awaited()
+
+
+def test_orphaned_managed_dispatch_cannot_create_partial_new_trunk():
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.sip_setup import provision
+
+    trunk, rule = specifications(ENV)
+    trunk.sip_trunk_id = "fixture-new-trunk"
+    rule.trunk_ids.append("fixture-foreign-trunk")
+    sip = SimpleNamespace(
+        list_sip_inbound_trunk=AsyncMock(return_value=SimpleNamespace(items=[])),
+        list_sip_dispatch_rule=AsyncMock(return_value=SimpleNamespace(items=[rule])),
+        create_sip_inbound_trunk=AsyncMock(return_value=trunk),
+    )
+    with pytest.raises(ValueError):
+        asyncio.run(provision(SimpleNamespace(sip=sip), ENV))
+    sip.create_sip_inbound_trunk.assert_not_awaited()

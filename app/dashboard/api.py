@@ -11,11 +11,35 @@ import hmac
 import os
 import threading
 import time
+from typing import Literal
 
 from . import demo
 
 try:
     from fastapi import APIRouter, Header, HTTPException
+    from pydantic import BaseModel
+
+    class BookingRow(BaseModel):
+        id: int
+        start_local: str
+        end_local: str
+        timezone: str | None
+        time_state: Literal["valid", "ambiguous", "invalid", "unknown_timezone"]
+        provider_id: int
+        provider_name: str
+        service_id: int
+        service_name: str
+        status: str
+
+    class BookingPage(BaseModel):
+        source: Literal["easyappointments"]
+        data_mode: Literal["synthetic"]
+        fetched_at: str
+        date: str
+        page: int
+        length: int
+        has_more: Literal[False, "unknown"]
+        items: list[BookingRow]
 
     router = APIRouter(prefix="/api")
     _LOCK = threading.Lock()  # demo single-worker guard (see COOLIFY notes)

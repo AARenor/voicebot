@@ -6,7 +6,6 @@ docker exec -i livekit-worker-1 python - < deploy/telephony/booking_probe.py
 import asyncio
 from datetime import date, timedelta
 import os
-import uuid
 
 import httpx
 from app.booking.easyappointments import EasyAppointmentsAdapter
@@ -33,11 +32,16 @@ async def main():
     )
     state = CallTools(Dispatcher(slot=adapter))
     tools = dict(zip((s["name"] for s in state.schemas), sdk_tools(state)))
-    day = date.today() + timedelta(days=14)
+    profile = await tools["get_demo_profile"]({})
+    day = date.fromisoformat(profile["current_date"]) + timedelta(days=14)
     while day.weekday() > 4:
         day += timedelta(days=1)
-    booking = customer = None
-    guest_email = "telephone-" + uuid.uuid4().hex + "@example.invalid"
+    booking = None
+    guest_email = next(
+        g["guest"]["email"]
+        for g in profile["guest_fixtures"]
+        if g["fixture_id"] == "guest-001"
+    )
     async with httpx.AsyncClient(base_url=base, headers=headers, timeout=20) as client:
         try:
             services = (await client.get("/services")).json()
@@ -56,17 +60,29 @@ async def main():
             assert slots.get("slots"), "no synthetic slots"
             hold = await tools["hold_slot"]({"slot_id": slots["slots"][0]["slotId"]})
             assert hold.get("hold_id"), "hold failed"
-            result = await tools["confirm_slot_booking"](
-                {
-                    "hold_id": hold["hold_id"],
-                    "guest": {
-                        "firstName": "Synthetic",
-                        "lastName": "Telephone",
-                        "email": guest_email,
-                        "phone": "+10000000000",
-                    },
-                }
+            args = {"hold_id": hold["hold_id"]}
+            ready = await tools["prepare_demo_booking"](args)
+            assert ready.get("ok") and ready["guest"]["email"] == guest_email, (
+                "preparation failed"
             )
+            assert ready["recap"]["start"] == slots["slots"][0]["start"], (
+                "recap mismatch"
+            )
+            assert (await tools["confirm_slot_booking"](args))[
+                "error"
+            ] == "consent_required"
+            state.observe_user_text("Ei, ära kinnita broneeringut.")
+            assert (await tools["confirm_slot_booking"](args))[
+                "error"
+            ] == "consent_required"
+            assert (await tools["prepare_demo_booking"](args)).get("ok"), (
+                "repeat preparation failed"
+            )
+            # Direct SDK synthetic delivery boundary, not a spoken playout proof.
+            assert state.render_recap(hold["hold_id"]), "canonical recap missing"
+            assert state.mark_recap_delivered(hold["hold_id"]), "recap delivery failed"
+            state.observe_user_text("Jah, kinnitan selle testbroneeringu.")
+            result = await tools["confirm_slot_booking"](args)
             if isinstance(result.get("booking"), dict) and result["booking"].get("id"):
                 booking = str(result["booking"]["id"])
             assert result.get("ok") and booking, "confirmation failed"
@@ -75,16 +91,21 @@ async def main():
                 stored.status_code == 200
                 and stored.json()["serviceId"] == service["id"]
             )
-            customer = stored.json()["customerId"]
             other = CallTools(Dispatcher(slot=adapter))
             assert (
                 await other.dispatch("cancel_slot_booking", {"booking_id": booking})
             )["error"] == "not_owned"
+            assert (await tools["cancel_slot_booking"]({"booking_id": booking}))[
+                "error"
+            ] == "cancellation_required"
+            state.observe_user_text(
+                "Palun tühista broneering, mille just selles kõnes tegime."
+            )
             cancel = await tools["cancel_slot_booking"]({"booking_id": booking})
             assert cancel.get("ok"), "owned cancellation failed"
             assert (await client.get("/appointments/" + booking)).status_code == 404
             print(
-                "PASS native SDK tools -> shared-journal Easy API booking/read/cancel; foreign-call cancellation rejected"
+                "PASS native SDK tools -> shared-journal Easy API prepare/consent/booking/read/cancel; premature writes, decline and foreign-call cancellation rejected"
             )
         finally:
             try:

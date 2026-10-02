@@ -20,7 +20,7 @@
     "description_et": "Väljamõeldud spaa tehisintellektil põhineva broneerimisabilise katsetamiseks.",
     "address": null,
     "real_visitor_location": false,
-    "automatically_used_by_agent": false
+    "automatically_used_by_agent": true
   },
   "existing_backend_reference": {
     "company_name": "Voicebot Synthetic Spa Demo",
@@ -114,7 +114,7 @@
     }
   ],
   "manual_demo_faq": {
-    "automatically_used_by_agent": false,
+    "automatically_used_by_agent": true,
     "entries": [
       {
         "question_et": "Kas see on päris spaa?",
@@ -137,7 +137,7 @@
   "call_prompts_et": {
     "disclosure": "Tere! Kas sa oled demoabiline?",
     "search": "Soovin broneerida demo spaakonsultatsiooni 5. oktoobril 2026 hommikul kell kümme.",
-    "guest_details": "Minu eesnimi on Demo ja perekonnanimi Esimene. E-post on demo punkt esimene ätt example punkt invalid. Testtelefon on pluss üks kaks null kaks viis viis viis null üks null üks.",
+    "guest_details": "Kasuta fiktiivset demokülalist Demo Esimene ehk guest-001. Ma ei anna päris kontaktandmeid.",
     "consent": "Jah, kinnitan selle testbroneeringu.",
     "cancel_in_same_call": "Palun tühista broneering, mille just selles kõnes tegime.",
     "decline": "Ei, ära kinnita broneeringut.",
@@ -149,8 +149,9 @@
     "search": {"name": "search_slots", "arguments": {"service": "1", "provider": "2", "date": "2026-10-05"}},
     "next_steps": [
       "Choose an actually returned slots[].slotId, then pass it as slot_id to hold_slot.",
-      "After explicit consent, pass that call's returned hold_id and one guests[].guest object to confirm_slot_booking.",
-      "For cancellation in the same call, use the returned booking.id as booking_id.",
+      "Pass that call's returned hold_id and optional guest_fixture_id to prepare_demo_booking; default is guest-001. Read its backend recap and ask for consent.",
+      "Wait for a subsequent affirmative final user transcript, then call confirm_slot_booking with only hold_id. The server binds the fixture guest and scopes its email to the call_id.",
+      "For cancellation in the same call, require explicit final user cancellation intent, then use the returned booking.id as booking_id.",
       "Do not use fixture_id as a slot, hold, customer or booking ID. The telephone worker supplies write keys."
     ]
   }

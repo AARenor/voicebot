@@ -4,10 +4,14 @@
 call-scoped guarded booking tools, private reproducible LiveKit/SIP/Redis,
 and exact-number authenticated inbound provisioning.
 
-**Not verified:** public carrier edge on this LAN host, purchased DIDWW number,
-real PSTN call, human transfer, or real-property release. Buying a number alone
-will not make the host publicly reachable. `robot.arleserver.cfd` is the HTTP
-website, not a SIP/RTP endpoint.
+**First carrier direction:** the user supplied an existing US Twilio number.
+Its separately signed HTTPS/WSS Media Streams bridge forwards into this private
+native worker, avoiding a public SIP/RTP edge. The exposed authentication
+credential is never used and must be rotated before account activation.
+
+**Not verified:** real Twilio/PSTN call, public SIP/RTP edge, human transfer or
+real-property release. `robot.arleserver.cfd` can route Twilio HTTPS streams but
+is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
 
 ## Runtime
 
@@ -19,8 +23,10 @@ website, not a SIP/RTP endpoint.
 - Worker: `python -m app.worker start`, two call processes, process-local dialogue,
   VAD endpointing/interruption, no cloud-inference turn detector, 30-second drain.
   Caller arrival is bounded to 30 seconds, conversation to 600 seconds afterward.
-- Native schemas delegate to Dispatcher: catalogue, search, `hold_slot`, confirm,
-  cancel. Model-supplied write keys/customer IDs and foreign call IDs are rejected.
+- Conversation schemas expose compact `plan_demo_booking`, confirm and cancel;
+  planning resolves live catalogue/search/hold/preparation without repeated model
+  round trips. Lower-level owned tools remain for direct SDK verification.
+  Model-supplied write keys/customer IDs and foreign call IDs are rejected.
   Retries reuse successes and per-call/action keys. Telephone search requires a
   catalogue-backed provider; the backend returns empty availability without one.
 - Same `/data/easy-booking.db` volume as HTTP: never use a per-call journal.
@@ -31,7 +37,11 @@ website, not a SIP/RTP endpoint.
   safe against independent admin/API writers or distributed hosts.
 - Complete replies pass a conservative price/currency denylist before TTS;
   the slot pilot cannot quote prices. This is not exhaustive semantic validation.
-  Generic FAQ/property promises
+  Preparation does not grant consent: the specific canonical recap must finish
+  delivery, then a subsequent affirmative final transcript authorizes the owned
+  write. Failed/blocked/interrupted delivery invalidates approval. Success speech
+  is guarded by execution/state, including cancelled-receipt replay.
+  Only the approved fictional profile/FAQ is exposed; generic property promises
   and hotel stubs are excluded. Cached Estonian WAV supplies an independent
   audible failure message. No recording/transcript persistence. SDK child logs
   are suppressed because they can contain tool arguments/text.
@@ -69,6 +79,7 @@ and codes only, not credentials or transcripts.
 
 ```bash
 python -m pytest tests -q
+python deploy/telephony/conversation_probe.py --source-container livekit-worker-1
 python deploy/telephony/probe.py --source-container livekit-worker-1 --concurrent
 python deploy/telephony/probe.py --source-container livekit-worker-1 --barge-in
 python deploy/telephony/failure_probe.py
@@ -98,10 +109,11 @@ normal worker. Trunks cap ringing at 30 seconds and calls at 660 seconds; mismat
 existing limits fail closed. Session/adapter/room cleanup waits are bounded and
 attempted independently, even after cancellation.
 
-These are **private proofs**, not public NAT, DIDWW interoperability, regulatory
-approval, carrier channel capacity or real-caller operation. The booking probe
-invokes SDK tools directly, not a full spoken-consent booking conversation; that
-release check remains. Never relabel a synthetic test as PSTN.
+These are **private proofs**, not public NAT, carrier interoperability,
+regulatory approval, channel capacity or real-caller operation. `booking_probe.py`
+invokes SDK tools directly; `conversation_probe.py` is the distinct real-provider
+spoken consent/read/cancel check. Only dated successful command output proves
+either one. Never relabel a synthetic room/WSS test as PSTN.
 
 ## DIDWW activation gates
 

@@ -72,7 +72,8 @@ Postgres or a single-writer service. See
 ## 3. Verify
 
 - `https://robot.arleserver.cfd/health` → `{"ok": true}`
-- `https://robot.arleserver.cfd/` → dashboard (holds table, calls, metrics).
+- `https://robot.arleserver.cfd/` → disclosed fictional operator dashboard
+  (provider-backed bookings, catalogue, text/microphone demo, technical calls).
 - Confirm/cancel without or with a wrong client token → 403. 503 means
   the server itself has no `OPERATOR_TOKEN` configured — check Coolify env.
 
@@ -86,11 +87,15 @@ docker run --rm -p 8000:8000 -e OPERATOR_TOKEN=demo-token voicebot:local
 
 ## Notes
 
-- Mutations, `/api/turn` and `/api/calls` require operator authorization.
-  Call reads and voice-turn responses (including errors) are `no-store`.
-  Other reads are synthetic demo data, not a provider-backed bookings panel.
+- Mutations, demo sessions, `/api/turn`, `/api/calls`, `/api/bookings` and
+  `/api/catalogue` require operator authorization; responses/errors are `no-store`.
+  The operator token exists only in page memory; logout clears private content,
+  audio/microphone and late in-flight replies. No browser-to-provider credentials.
 - The container runs as non-root `voicebot` (uid 10001).
 - The separate [private telephone deployment](deploy/telephony/README.md) uses
   LiveKit/SIP/Redis and shares the existing booking volume. Public SIP ingress
-  cannot be supplied by this HTTP proxy; LAN NAT and the real carrier call are
-  still gates. Postgres/Langfuse remain target components, not deployed claims.
+  cannot be supplied by this HTTP proxy. The first US Twilio carrier path instead
+  uses a separately deployed signed HTTPS/WSS bridge on `/api/twilio/`, forwarding
+  to private LiveKit. Do not fold its media runtime into this HTTP image. Fresh
+  rotated credentials and a real incoming call remain activation gates.
+  Postgres/Langfuse remain target components, not deployed claims.

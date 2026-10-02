@@ -33,6 +33,7 @@ def build_stack() -> dict:
         "tts": None,
         "stay": None,
         "slot": None,
+        "booking_reader": None,
         "livekit": None,
         "faq_db": None,
     }
@@ -72,6 +73,15 @@ def build_stack() -> dict:
     elif os.environ.get("CLOUDBEDS_API_KEY"):
         stack["stay"] = CloudbedsAdapter(os.environ["CLOUDBEDS_API_KEY"])
     if os.environ.get("EASY_BASE_URL") and os.environ.get("EASY_API_KEY"):
+        read_options = {
+            "auth_scheme": os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+            "api_prefix": os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+        }
+        stack["booking_reader"] = EasyAppointmentsAdapter(
+            os.environ["EASY_BASE_URL"],
+            os.environ["EASY_API_KEY"],
+            **read_options,
+        )
         # Sole-writer demo gate: credentials alone never advertise booking
         # tools. Explicit opt-in plus a persistent journal are required
         # (upstream 1.6.0 creation does not reject overlaps).
@@ -105,16 +115,12 @@ def build_stack() -> dict:
 
         stack["slot"] = ZenotiAdapter(os.environ["ZENOTI_API_KEY"])
     from .booking.tools import Dispatcher
-    from .knowledge import open_db, retrieve
-    from .knowledge.seed import seed as seed_faq
 
-    faq_db = open_db()
-    seed_faq(faq_db)
-    stack["faq_db"] = faq_db
+    # The HTTP demo uses the approved fictional profile through CallTools.
+    # Never seed or expose generic real-hotel FAQ promises here.
     stack["dispatcher"] = Dispatcher(
         stay=stack["stay"],
         slot=stack["slot"],
-        faq=lambda question: retrieve(faq_db, question, lang="et"),
     )
     stack["demo"] = stack["stt"] is None
     return stack
@@ -128,15 +134,25 @@ def create_app():
     from fastapi.staticfiles import StaticFiles
 
     from .dashboard import api as dashboard_api
+    from .hackathon import DemoSessions
 
     stack = build_stack()
+    sessions = DemoSessions()
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        sessions.clear()
         # Release provider sockets on shutdown/reload (no behavior change).
         seen = set()
-        for key in ("stt", "llm_primary", "llm_secondary", "tts", "slot"):
+        for key in (
+            "stt",
+            "llm_primary",
+            "llm_secondary",
+            "tts",
+            "slot",
+            "booking_reader",
+        ):
             client = stack.get(key)
             if client is None or id(client) in seen:
                 continue
@@ -157,11 +173,30 @@ def create_app():
 
     app = FastAPI(title="voicebot-et", lifespan=lifespan)
     app.state.stack = stack
+    app.state.demo_sessions = sessions
 
     @app.middleware("http")
     async def private_responses(request, call_next):
-        response = await call_next(request)
-        if request.url.path in ("/api/calls", "/api/turn"):
+        private = request.url.path in (
+            "/api/calls",
+            "/api/turn",
+            "/api/bookings",
+            "/api/catalogue",
+            "/api/reset",
+        ) or request.url.path.startswith(("/api/demo/", "/api/holds/"))
+        try:
+            response = await call_next(request)
+        except Exception:
+            if not private:
+                raise
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                {"detail": "private_operation_failed"},
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+        if private:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -176,6 +211,10 @@ def create_app():
         and stack["tts"] is not None,
         "stay_booking_ready": "search_availability" in advertised,
         "slot_booking_ready": "search_slots" in advertised,
+        "booking_read_ready": stack["booking_reader"] is not None,
+        "booking_view_source": "easyappointments"
+        if stack["booking_reader"] is not None
+        else None,
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
         "serving_demo_data": True,
@@ -225,92 +264,138 @@ def create_app():
             },
         }
 
+    def reader_or_raise(authorization):
+        from fastapi import HTTPException
+
+        dashboard_api._require_operator(authorization)
+        reader = app.state.stack.get("booking_reader")
+        if reader is None:
+            raise HTTPException(503, "booking_reader_not_configured")
+        return reader
+
+    async def private_read(operation):
+        from fastapi import HTTPException
+        from .booking.easyappointments import BookingReadError
+
+        try:
+            return await operation
+        except BookingReadError as exc:
+            headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+            raise HTTPException(exc.status, exc.code, headers=headers) from None
+        except Exception:
+            raise HTTPException(502, "booking_payload_invalid") from None
+
+    @app.get("/api/bookings", response_model=dashboard_api.BookingPage)
+    async def bookings(
+        date: str | None = None,
+        page: str = "1",
+        length: str = "50",
+        authorization: str | None = Header(default=None),
+    ):
+        from datetime import date as calendar_date, datetime
+        from zoneinfo import ZoneInfo
+        from fastapi import HTTPException
+
+        reader = reader_or_raise(authorization)
+        today = datetime.now(ZoneInfo("Europe/Tallinn")).date()
+        day = date if date is not None else today.isoformat()
+        try:
+            parsed = calendar_date.fromisoformat(day)
+            if parsed.isoformat() != day or not -31 <= (parsed - today).days <= 90:
+                raise ValueError()
+            if (
+                not page.isascii()
+                or not page.isdecimal()
+                or not length.isascii()
+                or not length.isdecimal()
+            ):
+                raise ValueError()
+            number, size = int(page), int(length)
+            if not 1 <= number <= 100 or not 1 <= size <= 50:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(400, "booking_query_invalid") from None
+        return await private_read(
+            reader.get_operator_bookings(day, page=number, length=size)
+        )
+
+    @app.get("/api/catalogue")
+    async def catalogue(authorization: str | None = Header(default=None)):
+        reader = reader_or_raise(authorization)
+        return await private_read(reader.get_operator_catalogue())
+
     @app.post("/api/turn")
     async def voice_turn(
         body: dict, authorization: str | None = Header(default=None)
     ) -> dict:
-        """Full voice turn over HTTP (Phase 1 voice path, demo-gated).
+        """Fictional HTTP turn. Optional session_id owns multi-turn state.
 
-        Auth: operator token required (paid providers behind this
-        endpoint). Body: {audio_b64?: str, text?: str, language?: et|en|ru}.
-        Caps: text ≤500 chars, audio_b64 ≤700k chars (~500KB decoded).
-        Requires stt (or text), llm_primary and tts — else 503.
+        Auth before providers; only text/audio, language and session_id pass.
+        Without a session the call is isolated and cannot reuse another hold.
+        Never retries a mutation automatically, never accepts browser history.
         """
-        import base64
-
-        from fastapi import HTTPException  # noqa: F811 (already imported)
-
-        from .turn import run_turn
-
+        import time
+        from .hackathon import (
+            DemoSession,
+            SESSION_TTL,
+            operator_scope,
+            run_demo_turn,
+            validate_input,
+        )
         from . import callslog
 
         dashboard_api._require_operator(authorization)
-        if not isinstance(body, dict):
-            raise HTTPException(400, "body must be a JSON object")
         stack = app.state.stack
-        language = body.get("language", "et")
-        if language not in ("et", "en", "ru"):
-            language = "et"
-        audio_b64 = body.get("audio_b64", "")
-        text = body.get("text", "")
-        if not isinstance(audio_b64, str) or len(audio_b64) > 700_000:
-            raise HTTPException(413, "audio_b64 too large")
-        if not isinstance(text, str) or len(text) > 500:
-            raise HTTPException(413, "text too large")
-        if audio_b64:
-            if stack["stt"] is None:
-                raise HTTPException(503, "stt not configured (demo mode)")
-            try:
-                audio = base64.b64decode(audio_b64, validate=True)
-            except Exception:
-                raise HTTPException(400, "bad audio_b64") from None
-            if len(audio) > 524_288:
-                raise HTTPException(413, "audio too large")
-        elif text.strip():
-            audio = b""
+        audio, text, language = validate_input(body, stack)
+        key = body.get("session_id")
+        if key is not None:
+            session = sessions.acquire(key, operator_scope(authorization))
         else:
-            raise HTTPException(400, "audio_b64 or text required")
-        if stack["llm_primary"] is None or stack["tts"] is None:
-            raise HTTPException(503, "voice stack not configured (demo mode)")
-        stt = stack["stt"] if audio_b64 else None
-        result = await run_turn(
-            audio,
-            stt,
-            stack["llm_primary"],
-            stack["tts"],
-            stack["dispatcher"],
-            llm_secondary=stack["llm_secondary"],
-            language=language,
-            text=text if not audio_b64 else None,
-        )
-        response = {
-            "text_heard": result["text_heard"],
-            "reply": result["reply"],
-            "audio_b64": base64.b64encode(result["audio"]).decode(),
-            "tools_used": len(result["tool_results"]),
-            "fallback_used": result["fallback_used"],
-            "tts_failed": result.get("tts_failed", False),
-        }
+            from .telephone import CallTools
+
+            session = DemoSession(
+                operator_scope(authorization),
+                CallTools(stack["dispatcher"]),
+                time.monotonic() + SESSION_TTL,
+                turn_count=1,
+            )
         try:
-            # Real turns enter the operator call log (never raises).
-            if result.get("tts_failed"):
-                outcome = "tts_failed"
-            elif result.get("fallback_used"):
-                outcome = "fallback"
-            elif result.get("tool_results"):
-                outcome = "tools_ok"
-            else:
-                outcome = "ok"
+            response = await run_demo_turn(session, stack, audio, text, language)
+        finally:
+            if key is not None:
+                sessions.release(session)
+        response["session_id"] = key
+        try:
             callslog.log_call(
                 callslog.get_default(),
                 language,
                 "",
                 "HTTP voice turn",
-                outcome,
+                response["outcome"],
             )
         except Exception:
             pass
         return response
+
+    @app.post("/api/demo/session")
+    async def start_demo_session(authorization: str | None = Header(default=None)):
+        from fastapi import HTTPException
+        from .hackathon import operator_scope
+
+        dashboard_api._require_operator(authorization)
+        stack = app.state.stack
+        if stack["llm_primary"] is None or stack["tts"] is None:
+            raise HTTPException(503, "voice_stack_not_configured")
+        return sessions.create(stack["dispatcher"], operator_scope(authorization))
+
+    @app.delete("/api/demo/session/{session_id}")
+    def end_demo_session(
+        session_id: str, authorization: str | None = Header(default=None)
+    ):
+        from .hackathon import operator_scope
+
+        dashboard_api._require_operator(authorization)
+        return sessions.end(session_id, operator_scope(authorization))
 
     if dashboard_api.router is not None:
         app.include_router(dashboard_api.router)

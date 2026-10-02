@@ -45,6 +45,7 @@ services:
       EASY_API_PREFIX: ${EASY_API_PREFIX:-/index.php/api/v1}
       EASY_AUTH_SCHEME: ${EASY_AUTH_SCHEME:-Bearer }
       EASY_STATE_DB: /data/easy-booking.db
+      CALLS_DB: /data/calls.db
       EASY_DEMO_WRITES: "1"
       VOICEBOT_TELEPHONE_DEMO: "1"
     volumes: [booking_state:/data]

@@ -32,8 +32,11 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
+from datetime import date as calendar_date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -45,6 +48,49 @@ from ..providers.errors import (
 )
 
 DEFAULT_STATE_DB = "/data/easy-booking.db"
+
+
+class BookingReadError(Exception):
+    """Closed operator-read failure; never carries upstream bodies or URLs."""
+
+    def __init__(self, code="booking_payload_invalid", status=502, retry_after=None):
+        super().__init__(code)
+        self.code, self.status, self.retry_after = code, status, retry_after
+
+
+def _read_id(value):
+    if isinstance(value, bool) or not re.fullmatch(r"[1-9][0-9]{0,14}", str(value)):
+        raise BookingReadError()
+    return int(value)
+
+
+def _read_text(value, limit=200):
+    if not isinstance(value, str) or len(value) > limit:
+        raise BookingReadError()
+    return value
+
+
+def _wall_time(value):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?", value
+    ):
+        raise BookingReadError()
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise BookingReadError() from None
+
+
+def _time_state(local, zone):
+    """Round-trip both folds; expose gaps/folds without inventing an instant."""
+    if zone is None:
+        return "unknown_timezone"
+    instants = set()
+    for fold in (0, 1):
+        instant = local.replace(tzinfo=zone, fold=fold).astimezone(timezone.utc)
+        if instant.astimezone(zone).replace(tzinfo=None) == local:
+            instants.add(instant)
+    return "invalid" if not instants else "ambiguous" if len(instants) > 1 else "valid"
 
 
 def _require_key(value, where: str) -> str:
@@ -237,10 +283,13 @@ class EasyAppointmentsAdapter(SlotAdapter):
             timeout=30.0,
             transport=transport,
         )
-        self._journal = _Journal(
-            state_db or os.environ.get("EASY_STATE_DB", DEFAULT_STATE_DB)
+        # Read capability must not depend on writable disk or open a journal.
+        self._journal = (
+            _Journal(state_db or os.environ.get("EASY_STATE_DB", DEFAULT_STATE_DB))
+            if allow_writes
+            else None
         )
-        self._lock_path = self._journal._path + ".lock"
+        self._lock_path = self._journal._path + ".lock" if self._journal else None
         self._lock_timeout = lock_timeout
         self._write_lock = asyncio.Lock()  # in-process sibling of the file lock
         self._catalog_cache: dict | None = None
@@ -253,6 +302,185 @@ class EasyAppointmentsAdapter(SlotAdapter):
 
     async def close(self) -> None:
         await self._http.aclose()
+
+    # -- private operator projection (not part of SlotAdapter) ---------
+    async def _operator_records(self, suffix, params, limit):
+        try:
+            response = await self._http.get(f"{self._base}{suffix}", params=params)
+        except (httpx.TimeoutException, asyncio.TimeoutError):
+            raise BookingReadError("booking_provider_timeout", 504) from None
+        except (httpx.HTTPError, OSError):
+            raise BookingReadError("booking_provider_unavailable", 503) from None
+        if response.status_code == 429 or response.status_code >= 500:
+            try:
+                retry = min(60, max(1, int(response.headers.get("Retry-After", "30"))))
+            except ValueError:
+                retry = 30
+            raise BookingReadError("booking_provider_unavailable", 503, retry)
+        if response.status_code != 200:
+            raise BookingReadError("booking_provider_rejected", 502)
+        try:
+            rows = response.json()
+        except ValueError:
+            raise BookingReadError() from None
+        if not isinstance(rows, list) or len(rows) > limit:
+            raise BookingReadError()
+        return rows
+
+    async def get_operator_catalogue(self):
+        """Fixed, bounded read fields; omit prices and all customer metadata."""
+        services_raw = await self._operator_records(
+            "/services",
+            {
+                "fields": "id,name,duration",
+                "sort": "+id",
+                "page": 1,
+                "length": 100,
+            },
+            100,
+        )
+        providers_raw = await self._operator_records(
+            "/providers",
+            {
+                "fields": "id,firstName,lastName,services,timezone",
+                "sort": "+id",
+                "page": 1,
+                "length": 100,
+            },
+            100,
+        )
+        services, providers = [], []
+        try:
+            for record in services_raw:
+                duration = _read_id(record["duration"])
+                if duration > 1440:
+                    raise BookingReadError()
+                services.append(
+                    {
+                        "id": _read_id(record["id"]),
+                        "name": _read_text(record["name"]),
+                        "duration": duration,
+                    }
+                )
+            for record in providers_raw:
+                raw_zone = record.get("timezone")
+                try:
+                    zone = (
+                        ZoneInfo(raw_zone)
+                        if isinstance(raw_zone, str) and len(raw_zone) <= 100
+                        else None
+                    )
+                except (ValueError, ZoneInfoNotFoundError):
+                    zone = None
+                offered = record["services"]
+                if not isinstance(offered, list) or len(offered) > 100:
+                    raise BookingReadError()
+                providers.append(
+                    {
+                        "id": _read_id(record["id"]),
+                        "name": (
+                            _read_text(record["firstName"])
+                            + " "
+                            + _read_text(record.get("lastName", ""))
+                        ).strip(),
+                        "services": [_read_id(s) for s in offered],
+                        "timezone": zone.key if zone else None,
+                    }
+                )
+        except (KeyError, TypeError, AttributeError):
+            raise BookingReadError() from None
+        if len({s["id"] for s in services}) != len(services) or len(
+            {p["id"] for p in providers}
+        ) != len(providers):
+            raise BookingReadError()
+        return {
+            "source": "easyappointments",
+            "data_mode": "synthetic",
+            "services": services,
+            "providers": providers,
+        }
+
+    async def get_operator_bookings(self, day, *, page=1, length=50):
+        try:
+            if (
+                not isinstance(day, str)
+                or calendar_date.fromisoformat(day).isoformat() != day
+            ):
+                raise ValueError()
+            if (
+                type(page) is not int
+                or not 1 <= page <= 100
+                or type(length) is not int
+                or not 1 <= length <= 50
+            ):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise BookingReadError("booking_query_invalid", 400) from None
+        records = await self._operator_records(
+            "/appointments",
+            {
+                "date": day,
+                "page": page,
+                "length": length,
+                "sort": "+start,+id",
+                "fields": "id,start,end,status,serviceId,providerId",
+            },
+            length,
+        )
+        catalogue = await self.get_operator_catalogue()
+        services = {s["id"]: s for s in catalogue["services"]}
+        providers = {p["id"]: p for p in catalogue["providers"]}
+        items, seen = [], set()
+        try:
+            for record in records:
+                rid = _read_id(record["id"])
+                service = services[_read_id(record["serviceId"])]
+                provider = providers[_read_id(record["providerId"])]
+                start, end = _wall_time(record["start"]), _wall_time(record["end"])
+                if (
+                    rid in seen
+                    or end <= start
+                    or start.date().isoformat() != day
+                    or service["id"] not in provider["services"]
+                ):
+                    raise BookingReadError()
+                seen.add(rid)
+                zone = ZoneInfo(provider["timezone"]) if provider["timezone"] else None
+                states = {_time_state(t, zone) for t in (start, end)}
+                time_state = next(
+                    (
+                        s
+                        for s in ("unknown_timezone", "invalid", "ambiguous")
+                        if s in states
+                    ),
+                    "valid",
+                )
+                items.append(
+                    {
+                        "id": rid,
+                        "start_local": start.isoformat(sep=" "),
+                        "end_local": end.isoformat(sep=" "),
+                        "timezone": provider["timezone"],
+                        "time_state": time_state,
+                        "provider_id": provider["id"],
+                        "provider_name": provider["name"],
+                        "service_id": service["id"],
+                        "service_name": service["name"],
+                        "status": _read_text(record["status"], 80),
+                    }
+                )
+        except (KeyError, TypeError, AttributeError):
+            raise BookingReadError() from None
+        return {
+            "source": "easyappointments",
+            "data_mode": "synthetic",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "date": day,
+            "page": page,
+            "length": length,
+            "has_more": "unknown" if len(items) == length else False,
+            "items": items,
+        }
 
     # -- catalogue ----------------------------------------------------
     async def _get(self, suffix: str, params: dict | None = None):

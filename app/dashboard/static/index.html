@@ -4,488 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b5c43'/%3E%3Cpath d='M8 9l8 15 8-15' fill='none' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
 <title>Vastuvõtulaud — Voicebot</title>
 <style>
-  :root {
-    --white: #fff;
-    --surface: #f4f7f5;
-    --surface-2: #eef3f0;
-    --ink: #17211c;
-    --graphite: #56615b;
-    --muted: #77817b;
-    --rule: #dde5e0;
-    --pine: #0b5c43;
-    --pine-dark: #074432;
-    --pine-wash: #e7f2ed;
-    --brass: #a87613;
-    --brass-wash: #fff8e8;
-    --alarm: #a73a32;
-    --alarm-wash: #fff0ee;
-    --r-sm: 6px;
-    --r: 10px;
-    --max: 1180px;
+  :root { --white:#fff; --surface:#f4f7f5; --ink:#17211c; --graphite:#56615b; --rule:#dde5e0; --pine:#0b5c43; --pine-wash:#e7f2ed; --brass:#75530e; --brass-wash:#fff8e8; --alarm:#a73a32; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; color:var(--ink); background:var(--white); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  button,input { font:inherit; }
+  button { cursor:pointer; }
+  button:disabled { cursor:not-allowed; opacity:.5; }
+  button,input,summary { touch-action:manipulation; }
+  :focus-visible { outline:3px solid var(--pine); outline-offset:3px; }
+  .skip { position:absolute; top:-5rem; left:1rem; background:var(--ink); color:var(--white); padding:.6rem; z-index:30; }
+  .skip:focus { top:1rem; }
+  .shiftbar { border-bottom:1px solid var(--rule); }
+  .shiftbar-inner,.page { max-width:1180px; margin:auto; padding:1rem 1.25rem; }
+  .shiftbar-inner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1rem; }
+  h1 { margin:0; font-size:1.25rem; } h2 { margin:0; font-size:1.1rem; } p { max-width:78ch; }
+  .brand p { margin:.1rem 0 0; font-size:.8rem; color:var(--graphite); }
+  .token-control,.controls { display:flex; flex-wrap:wrap; gap:.6rem; align-items:end; }
+  .field { display:grid; gap:.25rem; } label { font-size:.82rem; font-weight:600; }
+  input { min-height:40px; min-width:0; padding:.45rem .6rem; border:1px solid var(--rule); border-radius:6px; color:var(--ink); background:var(--white); }
+  .button { min-height:40px; padding:.45rem .8rem; border:1px solid var(--rule); border-radius:6px; background:var(--white); color:var(--ink); font-weight:600; }
+  .button:hover { background:var(--surface); } .button.primary { background:var(--pine); border-color:var(--pine); color:var(--white); }
+  .button.quiet-danger { color:var(--alarm); }
+  .notice { padding:.85rem 1rem; border-left:4px solid var(--brass); background:var(--brass-wash); color:var(--brass); }
+  .readiness { display:flex; flex-wrap:wrap; gap:.7rem 1.5rem; color:var(--graphite); font-size:.85rem; }
+  .work-panel { margin-top:1.7rem; border-top:2px solid var(--ink); min-width:0; }
+  .panel-head { display:flex; flex-wrap:wrap; gap:.65rem; align-items:baseline; padding:.75rem 0 .5rem; }
+  .panel-head p { margin:0; color:var(--graphite); font-size:.85rem; }
+  .status { color:var(--graphite); font-size:.87rem; min-height:1.3rem; }
+  .status.error { color:var(--alarm); } .status.stale { color:var(--brass); }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  caption { text-align:left; padding:.75rem 0; color:var(--graphite); font-size:.85rem; }
+  th,td { padding:.65rem .4rem; text-align:left; border-bottom:1px solid var(--rule); overflow-wrap:anywhere; vertical-align:top; }
+  th { font-size:.8rem; color:var(--graphite); } td { font-variant-numeric:tabular-nums; }
+  tr.highlight { background:var(--pine-wash); }
+  .sub { display:block; font-size:.8rem; color:var(--graphite); }
+  .paging { display:flex; flex-wrap:wrap; align-items:center; gap:.8rem; padding:.8rem 0; }
+  .demo-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.65fr); gap:1.5rem; }
+  .demo-copy { color:var(--graphite); margin:.2rem 0 .8rem; }
+  .transcript { max-height:400px; overflow:auto; padding:0; list-style:none; margin:.5rem 0 1rem; }
+  .transcript li { padding:.65rem .8rem; margin:.5rem 0; background:var(--surface); overflow-wrap:anywhere; }
+  .transcript strong { color:var(--pine); display:block; font-size:.8rem; }
+  .demo-form { display:flex; align-items:end; gap:.6rem; } .demo-form .field { flex:1; }
+  audio { width:100%; margin:.6rem 0; } .call-journal { list-style:none; padding:0; } .call-journal li { border-bottom:1px solid var(--rule); padding:.6rem 0; }
+  details { margin-top:1.5rem; } summary { cursor:pointer; font-weight:600; }
+  .empty { padding:.8rem; background:var(--surface); color:var(--graphite); }
+  footer { padding:2rem 0; color:var(--graphite); font-size:.82rem; }
+  @media(max-width:760px) { .demo-layout { grid-template-columns:1fr; } .token-control { width:100%; } .token-control .field { flex:1; } }
+  @media(max-width:640px) {
+    .page,.shiftbar-inner { padding-inline:.8rem; } .demo-form { flex-wrap:wrap; } .demo-form .field { flex-basis:100%; }
+    table,tbody,tr,td { display:block; } thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+    tbody tr { padding:.6rem 0; border-bottom:1px solid var(--rule); } td { display:grid; grid-template-columns:100px minmax(0,1fr); gap:.5rem; border:0; padding:.25rem 0; }
+    td::before { content:attr(data-label); font-size:.8rem; color:var(--graphite); }
   }
-  * { box-sizing: border-box; }
-  html { background: var(--white); -webkit-text-size-adjust: 100%; }
-  body {
-    margin: 0;
-    color: var(--ink);
-    background: var(--white);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  button, input { font: inherit; touch-action: manipulation; }
-  button, summary, input { -webkit-tap-highlight-color: rgba(11, 92, 67, .12); }
-  button:focus-visible, input:focus-visible, summary:focus-visible,
-  .skip:focus-visible { outline: 3px solid rgba(11, 92, 67, .28); outline-offset: 2px; }
-  h1, h2 { text-wrap: balance; }
-  .skip {
-    position: fixed; left: 1rem; top: -4rem; z-index: 100;
-    background: var(--ink); color: var(--white); padding: .55rem .8rem;
-    border-radius: var(--r-sm);
-  }
-  .skip:focus { top: 1rem; }
-
-  /* Shift bar */
-  .shiftbar {
-    position: sticky; top: 0; z-index: 20;
-    border-bottom: 1px solid var(--rule); background: rgba(255,255,255,.96);
-  }
-  .shiftbar-inner {
-    max-width: var(--max); min-height: 68px; margin: 0 auto; padding: .65rem 1.25rem;
-    display: grid; grid-template-columns: minmax(220px, 1fr) auto auto;
-    align-items: center; gap: 1rem;
-  }
-  .brand { display: flex; align-items: center; gap: .7rem; min-width: 0; }
-  .brand-mark {
-    width: 34px; height: 34px; flex: none; border-radius: 50%;
-    display: grid; place-items: center; color: var(--white); background: var(--pine);
-    font-weight: 800; letter-spacing: -.04em;
-  }
-  .brand h1 { margin: 0; font: 700 1.05rem/1.1 system-ui, sans-serif; }
-  .brand p { margin: .15rem 0 0; color: var(--muted); font-size: .78rem; }
-  .system-state { display: flex; gap: .9rem; align-items: center; color: var(--graphite); }
-  .state {
-    display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap;
-    font-size: .78rem; font-weight: 650;
-  }
-  .state-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-  .state.on .state-dot { background: var(--pine); box-shadow: 0 0 0 3px var(--pine-wash); }
-  .state.demo { color: var(--brass); }
-  .state.demo .state-dot { background: var(--brass); }
-  .state.live { color: var(--pine); }
-  .token-control { display: flex; align-items: end; gap: .45rem; }
-  .field { display: grid; gap: .2rem; }
-  .field label { color: var(--graphite); font-size: .72rem; font-weight: 650; }
-  input[type="password"], input[type="text"] {
-    width: 180px; height: 36px; padding: 0 .65rem;
-    color: var(--ink); background: var(--white); border: 1px solid var(--rule);
-    border-radius: var(--r-sm); spellcheck: false;
-  }
-  .icon-button, .button {
-    min-height: 36px; padding: 0 .8rem; border: 1px solid var(--rule);
-    border-radius: var(--r-sm); color: var(--ink); background: var(--white);
-    cursor: pointer; font-weight: 650;
-  }
-  .icon-button:hover, .button:hover { background: var(--surface); }
-  .button.primary { color: var(--white); border-color: var(--pine); background: var(--pine); }
-  .button.primary:hover { background: var(--pine-dark); }
-  .button.quiet-danger { color: var(--alarm); }
-  .button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .48; }
-
-  .page { max-width: var(--max); margin: 0 auto; padding: 1.25rem 1.25rem 3rem; }
-  .demo-notice {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    margin-bottom: 1rem; padding: .7rem .85rem; color: #694900;
-    border: 1px solid #ead7aa; border-left: 4px solid var(--brass);
-    border-radius: var(--r-sm); background: var(--brass-wash);
-  }
-  .demo-notice strong { color: #4e3800; }
-
-  /* Compact shift summary — no giant SaaS metric cards. */
-  .shift-summary {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-    margin-bottom: 1rem; border-block: 1px solid var(--rule);
-  }
-  .shift-stat { padding: .75rem 1rem; border-right: 1px solid var(--rule); }
-  .shift-stat:first-child { padding-left: 0; }
-  .shift-stat:last-child { border-right: 0; }
-  .shift-stat span { display: block; color: var(--muted); font-size: .78rem; }
-  .shift-stat b {
-    display: block; margin-top: .12rem; font-size: 1.1rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Next-expiring hold is the visual centre of gravity. */
-  .next-hold {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center;
-    gap: 1.25rem; min-height: 118px; margin-bottom: 1rem; padding: 1rem 1.15rem;
-    border: 1px solid var(--rule); border-left: 5px solid var(--brass);
-    background: var(--white);
-  }
-  .next-hold[data-urgent="true"] { border-left-color: var(--alarm); }
-  .next-copy { min-width: 0; }
-  .next-label { color: var(--graphite); font-size: .78rem; }
-  .next-guest {
-    margin: .12rem 0 .15rem; font: 600 1.45rem/1.18 ui-serif, Georgia, serif;
-    overflow-wrap: anywhere;
-  }
-  .next-service { margin: 0; color: var(--graphite); overflow-wrap: anywhere; }
-  .countdown { text-align: right; white-space: nowrap; }
-  .countdown strong {
-    display: block; color: var(--brass); font: 600 2.4rem/1 ui-serif, Georgia, serif;
-    font-variant-numeric: tabular-nums;
-  }
-  .next-hold[data-urgent="true"] .countdown strong { color: var(--alarm); }
-  .countdown span { display: block; margin-top: .3rem; color: var(--muted); font-size: .75rem; }
-  .next-actions { display: flex; gap: .45rem; }
-
-  .workspace { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
-  .work-panel { min-width: 0; border-top: 2px solid var(--ink); }
-  .panel-head {
-    display: flex; align-items: baseline; gap: .7rem; padding: .75rem 0 .55rem;
-    border-bottom: 1px solid var(--rule);
-  }
-  .panel-head h2 { margin: 0; font-size: 1rem; }
-  .count {
-    margin-left: auto; min-width: 1.6rem; padding: .08rem .45rem; text-align: center;
-    color: var(--graphite); background: var(--surface); border-radius: 999px;
-    font-size: .76rem; font-variant-numeric: tabular-nums;
-  }
-
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  th {
-    padding: .55rem .45rem; color: var(--graphite); border-bottom: 1px solid var(--rule);
-    text-align: left; font-size: .75rem; font-weight: 650;
-  }
-  td {
-    padding: .72rem .45rem; border-bottom: 1px solid var(--rule);
-    vertical-align: middle; overflow-wrap: anywhere;
-  }
-  tr.demo td:first-child { border-left: 3px solid var(--brass); padding-left: .6rem; }
-  .guest-name { font: 600 1rem/1.25 ui-serif, Georgia, serif; }
-  .sub { display: block; margin-top: .16rem; color: var(--muted); font-size: .75rem; }
-  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .badge {
-    display: inline-block; padding: .15rem .5rem; color: var(--graphite);
-    border: 1px solid var(--rule); border-radius: 999px; background: var(--surface);
-    font-size: .74rem; white-space: nowrap;
-  }
-  .badge.pending { color: #6f4d00; border-color: #e5ce97; background: var(--brass-wash); }
-  .badge.confirmed { color: var(--pine); border-color: #b8d5ca; background: var(--pine-wash); }
-  .badge.cancelled, .badge.urgent { color: var(--alarm); border-color: #efc7c3; background: var(--alarm-wash); }
-  .actions { text-align: right; white-space: nowrap; }
-  .actions .button { min-height: 32px; padding-inline: .65rem; margin-left: .25rem; font-size: .8rem; }
-
-  /* Phone journal */
-  .call-journal {
-    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 1.2rem; list-style: none; margin: 0; padding: 0;
-  }
-  .call-item { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: .75rem; padding: .75rem 0; border-bottom: 1px solid var(--rule); }
-  .call-time { color: var(--graphite); font-size: .78rem; font-variant-numeric: tabular-nums; }
-  .call-summary { margin: 0; overflow-wrap: anywhere; }
-  .call-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
-  .empty {
-    margin: .7rem 0 0; padding: 1rem; color: var(--graphite); background: var(--surface);
-    border-left: 3px solid var(--rule);
-  }
-  details.debug { display: none; margin-top: 1.25rem; }
-  details.debug.visible { display: block; }
-  details summary { cursor: pointer; font-weight: 650; }
-  pre { overflow: auto; padding: .8rem; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: .78rem; }
-  .toast {
-    position: fixed; right: 1rem; bottom: 1rem; z-index: 40; max-width: 360px;
-    padding: .7rem .85rem; color: var(--white); background: var(--ink);
-    border-radius: var(--r-sm); box-shadow: 0 8px 30px rgba(0,0,0,.16);
-  }
-  footer { margin-top: 2rem; color: var(--muted); text-align: center; font-size: .78rem; }
-
-  @media (max-width: 880px) {
-    .shiftbar-inner { grid-template-columns: 1fr auto; }
-    .token-control { grid-column: 1 / -1; }
-    .call-journal { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 640px) {
-    .page { padding-inline: .8rem; }
-    .shiftbar-inner { grid-template-columns: 1fr; gap: .55rem; padding-inline: .8rem; }
-    .system-state { gap: .75rem; justify-self: start; }
-    .token-control { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
-    .token-control .field { grid-column: 1 / -1; }
-    .token-control input { width: 100%; }
-    .token-control #show-token, .token-control #refresh { width: 100%; }
-    .token-control #reset { grid-column: 1 / -1; width: 100%; }
-    .shift-summary { grid-template-columns: repeat(2, 1fr); }
-    .shift-stat:nth-child(2) { border-right: 0; }
-    .shift-stat:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
-    .next-hold { grid-template-columns: 1fr; gap: .75rem; }
-    .countdown { text-align: left; }
-    .next-actions { flex-wrap: wrap; }
-    table, thead, tbody, tr, th, td { display: block; }
-    thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-    tbody tr { padding: .7rem 0; border-bottom: 1px solid var(--rule); }
-    td { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: .5rem; padding: .22rem 0; border: 0; }
-    td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; }
-    td.actions { display: flex; padding-top: .6rem; }
-    td.actions::before { display: none; }
-    .actions .button { margin-left: 0; margin-right: .35rem; }
-  }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+  @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Hüppa töölauda</a>
-
 <header class="shiftbar">
   <div class="shiftbar-inner">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">V</div>
-      <div><h1>Vastuvõtulaud</h1><p>Voicebot · operaatori töölaud</p></div>
-    </div>
-    <div class="system-state" aria-label="Süsteemi olek">
-      <span class="state" id="livekit" role="status" aria-live="polite"><span class="state-dot"></span>… livekit</span>
-      <span class="state demo" id="mode" role="status" aria-live="polite"><span class="state-dot"></span>…</span>
-    </div>
-    <div class="token-control">
-      <div class="field"><label for="token">Tunnus</label><input id="token" name="operator-token" type="password" placeholder="Sisesta vahetuse tunnus…" autocomplete="off" spellcheck="false"></div>
-      <button class="icon-button" id="show-token" type="button" aria-label="Näita tunnust">Näita</button>
-      <button class="button" id="refresh" type="button">Uuenda</button>
-      <button class="button quiet-danger" id="reset" type="button">Lähtesta demo</button>
-    </div>
+    <div class="brand"><h1>Vastuvõtulaud</h1><p>Voicebot · operaatori töölaud</p></div>
+    <form class="token-control" id="auth-form">
+      <div class="field"><label for="token">Operaatori tunnus</label><input id="token" name="operator" type="password" autocomplete="off" spellcheck="false" required></div>
+      <button class="button primary" id="connect" type="submit">Ühenda</button>
+      <button class="button quiet-danger" id="logout" type="button" disabled>Logi välja</button>
+    </form>
   </div>
 </header>
-
 <main class="page" id="main">
-  <div class="demo-notice" id="demo-banner" hidden><span><strong>Demo</strong> — PMS-i ei kirjutata.</span><span>Proovi järjekorda turvaliselt.</span></div>
+  <p class="notice"><strong>Meretuule Demo Spa on väljamõeldud.</strong> HTTP kõneproov võib luua ja tühistada sünteetilisi Easy!Appointmentsi broneeringuid. See ei ole telefonikõne ega päris hotelli teenus.</p>
+  <div class="readiness" aria-label="Valmisolek"><span id="livekit">Meediaseadistus: kontrollimata</span><span id="telephone">Telefonikõne: kinnitamata</span><span id="mode">HTTP kõneproov: kontrollimata</span></div>
+  <p class="status" id="auth-status" role="status" aria-live="polite">Privaatsete andmete ja kõneproovi jaoks ühenda operaatori tunnusega. Tunnust hoitakse ainult selle lehe mälus.</p>
 
-  <section class="shift-summary" id="metrics" aria-label="Vahetuse kokkuvõte"></section>
-
-  <section class="next-hold" id="next-hold" aria-label="Järgmine aeguv hoius" hidden>
-    <div class="next-copy"><span class="next-label">Järgmine aeguv hoius</span><h2 class="next-guest" id="next-guest"></h2><p class="next-service" id="next-service"></p></div>
-    <div class="countdown" aria-live="polite"><strong id="next-countdown">—</strong><span id="next-guidance">Aegumiseni</span></div>
-    <div class="next-actions" id="next-actions"></div>
+  <section class="work-panel" aria-labelledby="bookings-title">
+    <div class="panel-head"><h2 id="bookings-title">Broneeringud</h2><p>Easy!Appointments · sünteetiline demo · kohalik aeg Europe/Tallinn</p></div>
+    <div class="controls">
+      <div class="field"><label for="booking-date">Kuupäev</label><input id="booking-date" name="date" type="date" autocomplete="off"></div>
+      <button class="button" id="refresh" type="button" disabled>Uuenda andmeid</button>
+    </div>
+    <p class="status" id="booking-status" role="status" aria-live="polite">Andmed on privaatsed. Ühenda esmalt.</p>
+    <table id="bookings"><caption>Kõik kontrollitud demo taustsüsteemi broneeringud; külaliste andmeid ei kuvata. Ajad ei ole teisendatud seadme ajavööndisse.</caption><thead><tr><th scope="col">Teenus</th><th scope="col">Teenindaja</th><th scope="col">Algus ja lõpp</th><th scope="col">Ajavöönd</th><th scope="col">Taustsüsteemi olek</th><th scope="col">Viide</th></tr></thead><tbody></tbody></table>
+    <p class="empty" id="booking-empty" hidden>Sellel lehel broneeringuid pole.</p>
+    <div class="paging"><button class="button" id="booking-prev" type="button" disabled>Eelmine leht</button><span id="booking-page">Leht 1 · kuni 50 kirjet</span><button class="button" id="booking-next" type="button" disabled>Järgmine leht</button></div>
   </section>
 
-  <div class="workspace">
-    <section class="work-panel" aria-labelledby="holds-title">
-      <div class="panel-head"><h2 id="holds-title">Hoidude järjekord</h2><span class="count" id="holds-count" role="status" aria-live="polite">0</span></div>
-      <table id="holds"><caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Aegumise järjekorras olevad hoiud</caption><thead><tr><th scope="col">Külaline</th><th scope="col">Teenus</th><th scope="col">Hind</th><th scope="col">Aegub</th><th scope="col">Olek</th><th scope="col">Tegevus</th></tr></thead><tbody></tbody></table>
-      <p class="empty" id="holds-empty" aria-live="polite" hidden>Ootel hoidusid pole. Uus kõnehoius ilmub siia automaatselt.</p>
-    </section>
+  <section class="work-panel" aria-labelledby="demo-title">
+    <div class="panel-head"><h2 id="demo-title">Fiktiivne HTTP kõneproov</h2><p>Tekst või mikrofon → Groq → Azure'i kõne</p></div>
+    <div class="demo-layout">
+      <div>
+        <p class="demo-copy">Alusta vestlust ja küsi sobivat teenust ning aega. Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid.</p>
+        <div class="controls"><button class="button primary" id="demo-start" type="button" disabled>Alusta demovestlust</button><button class="button" id="demo-end" type="button" disabled>Lõpeta vestlus</button></div>
+        <p class="status" id="demo-status" role="status" aria-live="polite">Ühenda esmalt. Vestlus aegub 10 minutiga.</p>
+        <ol class="transcript" id="demo-messages" aria-label="Selle lehe demovestlus"></ol>
+        <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button" id="demo-mic" type="button" disabled>Luba mikrofon ja räägi</button></form>
+        <p class="sub">Mikrofon avaneb ainult nupuvajutusel. Kuni 15 sekundit; teine vajutus lõpetab ja saadab heli. Salvestis ei jää brauserisse.</p>
+        <audio id="demo-audio" controls preload="none" aria-label="Demoabilise vastus" hidden></audio>
+      </div>
+      <aside aria-labelledby="catalogue-title"><h3 id="catalogue-title">Taustsüsteemi teenused</h3><p class="status" id="catalogue-status" role="status" aria-live="polite">Ühenda teenuste vaatamiseks.</p><ul id="catalogue"></ul><p class="sub">Saadavus tuleb taustsüsteemist vestluse ajal. Siinne loend ei luba vaba aega ega hinda.</p></aside>
+    </div>
+  </section>
 
-    <section class="work-panel" aria-labelledby="calls-title">
-      <div class="panel-head"><h2 id="calls-title">Telefonipäevik</h2><span class="count" id="calls-count" role="status" aria-live="polite">0</span></div>
-      <ol class="call-journal" id="calls"></ol>
-      <p class="empty" id="calls-empty" aria-live="polite" hidden>Kõnesid pole. Esimene kõne ilmub siia automaatselt.</p>
-    </section>
-  </div>
-
-  <details class="debug" id="debug-config"><summary>Tehniline seadistus</summary><pre id="config"></pre></details>
-  <footer>Hoiud aeguvad automaatselt · loend uueneb jooksvalt, nimekiri iga 30 s</footer>
+  <section class="work-panel" aria-labelledby="calls-title"><div class="panel-head"><h2 id="calls-title">Toimingupäevik</h2><p>Ainult tehniline tulemus, mitte vestluse sisu</p></div><ol class="call-journal" id="calls"></ol><p class="status" id="calls-status" role="status" aria-live="polite">Ühenda päeviku vaatamiseks.</p></section>
+  <details><summary>Näidisjärjekord — ei pärine broneerimissüsteemist</summary><p class="sub">Varasemad näidishoiud ja näidismõõdikud ei ole reaalne saadavus ega kvaliteedimõõtmine. HTTP kõneproovi tulemust kontrolli ülal olevast taustsüsteemi tabelist.</p><table id="holds"><caption>Näidishoidude automaatne laadimine on välja lülitatud.</caption><tbody></tbody></table></details>
+  <footer>Privaatne sünteetiline demo · andmed uuenevad iga 30 sekundi järel ainult ühendatud ja nähtaval lehel · telefonivalmidus nõuab eraldi välise kõne tõendit</footer>
 </main>
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-
-<script>
-const $ = (id) => document.getElementById(id);
-const state = {holds: [], calls: [], metrics: {}, demo: true, commandsReady: false};
-const metricLabels = {
-  resolution_rate: "Lahendatud",
-  ttfb_p50_ms: "Kõne algus p50",
-  ttfb_p95_ms: "Kõne algus p95",
-  quote_fidelity: "Hinna täpsus",
-  handoff_rate: "Suunamised"
-};
-window.IS_DEMO = true;
-
-const saved = sessionStorage.getItem("voicebot.operatorToken");
-if (saved) $("token").value = saved;
-$("token").addEventListener("input", () => sessionStorage.setItem("voicebot.operatorToken", $("token").value));
-$("show-token").addEventListener("click", () => {
-  const visible = $("token").type === "text";
-  $("token").type = visible ? "password" : "text";
-  $("show-token").textContent = visible ? "Näita" : "Peida";
-  $("show-token").setAttribute("aria-label", visible ? "Näita tunnust" : "Peida tunnus");
-});
-
-const auth = () => {
-  const token = $("token").value.trim();
-  return token ? {Authorization: "Bearer " + token} : {};
-};
-async function api(path, opts = {}) {
-  const method = String(opts.method || "GET").toUpperCase();
-  // Call history is private too; API paths below are same-origin.
-  const headers = method === "GET" && path !== "/api/calls" ? {} : auth();
-  const response = await fetch(path, {...opts, headers});
-  if (!response.ok) {
-    const err = new Error(response.status === 403 ? "Tunnus puudub või on vale." : response.status === 410 ? "Hoid on aegunud. Uuenda järjekorda." : "Toiming ebaõnnestus.");
-    err.status = response.status;
-    throw err;
-  }
-  return response.json();
-}
-function toast(message) {
-  $("toast").textContent = message;
-  $("toast").hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { $("toast").hidden = true; }, 4200);
-}
-function secondsText(seconds) {
-  const n = Math.max(0, Number(seconds) || 0);
-  if (n === 0) return "aegunud";
-  const minutes = Math.floor(n / 60);
-  return minutes ? `${minutes} min ${n % 60} s` : `${n} s`;
-}
-function relativeTime(raw) {
-  const date = new Date(String(raw || "").replace(" ", "T"));
-  if (Number.isNaN(date.getTime())) return String(raw || "");
-  const minutes = Math.round((date.getTime() - Date.now()) / 60000);
-  const formatter = new Intl.RelativeTimeFormat("et", {numeric: "auto"});
-  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
-  return formatter.format(Math.round(hours / 24), "day");
-}
-function badge(text, type = "") {
-  const span = document.createElement("span");
-  span.className = "badge" + (type ? " " + type : "");
-  span.textContent = text ?? "";
-  return span;
-}
-function createAction(id, action, label, className = "") {
-  const button = document.createElement("button");
-  button.className = "button " + className;
-  button.type = "button";
-  button.textContent = label;
-  button.dataset.id = String(id || "");
-  button.dataset.act = action;
-  if (!state.commandsReady) {
-    button.setAttribute("aria-disabled", "true");
-    button.disabled = true;
-    button.title = "Varirežiim — PMS-i ei kirjutata";
-  }
-  return button;
-}
-function renderSummary() {
-  const metrics = {...state.metrics};
-  const pending = state.holds.filter(h => h.status === "pending").length;
-  const urgent = state.holds.filter(h => h.status === "pending" && Number(h.expires_in_s) < 60).length;
-  const fidelity = String(metrics.quote_fidelity ?? "—").match(/\d+%/)?.[0] ?? "—";
-  const items = [
-    ["Ootel", pending], ["Aegub kohe", urgent], ["Kõnesid", state.calls.length],
-    [metricLabels.quote_fidelity, fidelity]
-  ];
-  const root = $("metrics");
-  root.replaceChildren();
-  for (const [label, value] of items) {
-    const item = document.createElement("div"); item.className = "shift-stat";
-    const l = document.createElement("span"); l.textContent = label;
-    const v = document.createElement("b"); v.textContent = String(value);
-    item.append(l, v); root.appendChild(item);
-  }
-}
-function sortedHolds() {
-  return [...state.holds].sort((a, b) => Number(a.expires_in_s) - Number(b.expires_in_s));
-}
-function renderHero() {
-  const hold = sortedHolds().find(h => h.status === "pending");
-  $("next-hold").hidden = !hold;
-  if (!hold) return;
-  $("next-hold").dataset.expiry = String(Date.now() + Number(hold.expires_in_s || 0) * 1000);
-  $("next-hold").dataset.urgent = Number(hold.expires_in_s) < 60 ? "true" : "false";
-  $("next-guest").textContent = hold.guest ?? "Külaline";
-  $("next-service").textContent = hold.service ?? "Teenus täpsustamata";
-  $("next-actions").replaceChildren(createAction(hold.hold_id, "confirm", "Kinnita hoius", "primary"), createAction(hold.hold_id, "cancel", "Loobu", "quiet-danger"));
-}
-function renderHolds() {
-  const holds = sortedHolds();
-  $("holds-count").textContent = String(holds.length);
-  $("holds-empty").hidden = holds.length > 0;
-  const tbody = document.querySelector("#holds tbody");
-  tbody.replaceChildren();
-  for (const hold of holds) {
-    const row = document.createElement("tr");
-    if (hold.source === "demo") row.classList.add("demo");
-    const cells = [
-      ["Külaline", hold.guest ?? "", "guest"], ["Teenus", hold.service ?? "—"],
-      ["Hind", hold.quoted_total ?? "—", "num"], ["Aegub", secondsText(hold.expires_in_s), "num"],
-      ["Olek", hold.status ?? ""]
-    ];
-    cells.forEach(([label, value, cls], index) => {
-      const td = document.createElement("td"); td.dataset.label = label; if (cls) td.className = cls;
-      if (index === 0) { const name = document.createElement("span"); name.className = "guest-name"; name.textContent = value; td.appendChild(name); if (hold.source === "demo") { const demo = document.createElement("span"); demo.className = "sub"; demo.textContent = "Demo — PMS-i ei kirjutata"; td.appendChild(demo); } }
-      else if (index === 4) td.appendChild(badge(value, ["pending","confirmed","cancelled"].includes(value) ? value : ""));
-      else if (index === 3) td.appendChild(badge(value, Number(hold.expires_in_s) < 60 ? "urgent" : ""));
-      else td.textContent = value;
-      row.appendChild(td);
-    });
-    const actions = document.createElement("td"); actions.className = "actions"; actions.dataset.label = "Tegevus";
-    if (hold.status === "pending") actions.append(createAction(hold.hold_id, "confirm", "Kinnita", "primary"), createAction(hold.hold_id, "cancel", "Loobu", "quiet-danger"));
-    row.appendChild(actions); tbody.appendChild(row);
-  }
-  renderHero(); renderSummary();
-}
-function renderCalls() {
-  $("calls-count").textContent = String(state.calls.length);
-  $("calls-empty").hidden = state.calls.length > 0;
-  const root = $("calls"); root.replaceChildren();
-  for (const call of state.calls) {
-    const item = document.createElement("li"); item.className = "call-item";
-    const time = document.createElement("time"); time.className = "call-time"; time.textContent = relativeTime(call.at); time.title = call.at ?? "";
-    const body = document.createElement("div"); const summary = document.createElement("p"); summary.className = "call-summary"; summary.textContent = call.summary ?? "";
-    const meta = document.createElement("div"); meta.className = "call-meta"; meta.append(badge(String(call.lang || "").toUpperCase()), badge(call.outcome ?? "")); if (call.source === "demo") meta.append(badge("demo", "pending"));
-    body.append(summary, meta); item.append(time, body); root.appendChild(item);
-  }
-  renderSummary();
-}
-async function loadHolds() { const data = await api("/api/holds"); state.holds = data.holds || []; renderHolds(); }
-async function loadCalls() { const data = await api("/api/calls"); state.calls = data.calls || []; renderCalls(); }
-async function loadMeta() { try { const data = await api("/api/metrics"); state.metrics = data.metrics || {}; renderSummary(); } catch (_) {} if (new URLSearchParams(location.search).get("debug") === "1") { try { const data = await api("/api/config"); $("config").textContent = JSON.stringify(data.config || {}, null, 2); $("debug-config").classList.add("visible"); } catch (_) {} } }
-function renderState(element, label, className) {
-  const dot = document.createElement("span");
-  dot.className = "state-dot";
-  dot.setAttribute("aria-hidden", "true");
-  element.className = "state " + className;
-  element.replaceChildren(dot, document.createTextNode(label));
-}
-async function loadStatus() {
-  try {
-    const status = await api("/api/status");
-    const capabilities = status.capabilities || {};
-    state.demo = capabilities.serving_demo_data === undefined
-      ? !!status.demo : !!capabilities.serving_demo_data;
-    state.commandsReady = !!capabilities.operator_hold_commands_ready;
-    window.IS_DEMO = state.demo;
-    const livekit = !!(status.wired && status.wired.livekit);
-    renderState($("livekit"), livekit ? "LiveKit ühendatud" : "LiveKit ühendamata", livekit ? "on" : "");
-    const modeLabel = state.commandsReady ? "Live" : (state.demo ? "Demo" : "Varirežiim");
-    renderState($("mode"), modeLabel, state.commandsReady ? "live" : "demo");
-    const banner = $("demo-banner");
-    banner.hidden = state.commandsReady;
-    const strong = document.createElement("strong");
-    strong.textContent = state.demo ? "Demo" : "Varirežiim";
-    banner.replaceChildren(
-      strong,
-      document.createTextNode(" — PMS-i ei kirjutata. Proovi järjekorda turvaliselt.")
-    );
-    renderHolds();
-  } catch (_) { /* status remains fail-closed demo */ }
-}
-async function refreshAll(showErrors = false) {
-  const results = await Promise.allSettled([loadStatus(), loadHolds(), loadCalls(), loadMeta()]);
-  if (showErrors && results[1].status === "rejected") {
-    toast("Järjekorda ei õnnestunud laadida. Proovi uuesti.");
-  }
-}
-async function decide(id, action) { if (!["confirm","cancel"].includes(action)) return; if (!state.commandsReady) { toast("Varirežiim — PMS-i ei kirjutata."); return; } if (action === "cancel" && !confirm("Loobud sellest hoiusest?")) return; try { await api(`/api/holds/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {method:"POST"}); await loadHolds(); } catch (error) { toast(error.message); } }
-function tickCountdown() { const hero = $("next-hold"); if (hero.hidden || !hero.dataset.expiry) return; const seconds = Math.max(0, Math.round((Number(hero.dataset.expiry) - Date.now()) / 1000)); $("next-countdown").textContent = secondsText(seconds); hero.dataset.urgent = seconds < 60 ? "true" : "false"; $("next-guidance").textContent = seconds ? "Aegumiseni — kinnita või helista tagasi" : "Hoid on aegunud"; }
-
-document.querySelector("#holds tbody").addEventListener("click", e => { const button = e.target.closest("button[data-id]"); if (button) decide(button.dataset.id, button.dataset.act); });
-$("next-actions").addEventListener("click", e => { const button = e.target.closest("button[data-id]"); if (button) decide(button.dataset.id, button.dataset.act); });
-$("refresh").addEventListener("click", refreshAll);
-$("reset").addEventListener("click", async () => { if (!confirm("Lähtestad demoandmed?")) return; try { await api("/api/reset", {method:"POST"}); await refreshAll(); } catch (error) { toast(error.message); } });
-window.IS_DEMO = true;
-refreshAll(true);
-setInterval(refreshAll, 30000);
-setInterval(tickCountdown, 1000);
-</script>
+<script src="/dashboard.js" defer></script>
+<script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
 </body>
 </html>

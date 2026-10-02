@@ -1,0 +1,46 @@
+# Separate HTTPS adapter; parent audits the live Traefik rules before activating.
+# Never run `compose config` without -q: interpolation contains credentials.
+services:
+  twilio-bridge:
+    image: voicebot-telephone:local
+    command: [python, -m, app.twilio_bridge]
+    environment:
+      # Empty fresh credentials let the service run but routes fail closed 503.
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?private media credentials required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?private media credentials required}
+      VOICEBOT_AGENT_NAME: ${VOICEBOT_AGENT_NAME:-voicebot}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: coolify
+      traefik.http.routers.voicebot-twilio.rule: Host(`robot.arleserver.cfd`) && PathPrefix(`/api/twilio/`)
+      traefik.http.routers.voicebot-twilio.priority: "10000"
+      traefik.http.routers.voicebot-twilio.entrypoints: ${TWILIO_TRAEFIK_ENTRYPOINT:-https}
+      traefik.http.routers.voicebot-twilio.tls: "true"
+      traefik.http.routers.voicebot-twilio.tls.certresolver: ${TWILIO_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.voicebot-twilio.service: voicebot-twilio
+      traefik.http.services.voicebot-twilio.loadbalancer.server.port: "8082"
+      traefik.http.routers.voicebot-twilio-http.rule: Host(`robot.arleserver.cfd`) && PathPrefix(`/api/twilio/`)
+      traefik.http.routers.voicebot-twilio-http.priority: "10000"
+      traefik.http.routers.voicebot-twilio-http.entrypoints: http
+      traefik.http.routers.voicebot-twilio-http.service: voicebot-twilio
+      traefik.http.routers.voicebot-twilio-http.middlewares: voicebot-twilio-https
+      traefik.http.middlewares.voicebot-twilio-https.redirectscheme.scheme: https
+      traefik.http.middlewares.voicebot-twilio-https.redirectscheme.permanent: "true"
+    ports: ["127.0.0.1:8082:8082"]
+    networks: [coolify]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 40s
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+networks:
+  coolify:
+    external: true
