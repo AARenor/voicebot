@@ -1,6 +1,6 @@
 # ADR-0001: Provisionally use LiveKit Agents as the call runtime
 
-- Status: **Proposed — acceptance blocked on spike**
+- Status: **Implemented private pilot — full release acceptance still gated**
 - Date: 2026-09-30
 
 ## Context
@@ -39,10 +39,18 @@ implementation and reliability cost.
 - Good: tool wrappers can reuse existing validation, price gates, and adapters.
 - Bad: tighter coupling to the LiveKit agent API and plugins.
 - Bad: crash redispatch cannot restore process-local conversation/hold state.
-- Risk: Estonian endpointing, non-streaming Whisper/Azure latency, barge-in, and
-  overload behavior are unmeasured.
+- Risk: provider latency has no production distribution; real carrier endpointing,
+  carrier overflow and full spoken-consent booking remain unverified. Private
+  room barge-in, isolated provider failure and worker drain now have evidence.
 
 ## Confirmation
+
+2026-10-02: Python 3.12 / Agents 1.8.4 / RTC 1.1.20 pilot is deployed. Actual
+Estonian audio in/out, two isolated concurrent room jobs, authenticated synthetic
+SIP dispatch/greeting RTP, native SDK booking/read/cancel, spoken interruption,
+forced Azure audible fallback and graceful drain have evidence. See
+`docs/evidence/2026-10-02-private-telephone-runtime.md`. These do not prove public
+reachability, real carrier operation, or every release check below.
 
 Accept this ADR only after a pinned-version spike passes all six checks in
 `ARCHITECTURE.md` section 4, including two concurrent calls, Estonian audio,

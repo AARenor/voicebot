@@ -1,6 +1,6 @@
 """Dashboard JSON API (FastAPI router).
 
-Read endpoints are open (demo data). Mutating endpoints (confirm/cancel)
+Synthetic reads are open; call history is operator-only. Mutations (confirm/cancel)
 require OPERATOR_TOKEN as `Authorization: Bearer <token>`; without a
 configured token they fail closed with 503.
 """
@@ -101,9 +101,10 @@ try:
         return {"ok": True}
 
     @router.get("/calls")
-    def list_calls() -> dict:
+    def list_calls(authorization: str | None = Header(default=None)) -> dict:
         from .. import callslog
 
+        _require_operator(authorization)
         return {"calls": callslog.list_calls(callslog.get_default())}
 
     @router.get("/config")

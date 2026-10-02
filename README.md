@@ -1,18 +1,22 @@
 # Voicebot (ET hotel/spa, LiveKit SIP + Agents target)
 
-Slow high-quality build. See ARCHITECTURE.md (v1.0) for the truth-first plan.
+See ARCHITECTURE.md for the truth-first plan. Continuous private telephone
+pilot: `app/worker.py`; [deployment and DIDWW gates](deploy/telephony/README.md).
+Public SIP routing and a real carrier call are **not** verified.
 
 ## Layout
 
 ```
 voicebot/
   ARCHITECTURE.md
-  requirements.txt (+ requirements-phase2.txt: legacy candidates to repin)
+  requirements.txt (+ requirements-telephony.lock.txt: separate media worker)
   .env.example        # copy to .env, never commit .env
   README.md
   app/
     turn.py           # run_turn: hear -> think (+tools) -> book -> speak
     pipeline.py       # routing tables + endpointing budget (descriptors)
+    worker.py         # actual continuous LiveKit Agents session, separate image
+    telephone.py      # call-owned tools, stable write keys, pre-speech price gate
     server.py         # FastAPI: dashboard, /api/status, POST /api/turn
     providers/        # Groq (STT+chat), Gemini (failover), Azure TTS
     booking/

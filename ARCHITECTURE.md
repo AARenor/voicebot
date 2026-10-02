@@ -1,6 +1,6 @@
 # Estonian hotel and spa voicebot — architecture
 
-Status: **v1.0 truth-first architecture, updated 2026-10-01**.
+Status: **v1.1 private telephone pilot, updated 2026-10-02**.
 
 This document separates what is running from what is planned. A component is
 not “ready” because credentials exist or a container starts; it is ready only
@@ -41,25 +41,28 @@ Non-negotiable invariants:
 | LLM | Groq `openai/gpt-oss-20b` works, including tool calls | Primary only; no configured secondary |
 | Speech | Groq Whisper and Azure `et-EE-AnuNeural` work | Non-streaming HTTP clients |
 | FAQ | SQLite FTS repository is thread-safe, but generic demo policies are always seeded and advertised | Not property-approved; block live answers |
-| Call log | SQLite masks only peer IDs; complete heard/reply summaries are stored and publicly readable at `/api/calls` | P0 privacy blocker |
+| Call log | Operator-authenticated, no-store reads; new HTTP turns store only static events, not heard/reply text; worker does not persist transcripts | Existing historical summaries are not automatically purged; retention and broader live-data review remain |
 | Dashboard commands | Demo queue; writes fail closed outside demo | Not connected to booking-provider commands |
-| LiveKit server | Operator-managed LiveKit, SIP, and Redis containers were runtime-verified on the host, but their manifests/config live outside this repository | Internal only; not repo-reproducible (R-017) |
-| Public telephone ingress | Carrier account/number is pending; no public SIP/RTP ports, trunk, or dispatch rule | Not operational |
-| Continuous call agent | No LiveKit Agents worker; `app/pipeline.py` is a descriptor skeleton | Not implemented |
+| LiveKit server | Digest-pinned private LiveKit/SIP/Redis and worker manifests in `deploy/telephony`; deployed authenticated SIP dispatch and greeting RTP verified | Internal pilot; public NAT and carrier ingress remain unverified |
+| Public telephone ingress | DIDWW account/number pending; host is on a private LAN; only localhost SIP ports published | Not operational; needs verified public edge in addition to number |
+| Continuous call agent | `app/worker.py` runs Agents 1.8.4 with Groq/Azure/Silero; real audio and two concurrent isolated room jobs pass | Synthetic pilot; PSTN and full release checks remain gated |
 | Hotel booking | Apaleo, Mews, Cloudbeds, and QloApps drivers are stubs | No operational `StayAdapter` |
 | Spa booking | Private Easy!Appointments 1.6.0 installed; real HTTP catalogue/search/hold/confirm/cancel and synthetic race/recovery tests pass | Explicit demo-write opt-in; not real-property or independent-writer readiness |
-| Persistent booking state | Easy customer/appointment outcomes persist in SQLite on `/data`; file lock coordinates the single-host writer; hold/search snapshots remain in memory | Outcome replay survives restart; holds do not; no distributed/caller-owned state |
-| Concurrency | [Three concurrent production HTTP turns](docs/evidence/2026-09-30-http-concurrency-smoke.md) passed; this is diagnostic HTTP only | Phone concurrency blocked (Q-01/Q-07) |
+| Persistent booking state | HTTP and worker share `/data/easy-booking.db`; single-host lock and outcome replay; telephone tools enforce call-owned hold/booking IDs and server-controlled keys | Process-local holds/conversation do not survive crash; no distributed caller authorization |
+| Concurrency | Three HTTP turns and two isolated real-provider room jobs verified | Two-job private worker cap; carrier channel/overflow testing remains |
 
 `/api/status` currently reports wiring and derived capabilities. In particular,
 `livekit: true` means credentials are configured; it does **not** mean a phone
 call can reach an agent. `serving_demo_data: true` remains intentional until
-real operator and booking data replace the demo store.
+real operator and booking data replace the demo store. The separate `telephone`
+status explicitly keeps public-ingress/carrier verification false. Worker HTTP
+health alone is not a registration, booking or PSTN proof.
 
 Live traffic is blocked by the P0/P1 items in
 [`docs/architecture/risk-register.md`](docs/architecture/risk-register.md).
-The public call-summary exposure is verified on the deployed site, not merely a
-theoretical code finding.
+Historical public call-summary exposure was observed on the deployed site.
+Authentication/no-store and static new-turn summaries address that specific
+gap; real guest release still requires the remaining privacy/safety gates.
 
 ## 3. Target topology
 
@@ -155,9 +158,9 @@ The existing `run_turn` HTTP path remains a diagnostic and browser-test path.
 The worker should reuse booking validation, FAQ retrieval, PII masking,
 idempotency rules, and the price guard—not duplicate business policy.
 
-When the worker lands, remove Pipecat from the active dependency plan and
-replace the descriptor-only `app/pipeline.py` with the real LiveKit session
-configuration.
+The implemented private worker is `app/worker.py`; `app/pipeline.py` remains a
+reference routing descriptor, not the media runtime. Pipecat was removed from
+the active dependency plan; the separate media lock pins the tested runtime.
 
 This is not an accepted implementation decision yet. Before pinning packages,
 a time-boxed spike must prove:

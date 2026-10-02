@@ -1,0 +1,70 @@
+# Private loopback pilot. DO NOT expose SIP to the Internet without README gates.
+services:
+  redis:
+    image: redis@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [livekit_redis:/data]
+    networks:
+      coolify:
+        aliases: [voicebot-media-redis]
+    restart: unless-stopped
+  livekit:
+    image: livekit/livekit-server@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    command: [--config, /etc/livekit/livekit.yaml]
+    labels:
+      voicebot.media-config-sha: ${MEDIA_CONFIG_SHA:?configuration checksum required}
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?media credentials required}
+    volumes: [./livekit.yaml:/etc/livekit/livekit.yaml:ro]
+    ports: ["127.0.0.1:7880:7880"]
+    networks: [coolify]
+    depends_on: [redis]
+    restart: unless-stopped
+  sip:
+    image: livekit/sip@sha256:d3c6441eb0918a81ab9e48ba7df6f02c1eebbeace42c963b2c6a6e5418675671
+    environment:
+      SIP_CONFIG_BODY: ${SIP_CONFIG_BODY:?SIP configuration required}
+    ports: ["127.0.0.1:5060:5060/udp", "127.0.0.1:5060:5060/tcp"]
+    networks: [coolify]
+    depends_on: [livekit, redis]
+    restart: unless-stopped
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/telephony/Dockerfile
+    image: voicebot-telephone:local
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?required}
+      GROQ_API_KEY: ${GROQ_API_KEY:?required}
+      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:?required}
+      AZURE_REGION: ${AZURE_REGION:?required}
+      EASY_BASE_URL: ${EASY_BASE_URL:?required}
+      EASY_API_KEY: ${EASY_API_KEY:?required}
+      EASY_API_PREFIX: ${EASY_API_PREFIX:-/index.php/api/v1}
+      EASY_AUTH_SCHEME: ${EASY_AUTH_SCHEME:-Bearer }
+      EASY_STATE_DB: /data/easy-booking.db
+      EASY_DEMO_WRITES: "1"
+      VOICEBOT_TELEPHONE_DEMO: "1"
+    volumes: [booking_state:/data]
+    ports: ["127.0.0.1:8081:8081"]
+    networks: [coolify]
+    depends_on: [livekit]
+    init: true
+    stop_grace_period: 40s
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+networks:
+  coolify:
+    external: true
+volumes:
+  livekit_redis:
+  booking_state:
+    external: true
+    name: ${VOICEBOT_DATA_VOLUME:?same persistent volume as HTTP required}

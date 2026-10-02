@@ -312,9 +312,8 @@ const auth = () => {
 };
 async function api(path, opts = {}) {
   const method = String(opts.method || "GET").toUpperCase();
-  // Current GET routes are deliberately public/read-only; credentials attach
-  // only to paid/mutating POST routes.
-  const headers = method === "GET" ? {} : auth();
+  // Call history is private too; API paths below are same-origin.
+  const headers = method === "GET" && path !== "/api/calls" ? {} : auth();
   const response = await fetch(path, {...opts, headers});
   if (!response.ok) {
     const err = new Error(response.status === 403 ? "Tunnus puudub või on vale." : response.status === 410 ? "Hoid on aegunud. Uuenda järjekorda." : "Toiming ebaõnnestus.");

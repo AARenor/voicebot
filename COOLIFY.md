@@ -29,7 +29,7 @@ Later (live voice — mirrors `.env.example` exactly):
 ```
 GROQ_API_KEY=...
 GEMINI_API_KEY=...
-LIVEKIT_URL=...  LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...  # secret reserved; current web app does not read it (R-006)
+LIVEKIT_URL=...  LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...  # all three required for configured media status
 SIP_TRUNK_ADDRESS=...  SIP_AUTH_USERNAME=...  SIP_AUTH_PASSWORD=...  SIP_INBOUND_NUMBER=...
 APALEO_CLIENT_ID=...  APALEO_CLIENT_SECRET=...
 MEWS_CLIENT_TOKEN=...  MEWS_ACCESS_TOKEN=...  MEWS_CLIENT=...  MEWS_API_BASE_URL=...
@@ -76,7 +76,11 @@ docker run --rm -p 8000:8000 -e OPERATOR_TOKEN=demo-token voicebot:local
 
 ## Notes
 
-- Mutating API (`confirm`/`cancel`/`reset`) needs `Authorization: Bearer
-  $OPERATOR_TOKEN`. Reads are open demo data.
+- Mutations, `/api/turn` and `/api/calls` require operator authorization.
+  Call reads and voice-turn responses (including errors) are `no-store`.
+  Other reads are synthetic demo data, not a provider-backed bookings panel.
 - The container runs as non-root `voicebot` (uid 10001).
-- Redis/Postgres/Langfuse are Phase 2 (compose will grow then).
+- The separate [private telephone deployment](deploy/telephony/README.md) uses
+  LiveKit/SIP/Redis and shares the existing booking volume. Public SIP ingress
+  cannot be supplied by this HTTP proxy; LAN NAT and the real carrier call are
+  still gates. Postgres/Langfuse remain target components, not deployed claims.

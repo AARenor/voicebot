@@ -3,6 +3,27 @@
 Snapshot: **2026-10-01**. P0 blocks any live caller/property traffic. P1 blocks
 the pilot unless explicitly resolved. P2 is tracked hardening.
 
+## 2026-10-02 scoped resolutions
+
+The table below preserves the original findings, not the current implementation
+status. [Private telephone evidence](../evidence/2026-10-02-private-telephone-runtime.md):
+
+- **R-001 partially addressed:** operator/no-store call reads and static new
+  HTTP turn events replace public raw-summary access; historical rows are not
+  automatically purged. Broader PII/PAN and live-property privacy gate remains.
+- **R-005 partially addressed:** continuous native worker and private authenticated
+  SIP dispatch now run; real room audio, isolation, interruption, failure/drain
+  and native booking tools pass. Public edge and real carrier call remain gates.
+- **R-006 partially addressed:** all LiveKit credentials are required for configured
+  status; separate telephone fields explicitly keep public/carrier verification
+  false. Full component-by-component live readiness is still target work.
+- **R-017 addressed for the private pilot:** digest-pinned sanitized media/worker
+  manifests, complete Python lock, in-memory credential injection and source/runtime
+  fingerprint verification exist in `deploy/telephony`. Public-edge deployment
+  must be reviewed separately when the owner supplies ingress/number details.
+
+## Historical snapshot
+
 | ID | Priority | Code/runtime evidence | Risk | Release gate / acceptance evidence | Owner |
 | --- | --- | --- | --- | --- | --- |
 | R-001 | P0 | `app/server.py:276-297`, `app/callslog.py:122-160`, `app/dashboard/api.py:103-107`;2026-10-01 normal browser and local runtime `/api/calls` returned200/one summary-bearing row without auth (contents omitted; earlier snapshot had3) | Raw caller PII/health/booking speech can be persisted and public; edge403 for one client is not app authorization | `/api/calls` requires operator auth/no-store; PII/PAN fuzz turn leaves no raw values in DB/log/API; [private-read contract](../research/website-booking-architecture/DESIGN.md) | Web + security |

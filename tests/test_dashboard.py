@@ -69,7 +69,14 @@ class TestDashboard(unittest.TestCase):
         self.assertEqual(wrong.status_code, 403)
 
     def test_calls_config_metrics_shapes(self):
-        self.assertEqual(len(self.client.get("/api/calls").json()["calls"]), 3)
+        self.assertEqual(
+            len(
+                self.client.get(
+                    "/api/calls", headers={"Authorization": "Bearer test-token"}
+                ).json()["calls"]
+            ),
+            3,
+        )
         config = self.client.get("/api/config").json()["config"]
         self.assertIn("voice_et", config)
         self.assertNotIn("GROQ_API_KEY", str(config))
@@ -155,7 +162,8 @@ class TestDashboard(unittest.TestCase):
         old = dict(os.environ)
         try:
             os.environ["LIVEKIT_URL"] = "http://livekit:7880"
-            os.environ["LIVEKIT_API_KEY"] = "robotkey"
+            os.environ["LIVEKIT_API_KEY"] = "fixture-media-key"
+            os.environ["LIVEKIT_API_SECRET"] = "fixture-secret"
             os.environ["ZENOTI_API_KEY"] = "z"
             stack = build_stack()
             self.assertIsNotNone(stack["livekit"])
@@ -174,7 +182,8 @@ class TestDashboard(unittest.TestCase):
                 os.environ.pop(key, None)
             self.assertFalse(build_stack()["livekit"] is not None)
             os.environ["LIVEKIT_URL"] = "http://livekit:7880"
-            os.environ["LIVEKIT_API_KEY"] = "robotkey"
+            os.environ["LIVEKIT_API_KEY"] = "fixture-media-key"
+            os.environ["LIVEKIT_API_SECRET"] = "fixture-secret"
             wired = build_stack()["livekit"]
             self.assertEqual(wired["url"], "http://livekit:7880")
             self.assertNotIn("SECRET", str(wired).upper().replace("API_SECRET", ""))

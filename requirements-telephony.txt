@@ -1,0 +1,9 @@
+# Direct runtime pins verified on Python 3.12; complete graph: telephony.lock.txt.
+livekit-agents==1.8.4
+livekit==1.1.20
+livekit-api==1.2.1
+livekit-plugins-groq==1.8.4
+livekit-plugins-openai==1.8.4
+livekit-plugins-azure==1.8.4
+livekit-plugins-silero==1.8.4
+httpx==0.28.1

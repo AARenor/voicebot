@@ -88,7 +88,10 @@ def build_stack() -> dict:
             except Exception:
                 # Journal unwritable: stay unwired, never half-operational.
                 stack["slot"] = None
-    if os.environ.get("LIVEKIT_URL") and os.environ.get("LIVEKIT_API_KEY"):
+    if all(
+        os.environ.get(k)
+        for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+    ):
         # Self-hosted media plane (livekit:7880 on the coolify network).
         # Reachability is verified at deploy; status only reports config.
         stack["livekit"] = {
@@ -154,6 +157,14 @@ def create_app():
 
     app = FastAPI(title="voicebot-et", lifespan=lifespan)
     app.state.stack = stack
+
+    @app.middleware("http")
+    async def private_responses(request, call_next):
+        response = await call_next(request)
+        if request.url.path in ("/api/calls", "/api/turn"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     advertised = {
         tool["function"]["name"] for tool in stack["dispatcher"].available_tools()
     }
@@ -205,6 +216,13 @@ def create_app():
             },
             "demo": stack["demo"],
             "capabilities": app.state.capabilities,
+            "telephone": {
+                "media_credentials_configured": stack["livekit"] is not None,
+                "worker_health_probe": "separate_private_endpoint",
+                "public_ingress_verified": False,
+                "carrier_call_verified": False,
+                "release_scope": "synthetic_private_pilot",
+            },
         }
 
     @app.post("/api/turn")
@@ -287,7 +305,7 @@ def create_app():
                 callslog.get_default(),
                 language,
                 "",
-                f"{result['text_heard']} → {result['reply']}",
+                "HTTP voice turn",
                 outcome,
             )
         except Exception:
