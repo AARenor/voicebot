@@ -69,7 +69,36 @@ Do not increase web replicas until holds use Redis and logs use
 Postgres or a single-writer service. See
 [`docs/operations/concurrency-and-capacity.md`](docs/operations/concurrency-and-capacity.md).
 
-## 3. Verify
+## 3. Automatic deployment from GitHub
+
+The existing production application deploys pushes and merges to `master` in
+`Parnuhakk/voicebot` through a signed GitHub repository webhook. It uses the
+public-repository source; no GitHub App installation or Actions workflow is needed.
+
+- Coolify: keep repository `Parnuhakk/voicebot`, branch `master`, **Auto Deploy**
+  enabled, preview deployments disabled, and watch paths empty.
+- GitHub → repository **Settings → Webhooks**: active hook **691219586**, event
+  **push** only, content type **application/json**, SSL verification enabled.
+  Callback: `https://coolify.arleserver.cfd/webhooks/source/github/events/manual`.
+- Reuse the application's existing GitHub signing value from Coolify's
+  **Webhooks** settings when repairing the hook. Never commit or log that value.
+  The receiver verifies `X-Hub-Signature-256` against the raw request body.
+- GitHub sends pushes for all branches; Coolify matches the repository and
+  configured branch. Other branches and unmerged pull requests do not deploy
+  production. Deployment is skipped when every nonempty commit message in the
+  push contains `[skip ci]` or `[skip cd]`.
+
+To verify a deployment, push a normal change to `master`, then inspect the hook's
+**Recent Deliveries** and the application's **Deployments**. Require a push for
+`refs/heads/master`, a queued deployment for its commit, and a finished deployment
+running that revision. A successful creation ping is not deployment proof;
+HTTP 200 alone is also insufficient because rejected signatures return a failed
+result with HTTP 200. After deployment, verify health plus the existing `/data`
+mount and journal counts (see Persistent Storage requirements above).
+This hook deploys only the web/API application;
+the separately deployed telephone and booking services remain unchanged.
+
+## 4. Verify
 
 - `https://robot.arleserver.cfd/health` → `{"ok": true}`
 - `https://robot.arleserver.cfd/` → disclosed fictional operator dashboard
@@ -77,7 +106,7 @@ Postgres or a single-writer service. See
 - Confirm/cancel without or with a wrong client token → 403. 503 means
   the server itself has no `OPERATOR_TOKEN` configured — check Coolify env.
 
-## 4. Local mirror (same as Coolify builds)
+## 5. Local mirror (same as Coolify builds)
 
 ```
 cd voicebot
