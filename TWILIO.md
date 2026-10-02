@@ -249,12 +249,13 @@ keys need to be re-entered. Without this flag the fully configured six-variable
 environment contract is unchanged. Inspect/config/transport failures print only
 a static code and exit nonzero; inherited values are never printed or saved.
 
-Remaining activation gates: revoke the exposed credential, supply fresh values,
-configure the existing assigned number's POST webhook, then verify an actual
-incoming call with spoken consent/booking/readback/cancellation. Do not label a
-synthetic probe as a real phone call.
+Credential configuration and the assigned number's POST webhook are now verified
+as described below. An actual incoming call with spoken consent/booking/readback/
+cancellation remains the final carrier gate. Do not label a synthetic probe as a
+real phone call; revocation of the former chat-exposed credential remains the
+owner's responsibility, not something these read-only checks prove.
 
-## Verified transport evidence — 2026-10-02
+## Initial transport evidence — 2026-10-02
 
 - Full pinned-media suite: **589 passed, 4 skipped**, no deselections. Core suite:
   **470 passed, 30 skipped**. Optional live/external tests are not fabricated.
@@ -266,8 +267,8 @@ synthetic probe as a real phone call.
   fixtures. It verified unsigned rejection, signed TwiML, native mono 8 kHz audio
   and provenance mark, VAD-triggered carrier clear, one isolated native room,
   consumed-binding replay rejection, and acknowledged room cleanup.
-- The synthetic fixture was removed afterward. The live bridge has
-  `configured=false`; public voice/media return **503 + no-store** before any
+- The synthetic fixture was removed afterward. At that initial handoff the bridge had
+  `configured=false`; public voice/media returned **503 + no-store** before any
   worker allocation. No real Twilio credential was used, retrieved or saved.
 - Real private Groq/Azure speech independently created, read and cancelled an
   owned fictional booking. This is separate from the WSS transport test and is
@@ -275,3 +276,22 @@ synthetic probe as a real phone call.
 
 Commands, boundaries and remaining prerequisites:
 [dated hackathon evidence](docs/evidence/2026-10-02-hackathon-verification.md).
+
+## Subsequent credential activation — 2026-10-02
+
+- User-supplied credentials were kept in the protected environment. A read-only
+  Twilio API request authenticated successfully, matched the assigned voice number,
+  and verified the exact HTTPS webhook, POST method and no application override.
+- The trusted current web container's private media credentials were reused.
+  Only the separate bridge was recreated; the worker and booking data were not
+  replaced. Normal interactive Bash startup loaded the updated protected
+  environment without exposing values. An older non-interactive session had
+  retained stale credentials.
+- Private health now reports `configured=true`; the public unsigned webhook
+  returns **403 + no-store**, not the former missing-configuration 503.
+- The pinned `twilio_probe.py --media` passed signed HTTPS/WSS, audible native
+  output plus provenance mark, and consumed-binding replay rejection using the
+  configured credentials. Independent private-room readback confirmed zero
+  remaining Twilio rooms after the probe.
+- No outbound phone call, number purchase, account mutation or real PSTN proof
+  was performed. The bridge is left **active for an incoming phone test**.

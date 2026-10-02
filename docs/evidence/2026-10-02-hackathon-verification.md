@@ -147,3 +147,22 @@ Post-deployment proof:
 
 This report's follow-up documentation commit does not change runtime source.
 The software/demo goal is verified; a **real incoming Twilio call is not**.
+
+## Subsequent user-requested Twilio activation
+
+The locally stored credentials were loaded through normal interactive Bash
+startup; the previous non-interactive session retained a stale token. A read-only
+Twilio IncomingPhoneNumbers request then returned **200**, confirmed the assigned
+voice-capable number, exact `/api/twilio/voice` URL, **POST**, and no voice
+application override. No secret values were printed or added to the repository.
+
+`manage.py up --twilio` recreated only the adapter using the current trusted web
+container. After Docker health and proxy convergence, private health was
+`configured=true` and the public unsigned webhook returned **403 + no-store**.
+The pinned `twilio_probe.py --media` passed actual configured-credential signed
+HTTPS/WSS, native audible output/provenance and consumed-binding replay rejection.
+Independent private API readback confirmed **zero remaining Twilio rooms**.
+
+The bridge remains active. This is **ready for an incoming telephone test**, not
+proof of a real call. No outbound call, purchase or Twilio account mutation was
+made; prior exposed-token revocation is not verified by these read-only checks.
