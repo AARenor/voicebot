@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "reference_date": "2026-10-02",
+  "purpose": "Fictional telephone-demo examples; no real guests or property claims.",
+  "automatic_import": false,
+  "safety": {
+    "send_notifications": false,
+    "make_outbound_calls": false,
+    "collect_payments": false,
+    "speak_prices": false,
+    "email_domain": "example.invalid",
+    "phone_range": "Fictional NANPA 202-555-01xx numbers; never dial or text them.",
+    "availability_source": "Query the actual booking backend; this file does not reserve or prove availability."
+  },
+  "fictional_property": {
+    "name": "Meretuule Demo Spa",
+    "language": "et",
+    "timezone": "Europe/Tallinn",
+    "description_et": "Väljamõeldud spaa tehisintellektil põhineva broneerimisabilise katsetamiseks.",
+    "address": null,
+    "real_visitor_location": false,
+    "automatically_used_by_agent": false
+  },
+  "existing_backend_reference": {
+    "company_name": "Voicebot Synthetic Spa Demo",
+    "service": {
+      "id": "1",
+      "name": "Demo spa consultation",
+      "example_description_et": "Demo spaakonsultatsioon",
+      "duration_minutes": 30,
+      "slot_interval_minutes": 30,
+      "attendants": 1
+    },
+    "provider": {
+      "id": "2",
+      "name": "Demo Therapist",
+      "timezone": "Europe/Tallinn",
+      "service_ids": ["1"]
+    },
+    "working_hours": {
+      "monday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
+      "tuesday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
+      "wednesday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
+      "thursday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
+      "friday": {"start": "09:00", "end": "17:00", "breaks": [{"start": "12:00", "end": "13:00"}]},
+      "saturday": null,
+      "sunday": null
+    },
+    "id_scope": "These IDs belong to the current synthetic installation. Resolve IDs with get_slot_catalogue elsewhere."
+  },
+  "guests": [
+    {
+      "fixture_id": "guest-001",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Esimene",
+        "email": "demo.esimene@example.invalid",
+        "phone": "+12025550101"
+      }
+    },
+    {
+      "fixture_id": "guest-002",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Teine",
+        "email": "demo.teine@example.invalid",
+        "phone": "+12025550102"
+      }
+    },
+    {
+      "fixture_id": "guest-003",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Kolmas",
+        "email": "demo.kolmas@example.invalid",
+        "phone": "+12025550103"
+      }
+    }
+  ],
+  "example_bookings": [
+    {
+      "fixture_id": "example-booking-001",
+      "guest_fixture_id": "guest-001",
+      "service": "1",
+      "provider": "2",
+      "date": "2026-10-05",
+      "preferred_start": "09:00",
+      "duration_minutes": 30,
+      "status": "example_only",
+      "persisted": false
+    },
+    {
+      "fixture_id": "example-booking-002",
+      "guest_fixture_id": "guest-002",
+      "service": "1",
+      "provider": "2",
+      "date": "2026-10-05",
+      "preferred_start": "10:00",
+      "duration_minutes": 30,
+      "status": "example_only",
+      "persisted": false
+    },
+    {
+      "fixture_id": "example-booking-003",
+      "guest_fixture_id": "guest-003",
+      "service": "1",
+      "provider": "2",
+      "date": "2026-10-06",
+      "preferred_start": "14:30",
+      "duration_minutes": 30,
+      "status": "example_only",
+      "persisted": false
+    }
+  ],
+  "manual_demo_faq": {
+    "automatically_used_by_agent": false,
+    "entries": [
+      {
+        "question_et": "Kas see on päris spaa?",
+        "answer_et": "Ei. Meretuule Demo Spa on väljamõeldud katsetuskeskkond. Broneeringud ei anna õigust päris teenusele."
+      },
+      {
+        "question_et": "Kui kaua demo konsultatsioon kestab?",
+        "answer_et": "Näidiskonsultatsioon kestab 30 minutit. Tegelikku aega tuleb kontrollida broneerimissüsteemist."
+      },
+      {
+        "question_et": "Kus spaa asub?",
+        "answer_et": "Demol ei ole päris aadressi ega külastuskohta."
+      },
+      {
+        "question_et": "Kas pean midagi maksma?",
+        "answer_et": "See demo ei kogu makseid ega kinnita päris teenuse hinda."
+      }
+    ]
+  },
+  "call_prompts_et": {
+    "disclosure": "Tere! Kas sa oled demoabiline?",
+    "search": "Soovin broneerida demo spaakonsultatsiooni 5. oktoobril 2026 hommikul kell kümme.",
+    "guest_details": "Minu eesnimi on Demo ja perekonnanimi Esimene. E-post on demo punkt esimene ätt example punkt invalid. Testtelefon on pluss üks kaks null kaks viis viis viis null üks null üks.",
+    "consent": "Jah, kinnitan selle testbroneeringu.",
+    "cancel_in_same_call": "Palun tühista broneering, mille just selles kõnes tegime.",
+    "decline": "Ei, ära kinnita broneeringut.",
+    "closed_day": "Kas saan demo konsultatsiooni broneerida pühapäeval?",
+    "price": "Kui palju teenus maksab?"
+  },
+  "tool_example": {
+    "catalogue": {"name": "get_slot_catalogue", "arguments": {}},
+    "search": {"name": "search_slots", "arguments": {"service": "1", "provider": "2", "date": "2026-10-05"}},
+    "next_steps": [
+      "Choose an actually returned slots[].slotId, then pass it as slot_id to hold_slot.",
+      "After explicit consent, pass that call's returned hold_id and one guests[].guest object to confirm_slot_booking.",
+      "For cancellation in the same call, use the returned booking.id as booking_id.",
+      "Do not use fixture_id as a slot, hold, customer or booking ID. The telephone worker supplies write keys."
+    ]
+  }
+}
