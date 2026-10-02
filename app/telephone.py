@@ -355,6 +355,11 @@ class CallTools:
         ):
             self._unknown_mutation()
             return UNKNOWN_REPLY
+        if self.turn_mutation and errors:
+            # A completed write remains true when a later, unrelated read fails.
+            # Unknown mutations above still override even a prior success.
+            self.invalidate_recap()
+            return MUTATION_REPLIES[self.turn_mutation] + " Muu päring ebaõnnestus."
         if errors:
             self.invalidate_recap()
             return "Toiming ei õnnestunud; edu ei ole kinnitatud."
@@ -372,7 +377,6 @@ class CallTools:
                 self.invalidate_recap()
             return reply
         if self.turn_mutation:
-            # No model prose or historical booking may describe a new write.
             return MUTATION_REPLIES[self.turn_mutation]
         if text in STATIC_REPLIES or any(
             text == entry["answer_et"] for entry in self.demo["faq"]
@@ -624,7 +628,7 @@ class CallTools:
                     return {"error": "already_cancelled"}
                 if name == "confirm_slot_booking" and not self.turn_mutation:
                     self.turn_mutation = "existing"
-                if name == "cancel_slot_booking" and self.turn_mutation != "cancelled":
+                if name == "cancel_slot_booking" and not self.turn_mutation:
                     self.turn_mutation = "already_cancelled"
                 return copy.deepcopy(self.actions[action])
         if name == "confirm_slot_booking":
@@ -689,6 +693,7 @@ class CallTools:
             self.outcome = "booking_unavailable"
         if name == "search_slots" and not result.get("error"):
             try:
+                owned = {}
                 for slot in result["slots"]:
                     # Keep only a complete backend slot, never extra/price fields.
                     snapshot = {
@@ -708,9 +713,10 @@ class CallTools:
                         raise ValueError
                     snapshot["serviceId"] = str(snapshot["serviceId"])
                     snapshot["providerId"] = str(snapshot["providerId"])
-                    self.slots[snapshot["slotId"]] = snapshot
+                    owned[snapshot["slotId"]] = snapshot
             except (KeyError, TypeError, ValueError):
                 return {"error": "booking_unavailable"}
+            self.slots.update(owned)
         if name == "hold_slot" and not result.get("error"):
             hold_id = result.get("hold_id")
             if not isinstance(hold_id, str) or not hold_id:

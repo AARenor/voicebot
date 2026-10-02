@@ -15,6 +15,11 @@ from __future__ import annotations
 import asyncio
 import os
 
+try:
+    from starlette.requests import Request
+except ImportError:  # keep provider-only installations importable
+    Request = None
+
 
 def build_stack() -> dict:
     """Construct providers/adapters from env. Never logs or returns keys."""
@@ -326,7 +331,7 @@ def create_app():
 
     @app.post("/api/turn")
     async def voice_turn(
-        body: dict, authorization: str | None = Header(default=None)
+        request: Request, authorization: str | None = Header(default=None)
     ) -> dict:
         """Fictional HTTP turn. Optional session_id owns multi-turn state.
 
@@ -340,11 +345,13 @@ def create_app():
             SESSION_TTL,
             operator_scope,
             run_demo_turn,
+            read_turn_body,
             validate_input,
         )
         from . import callslog
 
         dashboard_api._require_operator(authorization)
+        body = await read_turn_body(request)
         stack = app.state.stack
         audio, text, language = validate_input(body, stack)
         key = body.get("session_id")

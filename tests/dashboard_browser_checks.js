@@ -35,6 +35,18 @@ async (page) => {
     return reply({},404);
   });
   await page.setViewportSize({width:1440,height:1000});
+  const linkFailures = [];
+  for (const [query, wantedPage, wantedDate] of [
+    ['?page=1.5',1,null], ['?page=Infinity',1,null],
+    ['?page=abc',1,null], ['?page=-4',1,null], ['?page=101',1,null],
+    ['?date=2026-99-99',1,null], ['?date=2026-02-30',1,null],
+    ['?page=2&date=2026-10-09',2,'2026-10-09'],
+  ]) {
+    await page.goto('http://127.0.0.1:8765/' + query);
+    const actual = await page.evaluate(()=>({page:state.page,date:document.getElementById('booking-date').value,today:tallinnDay()}));
+    if (actual.page !== wantedPage || actual.date !== (wantedDate || actual.today)) linkFailures.push({query,...actual});
+  }
+  assert(linkFailures.length===0,`invalid booking links reached the UI: ${JSON.stringify(linkFailures)}`);
   await page.goto('http://127.0.0.1:8765/');
   await page.evaluate(()=>document.fonts.ready);
   assert(requests.every(path=>path==='/api/status'),'signed-out page requested private data');
@@ -109,6 +121,16 @@ async (page) => {
   assert(await page.locator('#catalogue li').count()===0,'logout retained catalogue');
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:'output/playwright/after-mobile.png',fullPage:true});
+  let stalledSignIns = 0;
+  await page.route('**/api/calls', async () => { stalledSignIns++; await new Promise(()=>{}); });
+  // Exercise real fetch abort without spending 30 seconds on a virtual outage.
+  await page.evaluate(()=>{const original=window.setTimeout;window.setTimeout=(fn,delay,...args)=>original(fn,delay===30000?50:delay,...args);});
+  await page.locator('#token').fill('fixture-operator');
+  await page.locator('#connect').click();
+  await page.waitForFunction(()=>document.getElementById('auth-status').textContent.includes('ooteaeg'));
+  assert(await page.locator('#connect').isEnabled(),'stalled sign-in left the UI locked');
+  assert(await page.locator('#token').inputValue()==='','stalled sign-in retained credential');
+  assert(stalledSignIns===1,'stalled sign-in retried automatically');
   assert(errors.length===0,`browser errors: ${errors.join('; ')}`);
   return {result:'passed',layouts,turns,errors,screenshots:5};
 }

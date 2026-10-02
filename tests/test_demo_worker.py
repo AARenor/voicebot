@@ -114,9 +114,13 @@ def test_worker_does_not_authorize_individual_stt_fragments():
         ctx.room.local_participant.set_attributes.assert_awaited_once_with(
             {"voicebot.call_id": "a" * 32}
         )
-        ctx.room.local_participant.publish_data.assert_awaited_once_with(
-            b"clear", topic="voicebot.interruption", reliable=True
-        )
+        published = ctx.room.local_participant.publish_data
+        published.assert_awaited_once()
+        assert published.await_args.args[0].startswith(b"clear:")
+        assert published.await_args.kwargs == {
+            "topic": "voicebot.interruption",
+            "reliable": True,
+        }
         session.interrupt.assert_called_once_with()
         log.assert_called_once()
         assert log.call_args.args[1:] == (
@@ -310,9 +314,9 @@ def test_vad_speaking_publishes_static_reliable_clear_and_invalidates_undelivere
         assert state.pending is None
         assert task in pending_tasks
         await task
-        assert events == [
-            (b"clear", {"topic": "voicebot.interruption", "reliable": True})
-        ]
+        assert len(events) == 1
+        assert events[0][0].startswith(b"clear:") and len(events[0][0]) == 38
+        assert events[0][1] == {"topic": "voicebot.interruption", "reliable": True}
         assert not pending_tasks
 
     asyncio.run(run())

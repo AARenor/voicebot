@@ -249,8 +249,12 @@ class LiveKitCall:
         self.client = self.room = self.source = self.publication = self.stream = None
         self.track = self.agent_track = None
         self.agent_identity = None
+        self.pause_generation = None
+        self.terminal_output = False
+        self.control_tasks = set()
         self.output = self.interruption = None
         self.ended = asyncio.Event()
+        self.failed = False
         self.closed, self.create_attempted = False, False
 
     async def start(self):
@@ -325,15 +329,33 @@ class LiveKitCall:
 
         if (
             self.closed
-            or self.agent_track is not None
+            or self.terminal_output
             or participant.kind != rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
             or track.kind != rtc.TrackKind.KIND_AUDIO
             or publication.source != rtc.TrackSource.SOURCE_MICROPHONE
         ):
             return
+        if self.agent_track is not None:
+            if (
+                participant.identity == self.agent_identity
+                and getattr(track, "name", "") == "voicebot-fallback"
+            ):
+                self.terminal_output = True
+                self.pause_generation = None
+                self._schedule_control(
+                    self._clear(replacement=track, previous=self.interruption)
+                )
+            return
         self.agent_identity = participant.identity
         self.agent_track = track
+        self.terminal_output = getattr(track, "name", "") == "voicebot-fallback"
         self._subscribe_audio()
+
+    def _schedule_control(self, coroutine):
+        task = asyncio.create_task(coroutine)
+        self.control_tasks.add(task)
+        task.add_done_callback(self.control_tasks.discard)
+        self.interruption = task
 
     def _subscribe_audio(self):
         from livekit import rtc
@@ -359,9 +381,10 @@ class LiveKitCall:
                     raise BridgeError("output_invalid")
                 await self.sender.audio(bytes(frame.data), native=True)
         except Exception:
-            pass
-        # Deliberate interruption cancellation resets output, not the live call.
-        self.ended.set()
+            self.failed = True
+            self.ended.set()
+        # Track retirement is not participant hangup: the same bound agent may
+        # publish its fatal-error apology after AgentSession closes the old mic.
 
     def _on_data(self, packet):
         from livekit import rtc
@@ -369,30 +392,69 @@ class LiveKitCall:
         participant = packet.participant
         if (
             self.closed
+            or self.terminal_output
             or participant is None
             or participant.kind != rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
             or participant.identity != self.agent_identity
             or packet.topic != "voicebot.interruption"
-            or packet.data != b"clear"
         ):
             return
-        if self.interruption is None or self.interruption.done():
-            self.interruption = asyncio.create_task(self._clear())
+        if not isinstance(packet.data, bytes):
+            return
+        control = re.fullmatch(rb"(clear|resume|failed):([a-f0-9]{32})", packet.data)
+        if control is None:
+            return
+        command, generation = control.groups()
+        if command == b"clear":
+            self.pause_generation = generation
+            self._schedule_control(
+                self._clear(restart=False, previous=self.interruption)
+            )
+        elif command == b"failed" and generation == self.pause_generation:
+            self.failed = True
+            self.ended.set()
+        elif command == b"resume" and generation == self.pause_generation:
+            self._schedule_control(self._resume(generation, self.interruption))
 
-    async def _clear(self):
+    async def _resume(self, generation, previous):
+        try:
+            if previous is not None:
+                await asyncio.wait_for(previous, CLOSE_TIMEOUT)
+            if (
+                not self.closed
+                and not self.ended.is_set()
+                and self.pause_generation == generation
+            ):
+                self.pause_generation = None
+                self._subscribe_audio()
+        except Exception:
+            self.failed = True
+            self.ended.set()
+
+    async def _clear(self, *, replacement=None, restart=True, previous=None):
         try:
             if self.output is not None:
                 self.output.cancel()
             await self.sender.clear()
-            if self.output is not None:
+            if previous is not None:
+                await asyncio.wait_for(previous, CLOSE_TIMEOUT)
+            # Select the retired epoch AFTER its predecessor completes; never
+            # reread a mutable task reference while awaiting that task.
+            output, stream = self.output, self.stream
+            if output is not None:
+                output.cancel()
                 await asyncio.wait_for(
-                    asyncio.gather(self.output, return_exceptions=True), CLOSE_TIMEOUT
+                    asyncio.gather(output, return_exceptions=True), CLOSE_TIMEOUT
                 )
-            if self.stream is not None:
-                await asyncio.wait_for(self.stream.aclose(), CLOSE_TIMEOUT)
-            if not self.closed and not self.ended.is_set():
+            if stream is not None:
+                await asyncio.wait_for(stream.aclose(), CLOSE_TIMEOUT)
+            if restart and not self.closed and not self.ended.is_set():
+                if replacement is not None:
+                    self.agent_track = replacement
+                    self.pause_generation = None
                 self._subscribe_audio()
         except Exception:
+            self.failed = True
             self.ended.set()
 
     async def feed(self, pcm):
@@ -411,7 +473,9 @@ class LiveKitCall:
         if self.closed:
             return
         self.closed = True
-        tasks = [task for task in (self.output, self.interruption) if task is not None]
+        tasks = list(self.control_tasks)
+        if self.output is not None:
+            tasks.append(self.output)
         for task in tasks:
             task.cancel()
         if tasks:
@@ -695,6 +759,8 @@ def create_app():
                 setup.cancel()
                 if reader in done:
                     reader.result()
+                if getattr(native, "failed", False):
+                    raise RuntimeError("native output failed")
                 return socket
             setup.result()
             tasks = [
@@ -710,14 +776,21 @@ def create_app():
             for task in done:
                 result = task.result()
                 if result == "first_audio_timeout":
-                    await native.close()
-                    await sender.failure()
+                    raise TimeoutError("first audio unavailable")
+            if getattr(native, "failed", False):
+                raise RuntimeError("native output failed")
         except (BridgeError, BridgeDisconnected):
             close_code = 1008
         except Exception:
             close_code = 1011
-            if native is not None:
-                await native.close()
+            for task in tasks:
+                task.cancel()
+            output = getattr(native, "output", None)
+            if output is not None:
+                output.cancel()
+                await bounded_close(
+                    lambda: asyncio.gather(output, return_exceptions=True)
+                )
             if sender is not None:
                 try:
                     await sender.failure()

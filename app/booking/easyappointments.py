@@ -35,7 +35,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import date as calendar_date, datetime, timezone
+from datetime import date as calendar_date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -712,6 +712,8 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 f"easy.ensure_customer: {type(exc).__name__}"
             ) from exc
         raise_for_provider(response, "easy.ensure_customer")
+        if response.status_code != 201:
+            raise RetryableProviderError("easy.ensure_customer: completion unverified")
         try:
             customer_id = response.json()["id"]
             if not _is_int_like(customer_id):
@@ -962,6 +964,12 @@ class EasyAppointmentsAdapter(SlotAdapter):
             )
         if journal is not None and journal["status"].startswith("pending"):
             return await self._settle_pending(key, journal, hold_id)
+        # A pre-lock snapshot may expire or be consumed while waiting. Durable
+        # same-key replay/reconciliation above remains valid after hold expiry.
+        hold = self._holds.get(hold_id)
+        if hold is None:
+            return {"ok": False, "error": "hold_expired_or_unknown"}
+        snapshot = self._snapshot_slot(hold)
         # Global appointment block: while ANY appointment write is unresolved,
         # a new key must not POST (timeout-while-processing would overlap).
         # Other pendings reconcile read-only here; unresolved blocks closed.
@@ -981,11 +989,18 @@ class EasyAppointmentsAdapter(SlotAdapter):
         # Duration and start validate BEFORE any customer side effect.
         try:
             minutes = await self._service_duration(service_id)
+            if not 1 <= minutes <= 1440:
+                raise ProviderError("easy.service: bad duration")
+            start = _parse_start(snapshot["start"])
+            end = start + timedelta(minutes=minutes)
         except RetryableProviderError:
             return {"ok": False, "error": "write_outcome_unknown"}
         except ProviderError as exc:
             result = self._fail(key, marker, str(exc))
             raise ProviderError(result["error"])
+        except (OverflowError, ValueError):
+            result = self._fail(key, marker, "easy.service: bad appointment range")
+            raise ProviderError(result["error"]) from None
         if minutes <= 0:
             result = self._fail(key, marker, "easy.service: bad duration")
             raise ProviderError(result["error"])
@@ -999,7 +1014,7 @@ class EasyAppointmentsAdapter(SlotAdapter):
         except ProviderError as exc:
             result = self._fail(key, marker, str(exc))
             raise ProviderError(result["error"])
-        if snapshot["start"] not in times:
+        if start not in {_parse_start(value) for value in times}:
             return self._fail(key, marker, "slot_stale")
         if not self._holds.reserve(key):
             return {"ok": False, "error": "confirm_in_progress"}
@@ -1028,18 +1043,13 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 self._journal.put_result(
                     key, marker, "customer_ready", None, {"customerId": customer_id}
                 )
-            from datetime import timedelta
-
-            start = _parse_start(snapshot["start"])
             notes = f"[voicebot {marker}]"
             extra = clean_guest.get("notes", "")
             if extra:
                 notes = f"{notes} {extra[:200]}"
             body = {
                 "start": start.strftime("%Y-%m-%d %H:%M:%S"),
-                "end": (start + timedelta(minutes=minutes)).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
+                "end": end.strftime("%Y-%m-%d %H:%M:%S"),
                 "customerId": customer_id,
                 "providerId": _optional_int(provider_id),
                 "serviceId": _required_int(service_id, "serviceId"),
@@ -1064,6 +1074,8 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 # Known 4xx: terminal, never retry this key blindly.
                 result = self._fail(key, marker, str(exc))
                 raise ProviderError(result["error"])
+            if response.status_code != 201:
+                return {"ok": False, "error": "write_outcome_unknown"}
             try:
                 record = response.json()
                 if not isinstance(record, dict):
@@ -1092,7 +1104,7 @@ class EasyAppointmentsAdapter(SlotAdapter):
         if replayed is not None:
             return replayed
         journal = self._journal.get(namespaced)
-        if journal is not None and journal["status"] == "success":
+        if journal is not None and journal["status"] in {"success", "cancel_uncertain"}:
             return journal["result"] or {"ok": True}
         if journal is not None and journal["status"] == "failed":
             raise ProviderError(
@@ -1112,7 +1124,10 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 if replayed is not None:
                     return replayed
                 journal = self._journal.get(namespaced)
-                if journal is not None and journal["status"] == "success":
+                if journal is not None and journal["status"] in {
+                    "success",
+                    "cancel_uncertain",
+                }:
                     return journal["result"] or {"ok": True}
                 if journal is not None and journal["status"] == "failed":
                     raise ProviderError(
@@ -1139,6 +1154,16 @@ class EasyAppointmentsAdapter(SlotAdapter):
                         }
                     else:
                         raise_for_provider(response, "easy.cancel")
+                        if response.status_code != 204:
+                            result = {"ok": False, "error": "write_outcome_unknown"}
+                            self._journal.put_result(
+                                namespaced,
+                                "cancel",
+                                "cancel_uncertain",
+                                booking_id,
+                                result,
+                            )
+                            return self._holds.record(namespaced, result)
                         result = {"ok": True, "booking_id": booking_id}
                     self._journal.put_result(
                         namespaced, "cancel", "success", booking_id, result

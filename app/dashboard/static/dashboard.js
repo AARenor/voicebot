@@ -11,7 +11,10 @@ function tallinnDay() {
 }
 const query = new URLSearchParams(location.search);
 $("booking-date").value = /^\d{4}-\d{2}-\d{2}$/.test(query.get("date") || "") ? query.get("date") : tallinnDay();
-state.page = Math.max(1, Math.min(100, Number(query.get("page")) || 1));
+// Native date inputs reject impossible calendar dates, not just bad formatting.
+if (!$("booking-date").value) $("booking-date").value = tallinnDay();
+const initialPage = Number(query.get("page"));
+state.page = Number.isInteger(initialPage) && initialPage >= 1 && initialPage <= 100 ? initialPage : 1;
 
 function status(id, text, kind="") { $(id).textContent = text; $(id).className = "status " + (id === "booking-status" ? "booking-status " : "") + kind; }
 function presentation() {
@@ -84,6 +87,8 @@ async function api(path, opts={}) {
   if (isPrivate && !state.credential) throw new DOMException("Signed out", "AbortError");
   const generation = state.generation;
   const controller = new AbortController();
+  let timedOut = false;
+  const deadline = setTimeout(()=>{timedOut=true; controller.abort();}, path === "/api/turn" ? 120000 : 30000);
   if (isPrivate) state.controllers.add(controller);
   const headers = new Headers(opts.headers || {});
   if (isPrivate) headers.set("Authorization", "Bearer " + state.credential);
@@ -99,7 +104,10 @@ async function api(path, opts={}) {
     const data = await response.json();
     if (isPrivate && generation !== state.generation) throw new DOMException("Signed out", "AbortError");
     return data;
-  } finally { state.controllers.delete(controller); }
+  } catch (error) {
+    if (timedOut && generation === state.generation) throw new Error(path === "/api/turn" ? "Vastuse ooteaeg sai läbi. Tulemus võib olla ebaselge; ära korda kinnitust ega tühistust enne taustsüsteemi kontrolli." : "Ühenduse ooteaeg sai läbi. Kontrolli ühendust ja proovi hiljem uuesti.");
+    throw error;
+  } finally { clearTimeout(deadline); state.controllers.delete(controller); }
 }
 async function connect() {
   const credential = $("token").value.trim();
@@ -226,7 +234,8 @@ async function sendTurn(input) {
     if(generation!==state.generation || !state.connected) return;
     addMessage("Sina", data.text_heard || "Heli ei tuvastatud"); addMessage("Demoabiline", data.reply);
     $("demo-text").value="";
-    const outcome={ok:"Vastus valmis.", tools_ok:"Taustsüsteemi tööriistad vastasid.", tools_failed:"Mõni toiming ebaõnnestus — edu ei ole kinnitatud.", unknown_outcome:"Kirjutuse tulemus on ebaselge. Ära korda broneerimist; kontrolli taustsüsteemi.", fallback:"Kasutati varuvastust.", tts_failed:"Kõnesüntees ebaõnnestus; tekst on alles."};
+    const completedWrite=(data.booking_changes || []).some(change=>["confirmed","cancelled"].includes(change.action));
+    const outcome={ok:"Vastus valmis.", tools_ok:"Taustsüsteemi tööriistad vastasid.", tools_failed:completedWrite?"Muu päring ebaõnnestus. Vaata vastust ja kontrolli taustsüsteemi.":"Mõni toiming ebaõnnestus — edu ei ole kinnitatud.", unknown_outcome:"Kirjutuse tulemus on ebaselge. Ära korda broneerimist; kontrolli taustsüsteemi.", fallback:"Kasutati varuvastust.", tts_failed:"Kõnesüntees ebaõnnestus; tekst on alles."};
     status("demo-status", (outcome[data.outcome] || "Vastus valmis.") + (data.tts_failed ? " Heli pole saadaval; loe vastust tekstina." : "") + ` Voor ${data.turn_count || 1}; vestlus aegub ${data.expires_in_s || 0} s pärast.`, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
     if (data.audio_b64) {
       const bytes=Uint8Array.from(atob(data.audio_b64), c=>c.charCodeAt(0));

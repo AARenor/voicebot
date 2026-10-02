@@ -107,6 +107,20 @@ class TestGroq(unittest.TestCase):
         with self.assertRaises(ProviderError):
             self.client(handler).transcribe(b"x")
 
+    def test_non_text_transcription_is_not_an_utterance(self):
+        # A schema-invalid upstream success must not become billable dialogue
+        # such as "None", "True" or a Python representation of a JSON object.
+        for value in (None, True, 123, [], {"text": "Jah, kinnitan."}):
+            with self.subTest(value=value):
+                client = self.client(
+                    lambda request: httpx.Response(200, json={"text": value})
+                )
+                try:
+                    with self.assertRaises(ProviderError):
+                        client.transcribe(b"RIFF")
+                finally:
+                    client.close()
+
 
 class TestAzureTts(unittest.TestCase):
     def test_token_cached_then_synthesize(self):

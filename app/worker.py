@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import inspect
 import os
+import uuid
 import wave
 from pathlib import Path
 
@@ -144,15 +146,24 @@ def prewarm(proc):
 async def play_failure(room):
     # AgentSession may already have auto-closed on a nonrecoverable error.
     source = rtc.AudioSource(24000, 1, queue_size_ms=100)
-    track = rtc.LocalAudioTrack.create_audio_track("service-unavailable", source)
-    publication = await room.local_participant.publish_track(track)
+    publication = None
     try:
+        track = rtc.LocalAudioTrack.create_audio_track("voicebot-fallback", source)
+        publication = await room.local_participant.publish_track(
+            track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
+        )
+        await asyncio.wait_for(publication.wait_for_subscription(), timeout=5)
         async for frame in fallback_audio():
             await source.capture_frame(frame)
         await source.wait_for_playout()
     finally:
-        await room.local_participant.unpublish_track(publication.sid)
-        await source.aclose()
+        try:
+            if publication is not None:
+                await asyncio.wait_for(
+                    room.local_participant.unpublish_track(publication.sid), timeout=5
+                )
+        finally:
+            await asyncio.wait_for(source.aclose(), timeout=5)
 
 
 def log_call_summary(state, *, failed=False):
@@ -187,10 +198,12 @@ async def cleanup_call(ctx, session, adapter, *, state=None, failed=False):
     cancelled = False
     try:
         for close in (
-            session.aclose,
-            adapter.close,
+            session.aclose if session is not None else None,
+            adapter.close if adapter is not None else None,
             lambda: ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name)),
         ):
+            if close is None:
+                continue
             try:
                 await asyncio.wait_for(close(), timeout=5)
             except asyncio.CancelledError:
@@ -212,24 +225,51 @@ async def close_session(session, timeout=5):
         pass
 
 
-async def publish_interruption(room):
+async def publish_interruption(room, interrupted):
+    generation = uuid.uuid4().hex.encode()
     try:
         await asyncio.wait_for(
             room.local_participant.publish_data(
-                b"clear", topic="voicebot.interruption", reliable=True
+                b"clear:" + generation, topic="voicebot.interruption", reliable=True
             ),
             timeout=5,
         )
-    except Exception:
+        # Clearing carrier playback does not prove old native PCM has stopped.
+        # A matching resume is sent only after the SDK's interruption completes.
+        if not inspect.isawaitable(interrupted):
+            return
+        await asyncio.wait_for(asyncio.shield(interrupted), timeout=5)
+        await asyncio.wait_for(
+            room.local_participant.publish_data(
+                b"resume:" + generation, topic="voicebot.interruption", reliable=True
+            ),
+            timeout=5,
+        )
+    except (Exception, asyncio.CancelledError) as error:
         # No remote failure body, caller identity or transcript is logged.
-        pass
+        if (
+            isinstance(error, asyncio.CancelledError)
+            and asyncio.current_task().cancelling()
+        ):
+            raise
+        try:
+            await asyncio.wait_for(
+                room.local_participant.publish_data(
+                    b"failed:" + generation,
+                    topic="voicebot.interruption",
+                    reliable=True,
+                ),
+                timeout=5,
+            )
+        except Exception:
+            pass
 
 
 def on_user_state(session, event, *, state=None, room=None, pending_tasks=None):
     if event.new_state == "speaking":
         # Stop queued speech on the VAD state edge, not only after batch STT.
         speech = getattr(session, "current_speech", None)
-        session.interrupt()
+        interrupted = session.interrupt()
         if (
             state is not None
             and state.pending
@@ -241,7 +281,7 @@ def on_user_state(session, event, *, state=None, room=None, pending_tasks=None):
             state.invalidate_recap()
         logging.getLogger("voicebot.telephone").info("user_speaking")
         if room is not None:
-            task = asyncio.create_task(publish_interruption(room))
+            task = asyncio.create_task(publish_interruption(room, interrupted))
             if pending_tasks is not None:
                 pending_tasks.add(task)
                 task.add_done_callback(pending_tasks.discard)
@@ -269,7 +309,7 @@ server = AgentServer(
     num_idle_processes=2,
     drain_timeout=30,
     session_end_timeout=10,
-    shutdown_process_timeout=10,
+    shutdown_process_timeout=40,
     setup_fnc=prewarm,
     load_fnc=lambda s: len(s.active_jobs) / 2,
     load_threshold=1,
@@ -281,56 +321,58 @@ server = AgentServer(
 @server.rtc_session(agent_name=os.environ.get("VOICEBOT_AGENT_NAME", "voicebot"))
 async def entrypoint(ctx: JobContext):
     protect_logs()
-    validate_environment()
-    adapter = EasyAppointmentsAdapter(
-        os.environ["EASY_BASE_URL"],
-        os.environ["EASY_API_KEY"],
-        auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-        api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
-        state_db=os.environ["EASY_STATE_DB"],
-        allow_writes=True,
-    )
-    state = CallTools(Dispatcher(slot=adapter))
-    session = AgentSession(
-        stt=groq.STT(language="et", api_key=os.environ["GROQ_API_KEY"]),
-        llm=groq.LLM(
-            model="openai/gpt-oss-20b",
-            api_key=os.environ["GROQ_API_KEY"],
-            parallel_tool_calls=False,
-            max_completion_tokens=512,
-        ),
-        tts=azure.TTS(
-            voice="et-EE-AnuNeural",
-            language="et-EE",
-            speech_key=os.environ["AZURE_SPEECH_KEY"],
-            speech_region=os.environ["AZURE_REGION"],
-        ),
-        vad=ctx.proc.userdata["vad"],
-        turn_handling={
-            "turn_detection": "vad",
-            "endpointing": {"mode": "fixed", "min_delay": 1.2, "max_delay": 3.0},
-            "interruption": {"mode": "vad", "enabled": True},
-            "preemptive_generation": {"enabled": False},
-        },
-    )
-    closed = asyncio.Event()
+    adapter = state = session = None
     failed = asyncio.Event()
-    agent = TelephoneAgent(state)
     interruption_tasks = set()
-    session.on("close", lambda ev: closed.set())
-    session.on(
-        "user_state_changed",
-        lambda ev: on_user_state(
-            session, ev, state=state, room=ctx.room, pending_tasks=interruption_tasks
-        ),
-    )
-    session.on(
-        "conversation_item_added",
-        agent.on_conversation_item_added,
-    )
-    session.on("error", lambda ev: on_provider_error(failed, ev, state=state))
-    ctx.room.on("participant_disconnected", lambda p: closed.set())
     try:
+        validate_environment()
+        adapter = EasyAppointmentsAdapter(
+            os.environ["EASY_BASE_URL"],
+            os.environ["EASY_API_KEY"],
+            auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+            api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+            state_db=os.environ["EASY_STATE_DB"],
+            allow_writes=True,
+        )
+        state = CallTools(Dispatcher(slot=adapter))
+        session = AgentSession(
+            stt=groq.STT(language="et", api_key=os.environ["GROQ_API_KEY"]),
+            llm=groq.LLM(
+                model="openai/gpt-oss-20b",
+                api_key=os.environ["GROQ_API_KEY"],
+                parallel_tool_calls=False,
+                max_completion_tokens=512,
+            ),
+            tts=azure.TTS(
+                voice="et-EE-AnuNeural",
+                language="et-EE",
+                speech_key=os.environ["AZURE_SPEECH_KEY"],
+                speech_region=os.environ["AZURE_REGION"],
+            ),
+            vad=ctx.proc.userdata["vad"],
+            turn_handling={
+                "turn_detection": "vad",
+                "endpointing": {"mode": "fixed", "min_delay": 1.2, "max_delay": 3.0},
+                "interruption": {"mode": "vad", "enabled": True},
+                "preemptive_generation": {"enabled": False},
+            },
+        )
+        closed = asyncio.Event()
+        agent = TelephoneAgent(state)
+        session.on("close", lambda ev: closed.set())
+        session.on(
+            "user_state_changed",
+            lambda ev: on_user_state(
+                session,
+                ev,
+                state=state,
+                room=ctx.room,
+                pending_tasks=interruption_tasks,
+            ),
+        )
+        session.on("conversation_item_added", agent.on_conversation_item_added)
+        session.on("error", lambda ev: on_provider_error(failed, ev, state=state))
+        ctx.room.on("participant_disconnected", lambda p: closed.set())
         await session.start(agent=agent, room=ctx.room, record=False)
         await ctx.connect()
         await ctx.room.local_participant.set_attributes(
@@ -345,11 +387,19 @@ async def entrypoint(ctx: JobContext):
             )
             if failed.is_set():
                 await close_session(session)
-                await asyncio.wait_for(play_failure(ctx.room), timeout=10)
+                await asyncio.wait_for(play_failure(ctx.room), timeout=20)
         finally:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception:
+        failed.set()
+        if session is not None:
+            await close_session(session)
+        try:
+            await asyncio.wait_for(play_failure(ctx.room), timeout=20)
+        except Exception:
+            pass
     finally:
         for task in interruption_tasks:
             task.cancel()

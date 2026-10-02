@@ -7,6 +7,9 @@ Spoken writes require an owned slot, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
+The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
+records repaired defects, a known expected failure and live speech failures.
+**This fictional pilot is not production-approved.**
 The first carrier target is the supplied **US Twilio number** over signed HTTPS
 Media Streams, avoiding the missing public SIP/RTP edge. Fresh rotated credentials,
 number webhook activation and a real incoming phone call remain separate gates.

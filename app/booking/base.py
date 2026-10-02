@@ -46,7 +46,8 @@ class HoldLedger:
 
     Thread-safe: one RLock guards all maps (voice turns fan out over a
     thread pool). Bounded: idempotency/memo maps evict oldest past
-    5000 entries. Holds evict lazily on get(). Crash/restart still loses
+    5000 entries. New holds prune expired entries and evict oldest live
+    holds beyond that bound (evicted holds fail closed). Crash/restart still loses
     in-memory state — post-restart retries MUST reconcile against PMS
     truth, never blindly re-book. Single process: do not scale past
     1 replica (see COOLIFY.md).
@@ -133,7 +134,12 @@ class HoldLedger:
             payload=payload,
         )
         with self._lock:
+            for key in list(self._holds):
+                if self._holds[key].expired():
+                    del self._holds[key]
             self._holds[hold.hold_id] = hold
+            while len(self._holds) > self._BOUND:
+                self._holds.pop(next(iter(self._holds)))
         return hold
 
     def get(self, hold_id: str) -> Hold | None:

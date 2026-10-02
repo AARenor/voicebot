@@ -67,7 +67,10 @@ class GroqClient:
         )
         try:
             payload = response.json()
-            return str(payload["text"])
+            text = payload["text"]
+            if not isinstance(text, str):
+                raise TypeError("transcription text is not a string")
+            return text
         except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
             raise ProviderError(f"groq.transcribe: bad payload: {exc}") from exc
 

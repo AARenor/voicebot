@@ -20,6 +20,7 @@ from .telephone import CallTools, GREETING
 SESSION_TTL = 600
 MAX_SESSIONS = 16
 MAX_TURNS = 24
+MAX_TURN_BODY_BYTES = 750_000  # accommodates the bounded base64 audio envelope
 
 
 @dataclass
@@ -136,6 +137,23 @@ class DemoSessions:
         with self.lock:
             for key in list(self.sessions):
                 self._remove(key)
+
+
+async def read_turn_body(request):
+    # Authenticate in the route BEFORE reading; never let framework validation
+    # parse an unbounded body or echo an unauthenticated payload back to callers.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_TURN_BODY_BYTES:
+            raise HTTPException(413, "turn_body_too_large")
+        body.extend(chunk)
+    try:
+        parsed = json.loads(body)
+    except (ValueError, UnicodeError, RecursionError):
+        raise HTTPException(400, "turn_arguments_invalid") from None
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "turn_arguments_invalid")
+    return parsed
 
 
 def validate_input(body, stack):

@@ -203,7 +203,9 @@ def test_native_clear_discards_sdk_queued_audio_without_ending_call():
                 )  # SDK capacity-one queue, while the prior frame waits 20 ms.
                 t.callbacks["data_received"](
                     SimpleNamespace(
-                        topic="voicebot.interruption", data=b"clear", participant=agent
+                        topic="voicebot.interruption",
+                        data=b"clear:" + b"a" * 32,
+                        participant=agent,
                     )
                 )
                 await asyncio.wait_for(call.interruption, 1)
@@ -212,7 +214,16 @@ def test_native_clear_discards_sdk_queued_audio_without_ending_call():
                 assert [m["event"] for m in audio_control] == ["media", "clear"], (
                     "queued pre-clear SDK frame was sent after clear"
                 )
-                assert old.closed and len(Stream.instances) == 2
+                assert old.closed and len(Stream.instances) == 1
+                t.callbacks["data_received"](
+                    SimpleNamespace(
+                        topic="voicebot.interruption",
+                        data=b"resume:" + b"a" * 32,
+                        participant=agent,
+                    )
+                )
+                await asyncio.wait_for(call.interruption, 1)
+                assert len(Stream.instances) == 2
                 assert call.stream.track is track and not call.ended.is_set()
                 call.stream.push(2000)
                 async with asyncio.timeout(1):
@@ -326,7 +337,9 @@ def test_interruption_reset_failure_or_concurrent_close_never_recreates_stream(c
             )
             t.callbacks["data_received"](
                 SimpleNamespace(
-                    topic="voicebot.interruption", data=b"clear", participant=agent
+                    topic="voicebot.interruption",
+                    data=b"clear:" + b"a" * 32,
+                    participant=agent,
                 )
             )
             await asyncio.wait_for(entered.wait(), 1)
@@ -421,7 +434,9 @@ def test_only_native_agent_track_and_interruption_topic_reach_carrier():
             assert sender.clears == 0
             t.callbacks["data_received"](
                 SimpleNamespace(
-                    topic="voicebot.interruption", data=b"clear", participant=agent
+                    topic="voicebot.interruption",
+                    data=b"clear:" + b"a" * 32,
+                    participant=agent,
                 )
             )
             await asyncio.sleep(0.001)
