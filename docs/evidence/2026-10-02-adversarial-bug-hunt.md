@@ -171,9 +171,41 @@ P0/P1 was found in that repair scope. This is not production or PSTN approval.
    private runtime/Twilio admission limit is two. Public SIP/RTP is still an
    unverified alternative, not a requirement of the active Twilio stream route.
 
-## Remaining evidence in this run
+## Delivery and preservation verification
 
-Independent policy/media discovery and integrated diff review, final delivery
-and post-deployment preservation results will be recorded before closing the
-bug-hunt goal. None of the open production gates above is implicitly cleared
-by shipping these repairs.
+- Repairs committed and pushed as **`ae587e5`**. Only the 21 intended files were
+  staged; the documentation-only upstream update and unrelated untracked files
+  were preserved. Scan of intended files against eight configured credential
+  values and key patterns found **zero matches**; `git diff --check` passed.
+- The signed GitHub push hook queued Coolify application **13**, deployment
+  **227**, and finished at the exact code revision
+  **`ae587e511aa34a2f87489d131cc19d95bd75c191`**. No second deployment was queued
+  manually. The independently reviewed image was deployed to the worker and
+  bridge only; existing booking, Redis, SIP and LiveKit services were preserved.
+  GitHub delivery **`3846079768883625984`** matched `refs/heads/master` and this
+  commit, returned HTTP **200**, and the receiver's per-application status was
+  **`success`** (not merely a successful HTTP transport).
+- Web/API, worker and bridge are healthy. Ten source/asset hashes in each
+  container match the committed files. Worker Docker stop grace is **120 s**;
+  worker and bridge dispatch names match. `pip check`: no broken requirements.
+- Public HTML and versioned JavaScript match local bytes through the public
+  endpoint; script version **`a6662cc5f1c3`** equals its SHA-256 prefix.
+  Deployed Chromium at **390 px** passed malformed-link recovery, no overflow,
+  zero JavaScript errors and **zero anonymous private fetches**.
+- Actual public HTTP: anonymous private reads **403 + no-store**; oversized
+  unauthenticated turn **403** before JSON parsing; authenticated invalid JSON
+  **400**, oversized body **413**, small private errors; authenticated booking
+  read **200 + no-store**. Unsigned Twilio voice POST remains **403 + no-store**.
+- Fresh configured credentials passed the deployed signed HTTPS/WSS/native-PCM
+  mark and consumed-nonce replay gate. **Still not a carrier call.** Bridge
+  health remains `configured=true`; there were **zero active rooms** after the
+  probe, so no owned synthetic call was left running.
+- The exact original `/data` volume remains mounted by web and worker. Every
+  pre-deployment row hash was preserved: booking journal **25 → 25**, calls
+  **48 → 49** (one new synthetic media summary); both integrity checks **ok**.
+  The earlier pre-test baseline was 22/33; the difference is test audit history,
+  not active inventory. Owned adversarial test containers were removed without
+  deleting volumes; the existing `voicebot-hackathon-check` was left healthy.
+- This post-deployment evidence is a documentation-only follow-up using
+  `[skip cd]`; it does not restart services or change the verified application
+  source. **Shipping these repairs clears none of the open production gates.**
