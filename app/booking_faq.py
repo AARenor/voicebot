@@ -12,6 +12,7 @@ from .languages import LANGUAGES, spoken_time
 
 
 FAQ_PATH = Path(__file__).resolve().parents[1] / "data/demo/booking-faq.json"
+RESTAURANT_FAQ_PATH = FAQ_PATH.with_name("restaurant-phone-faq.json")
 ROUTES = {"static", "stay_catalogue", "slot_catalogue", "clarify", "status"}
 CLARIFY = {
     "et": "Ma ei saanud päris täpselt aru. Kas soovid infot hotelli, spaa või testbroneeringu kohta?",

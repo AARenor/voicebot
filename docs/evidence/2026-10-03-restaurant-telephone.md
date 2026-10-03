@@ -17,9 +17,11 @@ three reviewed, static answer topics through the existing FAQ loader/matcher:
 
 The default 50-question hotel/spa bank is unchanged. Language inference now
 accepts the same explicit bank as answer matching, including an empty bank.
-Runtime restaurant-bank selection is **not implemented or deployed yet**: it
-awaits the restaurant owner's published, reviewed server-owned business field.
-In particular, legacy booking-047 must not deny table booking in restaurant mode.
+Shared routing selects the restaurant bank only from the server-owned business
+field. Missing business retains the legacy bank. **Production activation is not
+implemented or deployed yet**: it awaits the restaurant owner's published,
+reviewed constructor/backend configuration. In particular, legacy booking-047
+must not deny table booking in restaurant mode.
 
 ## Verification
 
@@ -62,3 +64,27 @@ rooms. Shared persistent volume remained unchanged; read-only SQLite quick_check
 passed all three existing journals. Automatic ET/EN/RU voices were preserved.
 The current worker had no restaurant business setting. These facts are a baseline,
 **not** acceptance of restaurant dialogue, a real PSTN call or a real restaurant.
+
+## Shared-routing continuation
+
+Minimal backwards-compatible routing now forwards one selected bank to language
+inference and FAQ matching in the shared `CallTools` final-turn observer. No new
+public selector, environment switch, booking tool or backend was added.
+
+- Routing tests failed first: **18 failed, 2 passed** (missing approved replies
+  and missed English selection). After routing, **1,280 scoped tests passed**.
+- Full suite: **2,815 passed, 36 subtests passed, 4 skipped, 2 upstream warnings**,
+  55.49 seconds, using the same command above with basetemp
+  `/tmp/opencode/restaurant-phone-shared-routing-full`.
+- Nine HTTP and nine shared-native topic/language cases prove canonical spoken
+  replies, fabricated-claim replacement and no model/backend actions. Two cases
+  preserve uncertain-write priority and reject a transcript-based selector.
+  Tests deliberately set trusted server state to exercise this routing seam;
+  they do **not** prove actual restaurant constructor/backend activation.
+- Independent review of the routing seam: **interim PASS, no P0/P1**. It remains
+  a static review; deployment is not approved before published-core integration.
+- Task-private restaurant audio harness self-test passed **33 boundary cases and
+  12 restaurant input cases**, zero provider calls. An attempted guarded allergy
+  probe correctly refused the current worker with `RESTAURANT_WORKER_REQUIRED`
+  before creating a room or contacting a speech provider. This expected refusal
+  is **not** successful restaurant speech acceptance.
