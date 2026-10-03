@@ -191,7 +191,41 @@ and owned recap priorities are preserved. The focused HTTP, hours, native
 terminal and speech suite passed 93 tests. HTTP regressions verify both typed
 and mocked recognized input through the actual Azure SSML client boundary,
 including `9 kuni kell 17` and `12 kuni kell 13`. Ruff and the whitespace diff
-check passed. The new hours path still requires post-deployment live verification.
+check passed.
+
+The patch was then reconciled with concurrent Russian language and browser
+audio changes at `42c421a`, preserving their full language handling and audio
+format. The integrated focused checks passed 100 tests. The complete pinned
+media suite passed 1248 tests (5 skipped, 36 subtests); a stale call-history
+assertion was updated for the intended default `auto` recognition and now also
+covers explicit `et`. An initial check could not find Node until its process
+PATH was refreshed; the full rerun passed. Ruff and the diff check passed.
+
+Post-deployment protected production checks on the hours patch `8d2a733`
+returned the actual catalogue working hours and lunch break with one tool read,
+zero model calls, no warnings or booking changes, and reply audio in 812 ms.
+Generated Estonian speech fixtures for both the exact reported phrase and its
+corrected spelling were submitted with the browser's default automatic language
+mode. Both were recognized and returned the canonical time question plus audio,
+with no warnings, model calls or booking changes; total durations were 1034 and
+737 ms. This verifies the live speech API with generated audio and does not
+establish the user's physical microphone hardware. The generated hours audio
+was also recognized without a speech-provider warning; its transcript confirmed
+17 but did not retain the word `kuni`, so it is not used as proof of the exact
+spoken wording. Exact clock expansion is covered at the Azure SSML boundary.
+
+A live headless Chrome check then exercised the actual dashboard microphone
+button with a generated recording of the exact typo phrase as its fake audio
+device. The application's `getUserMedia` capture used mono 48 kHz, its recorder
+uploaded a 136576-byte mono PCM16 WAV at 16 kHz, and live recognition returned
+the exact `Tere, tahaks homme bruneerida spaad?`. The answer was the canonical
+time question with no warnings, errors, model calls or booking changes; its
+API turn took 1140 ms. Both the greeting and the 3.096-second reply reached
+the audio player's `ended` event. Capture stopped, the test session was
+deleted, the operator credential was cleared, and the isolated browser was
+closed. No speech/provider responses were mocked in this browser check. Its
+input device was synthetic, so the user's physical microphone remains outside
+this verification.
 
 ## Remaining release gaps
 
