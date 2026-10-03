@@ -10,6 +10,25 @@ from .russian import detect_language
 LANGUAGES = ("et", "en", "ru")
 ENGLISH_INVITATION = "You can also speak English. How can I help you?"
 CONSENT = {"et": "Jah, kinnitan.", "en": "Yes, I confirm.", "ru": "Да, подтверждаю."}
+# Closed, whole-turn phrases: tolerate these known ASR spellings without
+# fuzzy matching a decline, a question, or a request to change the details.
+AFFIRMATIONS_ET = {
+    "jah kinnitan",
+    "jah kinnitan selle testbroneeringu",
+    "jah kinnitan testbroneeringu",
+    "jah kinnitan selle broneeringu",
+    "jah kinnitan broneeringu",
+    "kinnitan",
+    "jah palun kinnita",
+    "kinnita palun",
+    "jah kinnita",
+    "ja kinnitan",
+    "ja kinnita",
+    "jah kinnitää",
+    "ja kinnitää",
+    "jah kinnitän",
+    "ja kinnitän",
+}
 AFFIRMATIONS_RU = {
     "да подтверждаю",
     "да подтверждаю это тестовое бронирование",
@@ -189,7 +208,7 @@ def select_language(text: str, detected: object, current: str) -> str:
         return "en"
     if normalized in AFFIRMATIONS_RU | CANCELLATIONS_RU:
         return "ru"
-    if normalized in {"jah kinnitan", "jah tühista"}:
+    if normalized in AFFIRMATIONS_ET | {"jah tühista"}:
         return "et"
     if not re.search(r"[^\W\d_]", text) or normalized in {
         "yes",
