@@ -22,12 +22,13 @@ from .languages import LANGUAGES
 from .booking_response import trusted_booking_response
 from . import call_history, callslog
 from .providers.errors import PROVIDER_FAILURE_REASONS, ProviderError
+from .providers.demo_voices import PROFILES
 
 SESSION_TTL = 600
 MAX_SESSIONS = 16
 MAX_TURNS = 24
 MAX_TURN_BODY_BYTES = 750_000  # accommodates the bounded base64 audio envelope
-VOICE_IDS = ("azure", "elevenlabs", "google", "cartesia")
+VOICE_IDS = tuple(PROFILES)
 
 
 @dataclass

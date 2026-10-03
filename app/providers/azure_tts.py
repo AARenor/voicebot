@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import replace
 
 import httpx
 from xml.sax.saxutils import quoteattr
@@ -39,6 +40,21 @@ from .modern_tts import (
 
 TOKEN_TTL_SECONDS = 9 * 60
 
+# Native voices for each language; a lower pitch is not a substitute for a male
+# voice. Profiles share the authenticated client without mutating its settings.
+AZURE_PRESETS = {
+    "azure-male": {
+        "et": ("et-EE-KertNeural", "et-EE"),
+        "en": ("en-US-GuyNeural", "en-US"),
+        "ru": ("ru-RU-DmitryNeural", "ru-RU"),
+    },
+    "azure-calm": {
+        "et": ("et-EE-AnuNeural", "et-EE"),
+        "en": ("en-US-JennyNeural", "en-US"),
+        "ru": ("ru-RU-SvetlanaNeural", "ru-RU"),
+    },
+}
+
 
 def validated_voice(voice, lang):
     voice = voice.strip() if isinstance(voice, str) else ""
@@ -53,14 +69,42 @@ def validated_voice(voice, lang):
 class _LanguageSpeaker:
     """Per-turn view of a shared client; never mutate another call's voice."""
 
-    def __init__(self, client, voice, lang):
+    def __init__(self, client, voice, lang, delivery=None):
         self.client, self.voice, self.lang = client, voice, lang
+        self.delivery = delivery
 
     def synthesize(self, text):
-        return self.client.synthesize(text, voice=self.voice, lang=self.lang)
+        return self.client.synthesize(
+            text, voice=self.voice, lang=self.lang, delivery=self.delivery
+        )
 
     def stream(self, text):
-        return self.client.stream(text, voice=self.voice, lang=self.lang)
+        return self.client.stream(
+            text, voice=self.voice, lang=self.lang, delivery=self.delivery
+        )
+
+
+class _ProfileSpeaker:
+    audio_type = "audio/mpeg"
+    streaming = True
+
+    def __init__(self, client, profile):
+        self.client, self.profile = client, profile
+
+    def for_language(self, language):
+        if language not in AZURE_PRESETS[self.profile]:
+            raise ValueError("unsupported speech language")
+        delivery = self.client._delivery
+        if self.profile == "azure-calm" and delivery.mode == "natural":
+            delivery = replace(
+                delivery,
+                rate=max(0.85, delivery.rate - 0.04),
+                recap_rate=max(0.85, delivery.recap_rate - 0.03),
+                sentence_pause_ms=240,
+            )
+        return _LanguageSpeaker(
+            self.client, *AZURE_PRESETS[self.profile][language], delivery=delivery
+        )
 
 
 def ssml(
@@ -163,22 +207,29 @@ class AzureTtsClient:
             raise ValueError("speech language not configured")
         return _LanguageSpeaker(self, voice, lang)
 
-    def synthesize(self, text: str, *, voice=None, lang=None) -> bytes:
+    def for_profile(self, profile):
+        if profile not in AZURE_PRESETS:
+            raise ValueError("unknown Azure voice profile")
+        return _ProfileSpeaker(self, profile)
+
+    def synthesize(self, text: str, *, voice=None, lang=None, delivery=None) -> bytes:
         """Synthesize one reply turn. Returns audio bytes."""
         voice, lang = validated_voice(
             self._voice if voice is None else voice,
             self._lang if lang is None else lang,
         )
-        return self._synthesize_once(text, self.get_token(), voice=voice, lang=lang)
+        return self._synthesize_once(
+            text, self.get_token(), voice=voice, lang=lang, delivery=delivery
+        )
 
-    def stream(self, text: str, *, voice=None, lang=None):
+    def stream(self, text: str, *, voice=None, lang=None, delivery=None):
         """Real REST streaming; refresh once only before any audio is emitted."""
         validate_text(text)
         voice, lang = validated_voice(
             self._voice if voice is None else voice,
             self._lang if lang is None else lang,
         )
-        body = ssml(text, voice, lang, self._delivery).encode("utf-8")
+        body = ssml(text, voice, lang, delivery or self._delivery).encode("utf-8")
         deadline = time.monotonic() + TOTAL_TIMEOUT
         try:
             token = self.get_token()
@@ -218,10 +269,10 @@ class AzureTtsClient:
             raise provider_error("transport_error") from None
 
     def _synthesize_once(
-        self, text: str, token: str, *, voice=None, lang=None
+        self, text: str, token: str, *, voice=None, lang=None, delivery=None
     ) -> bytes:
         body = ssml(
-            text, voice or self._voice, lang or self._lang, self._delivery
+            text, voice or self._voice, lang or self._lang, delivery or self._delivery
         ).encode("utf-8")
         try:
             response = self._http.post(

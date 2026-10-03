@@ -24,6 +24,19 @@
 * {
   box-sizing: border-box;
 }
+.voice-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.voice-choice select {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.voice-choice button {
+  flex: 0 1 auto;
+}
 body {
   margin: 0;
 }

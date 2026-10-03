@@ -70,7 +70,7 @@ function localizeDemo() {
   renderDemoModels();
   renderVoices();
 }
-const VOICE_LABELS={azure:"Azure",elevenlabs:"ElevenLabs",google:"Google Chirp 3 HD",cartesia:"Cartesia"};
+const VOICE_LABELS={azure:"Azure",elevenlabs:"ElevenLabs",google:"Google Chirp 3 HD",cartesia:"Cartesia","azure-male":"Kert / Guy / Dmitry","azure-calm":"Anu / Jenny / Svetlana (calm)"};
 const VOICE_REASONS=new Set(["missing_credentials","credentials_missing","not_configured","invalid_configuration","missing_dependency","dependency_missing","dependency_unavailable","missing_voice","missing_voice_id","unsupported_language","provider_unavailable","provider_failed","provider_failure","synthesis_failed","catalog_unavailable","unavailable","disabled","transport_error","request_rejected","rate_limited","invalid_response","completion_incomplete"]);
 function voiceReason(code) { return VOICE_REASONS.has(code) ? code : "unavailable"; }
 function renderVoices() {
@@ -98,7 +98,7 @@ async function loadVoices() {
     const data=await api("/api/demo/voices");
     if(generation!==state.generation || !state.connected) return;
     const ids=new Set();
-    if(!Array.isArray(data.voices) || !data.voices.length || data.voices.length>4 || data.voices.some(profile=>!profile || !Object.hasOwn(VOICE_LABELS,profile.id) || ids.has(profile.id) || !ids.add(profile.id) || typeof profile.label!=="string" || profile.label.length>80 || !Array.isArray(profile.languages) || !profile.languages.length || profile.languages.some(lang=>!["et","en","ru"].includes(lang)) || typeof profile.configured!=="boolean" || typeof profile.available!=="boolean" || typeof profile.streaming!=="boolean") || !ids.has("azure")) throw new Error("catalog_unavailable");
+    if(!Array.isArray(data.voices) || !data.voices.length || data.voices.length>Object.keys(VOICE_LABELS).length || data.voices.some(profile=>!profile || !Object.hasOwn(VOICE_LABELS,profile.id) || ids.has(profile.id) || !ids.add(profile.id) || typeof profile.label!=="string" || profile.label.length>80 || !Array.isArray(profile.languages) || !profile.languages.length || profile.languages.some(lang=>!["et","en","ru"].includes(lang)) || typeof profile.configured!=="boolean" || typeof profile.available!=="boolean" || typeof profile.streaming!=="boolean") || !ids.has("azure")) throw new Error("catalog_unavailable");
     state.voiceCatalog=data.voices;
     state.endpointingMs=Number.isInteger(data.endpointing_ms) && data.endpointing_ms>=300 && data.endpointing_ms<=2000 ? data.endpointing_ms : 650;
   } catch(_) { if(generation!==state.generation || !state.connected) return; state.voiceCatalog=null; state.endpointingMs=650; }

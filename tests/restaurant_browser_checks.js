@@ -18,6 +18,32 @@ async page => {
   await page.locator('#operator-token').fill('restaurant-fixture-operator');
   await page.locator('#connect').click();
   await page.waitForFunction(()=>state.connected && !state.readBusy);
+  await page.waitForFunction(()=>state.voiceCatalog);
+  assert.equal(await page.locator('#demo-voice option:not(:disabled)').count(), 3);
+  await page.locator('#demo-language').selectOption('et');
+  for (const profile of ['azure-male', 'azure-calm']) {
+    await page.locator('#demo-voice').selectOption(profile);
+    await page.locator('#demo-voice-preview').click();
+    await page.waitForFunction(()=>!state.previewBusy && !document.getElementById('demo-audio').hidden);
+    assert.equal(requests.at(-1).path, '/api/demo/voices/preview');
+    assert.equal(requests.at(-1).body.voice, profile);
+    assert.equal(await page.evaluate(()=>state.sessionId), null, 'audition created a conversation');
+    await page.waitForFunction(()=>document.getElementById('demo-audio').duration > 0);
+    assert((await page.locator('#demo-voice-result').textContent()).includes(profile==='azure-male' ? 'Kert' : 'Anu'));
+  }
+  await page.screenshot({path:'output/playwright/natural-voices-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert(await page.locator('#demo-voice-preview').isVisible());
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'output/playwright/natural-voices-mobile.png',fullPage:true});
+  await page.setViewportSize({width:1440,height:1000});
+  await page.route('**/api/demo/voices/preview', route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'voice_preview_unavailable'})}));
+  await page.locator('#demo-voice-preview').click();
+  await page.waitForFunction(()=>!state.previewBusy);
+  assert((await page.locator('#demo-status').textContent()).includes('Proovi uuesti'));
+  assert.equal(await page.evaluate(()=>state.sessionId), null);
+  await page.unroute('**/api/demo/voices/preview');
+  await page.locator('#demo-voice').selectOption('azure');
   for (const language of languages) {
     await page.locator('#demo-language').selectOption(language.code);
     assert.equal(await page.locator('html').getAttribute('lang'),language.code);
@@ -30,6 +56,7 @@ async page => {
     await page.waitForFunction(()=>!state.turnBusy);
     assert((await page.locator('#demo-messages').textContent()).includes(language.soup));
     assert(await page.locator('#demo-language').isDisabled());
+    assert(await page.locator('#demo-voice-preview').isDisabled(), 'audition interrupted an active conversation');
     await page.locator('#demo-end').click();
     await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
     await page.locator('#reservation-time').fill('14:00');
