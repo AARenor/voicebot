@@ -13,6 +13,8 @@ from typing import Any
 import os
 import re
 
+from ..languages import LANGUAGES
+
 STT_MODEL = "whisper-large-v3"
 CHAT_MODEL = "openai/gpt-oss-120b"
 STT_LANGUAGE = "et"
@@ -25,6 +27,8 @@ class SpeechConfig:
     estonian_voice: str = "et-EE-AnuNeural"
     english_voice: str = "en-US-JennyNeural"
     english_locale: str = "en-US"
+    russian_voice: str = "ru-RU-SvetlanaNeural"
+    russian_locale: str = "ru-RU"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> SpeechConfig:
@@ -34,25 +38,31 @@ class SpeechConfig:
         et_locale = env.get("AZURE_LANG", "et-EE").strip()
         en_voice = env.get("AZURE_EN_VOICE", "en-US-JennyNeural").strip()
         en_locale = env.get("AZURE_EN_LANG", "en-US").strip()
+        ru_voice = env.get("AZURE_RU_VOICE", "ru-RU-SvetlanaNeural").strip()
+        ru_locale = env.get("AZURE_RU_LANG", "ru-RU").strip()
         if (
-            mode not in {"auto", "et", "en"}
+            mode not in {"auto", *LANGUAGES}
             or et_locale != "et-EE"
             or not re.fullmatch(r"et-EE-[A-Za-z0-9]+Neural", et_voice)
             or not re.fullmatch(r"en-[A-Z]{2}", en_locale)
             or not re.fullmatch(re.escape(en_locale) + r"-[A-Za-z0-9]+Neural", en_voice)
+            or ru_locale != "ru-RU"
+            or not re.fullmatch(re.escape(ru_locale) + r"-[A-Za-z0-9]+Neural", ru_voice)
         ):
             raise ValueError("invalid telephone speech configuration")
-        return cls(mode, et_voice, en_voice, en_locale)
+        return cls(mode, et_voice, en_voice, en_locale, ru_voice, ru_locale)
 
     @property
     def initial_language(self) -> str:
-        return "en" if self.mode == "en" else "et"
+        return self.mode if self.mode in LANGUAGES else "et"
 
     def voice_for(self, language: str) -> tuple[str, str]:
         if language == "en":
             return self.english_voice, self.english_locale
         if language == "et":
             return self.estonian_voice, "et-EE"
+        if language == "ru":
+            return self.russian_voice, self.russian_locale
         raise ValueError("unsupported telephone speech language")
 
 

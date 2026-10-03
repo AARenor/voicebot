@@ -18,6 +18,7 @@ class DemoProfile(TypedDict):
     name: str
     description_et: str
     description_en: NotRequired[str]
+    description_ru: NotRequired[str]
     language: str
     timezone: str
     address: None
@@ -79,8 +80,10 @@ def load_demo_data(path=None) -> DemoData:
             "address": None,
             "real_visitor_location": False,
         }
-        if "description_en" in source["fictional_property"]:
-            profile["description_en"] = _text(source["fictional_property"]["description_en"])
+        for suffix in ("en", "ru"):
+            key = "description_" + suffix
+            if key in source["fictional_property"]:
+                profile[key] = _text(source["fictional_property"][key])
         faq = [
             {
                 "question_et": _text(entry["question_et"]),
@@ -89,9 +92,10 @@ def load_demo_data(path=None) -> DemoData:
             for entry in source["manual_demo_faq"]["entries"]
         ]
         for translated, entry in zip(faq, source["manual_demo_faq"]["entries"]):
-            if "question_en" in entry or "answer_en" in entry:
-                translated["question_en"] = _text(entry["question_en"])
-                translated["answer_en"] = _text(entry["answer_en"])
+            for suffix in ("en", "ru"):
+                if "question_" + suffix in entry or "answer_" + suffix in entry:
+                    translated["question_" + suffix] = _text(entry["question_" + suffix])
+                    translated["answer_" + suffix] = _text(entry["answer_" + suffix])
         guests = {}
         for entry in source["guests"]:
             fixture_id = _text(entry["fixture_id"], 40)

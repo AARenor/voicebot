@@ -571,7 +571,7 @@ def test_audio_transcript_is_server_observed_before_model_confirmation(
     class Stt:
         def transcribe(self, audio, *, language):
             assert audio == b"RIFF-fixture"
-            assert language == "et"
+            assert language == "auto"
             return CONSENT
 
     client.app.state.stack["stt"] = Stt()

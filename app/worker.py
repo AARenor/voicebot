@@ -27,8 +27,9 @@ from .providers.voice_config import SpeechConfig, VoiceConfig
 from .providers.telephone_stt import TelephoneSTT
 from .providers.telephone_tts import TelephoneTTS
 from .providers.speech_delivery import SpeechDelivery
-from .languages import ENGLISH, ENGLISH_INVITATION
 from .providers.speech_text import normalize_estonian_speech
+from .languages import ENGLISH, ENGLISH_INVITATION, LANGUAGES
+from .russian import localize
 from .telephone import (
     ASK_DATE_TIME,
     CallTools,
@@ -69,6 +70,7 @@ class TelephoneAgent(Agent):
         self._unsupported_language = False
         self._final_user_turn = None
         self._tool_call_ids = set()
+        self._tts_voice_lock = asyncio.Lock()
 
     async def stt_node(self, audio, model_settings):
         async for event in Agent.default.stt_node(self, audio, model_settings):
@@ -232,7 +234,7 @@ class TelephoneAgent(Agent):
             yield (
                 ENGLISH["ask_date_time"]
                 if self.state.language == "en"
-                else ASK_DATE_TIME
+                else localize(ASK_DATE_TIME, self.state.language)
             )
 
     async def checked_reply(self, text):
@@ -270,7 +272,9 @@ class TelephoneAgent(Agent):
         if self.state.history_enabled:
             outcome = (
                 "fallback"
-                if event.item.text_content in {UNVERIFIED_REPLY, ENGLISH["unverified"]}
+                if event.item.text_content in {
+                    UNVERIFIED_REPLY, ENGLISH["unverified"], localize(UNVERIFIED_REPLY, "ru")
+                }
                 else self.state.outcome
             )
             callslog.history_safe(
@@ -304,25 +308,28 @@ class TelephoneAgent(Agent):
         try:
             reply = await self.checked_reply(text)
             language = "en" if reply == ENGLISH_INVITATION else self.state.language
-            if self.speech_provider is not None:
-                voice, locale = self.speech_config.voice_for(language)
-                self.speech_provider.update_options(voice=voice, language=locale)
             pending = self.state.pending
             canonical = self.state.render_recap()
-            if isinstance(self.speech_provider, TelephoneTTS):
-                self.speech_provider.set_recap_delivery(
-                    bool(pending and reply == canonical)
-                )
 
             async def checked():
                 yield normalize_estonian_speech(reply, language)
 
             frames = False
-            async for frame in Agent.default.tts_node(self, checked(), model_settings):
-                if not frames:
-                    frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
-                frames = True
-                yield frame
+            # Azure snapshots options per sentence. Keep every sentence in an
+            # interrupted stream on its voice until cancellation completes.
+            async with self._tts_voice_lock:
+                if isinstance(self.speech_provider, TelephoneTTS):
+                    self.speech_provider.set_recap_delivery(
+                        bool(pending and reply == canonical)
+                    )
+                if self.speech_provider is not None:
+                    voice, locale = self.speech_config.voice_for(language)
+                    self.speech_provider.update_options(voice=voice, language=locale)
+                async for frame in Agent.default.tts_node(self, checked(), model_settings):
+                    if not frames:
+                        frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
+                    frames = True
+                    yield frame
             if not frames:
                 raise RuntimeError("speech produced no audio")
             complete = frames
@@ -360,16 +367,18 @@ class TelephoneAgent(Agent):
             if self.state.outcome != "write_outcome_unknown":
                 self.state.outcome = "provider_error"
             log_failure("tts_fallback", error)
+            # No Russian cached PCM exists; actual failure audio/history is ET.
+            cached_language = "en" if language == "en" else "et"
             if self.state.history_enabled:
                 callslog.history_safe(
                     call_history.provider_error, self.state.call_id, "tts_error"
                 )
             first_cached = True
-            async for frame in fallback_audio(language):
+            async for frame in fallback_audio(cached_language):
                 if first_cached:
                     frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [
                         _SpokenText(
-                            ENGLISH["fallback"] if language == "en" else FALLBACK
+                            ENGLISH["fallback"] if cached_language == "en" else FALLBACK
                         )
                     ]
                     first_cached = False
@@ -515,7 +524,7 @@ def log_call_summary(state, *, failed=False):
     }:
         outcome = "completed"
     language = getattr(state, "language", "et")
-    if language not in {"et", "en"}:
+    if language not in LANGUAGES:
         language = "et"
     try:
         callslog.log_call(

@@ -21,7 +21,7 @@ from livekit.agents import (
 )
 from livekit.agents.utils import AudioBuffer
 
-from ..languages import language_code
+from ..languages import LANGUAGES, language_code
 
 
 class TelephoneSTT(stt.STT[str]):
@@ -36,7 +36,7 @@ class TelephoneSTT(stt.STT[str]):
         super().__init__(
             capabilities=stt.STTCapabilities(streaming=False, interim_results=False)
         )
-        if mode not in {"auto", "et", "en"}:
+        if mode not in {"auto", *LANGUAGES}:
             raise ValueError("invalid telephone language mode")
         self._model, self.mode = model, mode
         self._http = httpx.AsyncClient(

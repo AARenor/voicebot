@@ -19,6 +19,7 @@
     "timezone": "Europe/Tallinn",
     "description_et": "Väljamõeldud spaa tehisintellektil põhineva broneerimisabilise katsetamiseks.",
     "description_en": "A fictional spa for testing an AI booking assistant.",
+    "description_ru": "Вымышленный спа для проверки помощника по бронированию на основе искусственного интеллекта.",
     "address": null,
     "real_visitor_location": false,
     "automatically_used_by_agent": true
@@ -121,25 +122,33 @@
         "question_et": "Kas see on päris spaa?",
         "answer_et": "Ei. Meretuule Demo Spa on väljamõeldud katsetuskeskkond. Broneeringud ei anna õigust päris teenusele.",
         "question_en": "Is this a real spa?",
-        "answer_en": "No. Meretuule Demo Spa is a fictional testing environment. These bookings do not entitle you to a real service."
+        "answer_en": "No. Meretuule Demo Spa is a fictional testing environment. These bookings do not entitle you to a real service.",
+        "question_ru": "Это настоящий спа?",
+        "answer_ru": "Нет. Meretuule Demo Spa — вымышленная тестовая среда. Бронирования не дают права на настоящую услугу."
       },
       {
         "question_et": "Kui kaua demo konsultatsioon kestab?",
         "answer_et": "Näidiskonsultatsioon kestab 30 minutit. Tegelikku aega tuleb kontrollida broneerimissüsteemist.",
         "question_en": "How long is the demo consultation?",
-        "answer_en": "The sample consultation lasts 30 minutes. The actual appointment time must be checked in the booking system."
+        "answer_en": "The sample consultation lasts 30 minutes. The actual appointment time must be checked in the booking system.",
+        "question_ru": "Сколько длится демонстрационная консультация?",
+        "answer_ru": "Демонстрационная консультация длится 30 минут. Доступное время нужно проверить в системе бронирования."
       },
       {
         "question_et": "Kus spaa asub?",
         "answer_et": "Demol ei ole päris aadressi ega külastuskohta.",
         "question_en": "Where is the spa?",
-        "answer_en": "The demo has no real address or visitor location."
+        "answer_en": "The demo has no real address or visitor location.",
+        "question_ru": "Где находится спа?",
+        "answer_ru": "У этой демонстрации нет настоящего адреса или места для посещения."
       },
       {
         "question_et": "Kas pean midagi maksma?",
         "answer_et": "See demo ei kogu makseid ega kinnita päris teenuse hinda.",
         "question_en": "Do I need to pay anything?",
-        "answer_en": "This demo does not collect payments. It cannot provide a quote for a real service."
+        "answer_en": "This demo does not collect payments. It cannot provide a quote for a real service.",
+        "question_ru": "Нужно ли что-нибудь платить?",
+        "answer_ru": "Эта демонстрация не принимает оплату и не подтверждает расценки настоящих услуг."
       }
     ]
   },
