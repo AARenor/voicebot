@@ -353,8 +353,54 @@ def spa_hours_focus(text: object) -> bool:
     )
 
 
-def read_focus(text: str) -> str | None:
+def read_focus(text: str, *, business="legacy") -> str | None:
     value = normalize(text)
+    if business == "restaurant":
+        if len(text) > 2000:
+            return None
+        # Only complete approved read forms can bypass planning. No wildcard
+        # clause may swallow a new date/headcount, correction or booking action.
+        for focus, pattern in (
+            (
+                "dietary",
+                r"kas allergiate info on kontrollitud|is allergy information verified|"
+                r"проверена ли информация об аллергии|"
+                r"kas (?:salat|roheline salat|ahjuköögiviljad|marjamagustoit|menüü|toit) "
+                r"(?:sobib (?:gluteenivaba|vegan|taimetoidu|laktoosivaba) dieediga|"
+                r"on (?:gluteenivaba|vegan|laktoosivaba))|"
+                r"kas menüüs on (?:gluteenivabu|vegan|taimetoidu|laktoosivabu) roogi|"
+                r"(?:is|are) (?:(?:the|your) )?(?:salad|green salad|roasted vegetables|"
+                r"berry dessert|food|menu|dishes) (?:vegan|vegetarian|gluten[ -]free|"
+                r"dairy[ -]free|(?:safe|suitable) for (?:a )?(?:(?:peanut|nut|dairy|gluten) )?allerg(?:y|ies))|"
+                r"do you have (?:vegan|vegetarian|gluten[ -]free|dairy[ -]free) (?:food|dishes|options)|"
+                r"are there (?:vegan|vegetarian|gluten[ -]free|dairy[ -]free) dishes(?: on the menu)?|"
+                r"есть ли (?:безглютеновые|веганские|вегетарианские|безлактозные) (?:блюда|варианты)",
+            ),
+            (
+                "menu",
+                r"mis (?:on )?(?:teie )?menüü(?:s)?|(?:näita|näidake) (?:mulle )?menüüd|"
+                r"what(?:'s| is) on (?:the|your|demo) menu|(?:can|could) (?:i|we) see (?:the|your) menu|"
+                r"show (?:me )?(?:the |your )?menu|что (?:есть )?в меню|какие блюда в меню|"
+                r"(?:покажи|покажите|можно) (?:мне )?меню",
+            ),
+            (
+                "hours",
+                r"millal (?:demo)?restoran (?:on )?(?:avatud|lahti)(?: on)?|"
+                r"millal (?:demo)?restoran (?:avaneb|sulgub)|"
+                r"(?:what time|when) does (?:the |your |the demo )?restaurant (?:open|close)|"
+                r"when is (?:the |your |the demo )?restaurant (?:open|closed)|"
+                r"(?:what are|what's|what is) (?:the |your )?(?:restaurant |demo restaurant )?(?:opening |working )?hours|"
+                r"(?:какие|каковы) (?:часы|время) работы(?: (?:демонстрационного )?ресторана)?|"
+                r"когда (?:открыт|закрыт) (?:демонстрационный )?ресторан|"
+                r"когда (?:демонстрационный )?ресторан (?:открыт|закрыт|открывается|закрывается)",
+            ),
+        ):
+            if re.fullmatch(
+                rf"(?:please |palun |пожалуйста )?(?:{pattern})(?: please| palun| пожалуйста)?",
+                value,
+            ):
+                return focus
+        return None
     if spa_hours_focus(text):
         return "hours"
     if re.search(
@@ -399,7 +445,7 @@ class Conversation:
 
     def observe(self, text: str, language: str) -> None:
         self.intent = intent_for(text)
-        self.focus = read_focus(text)
+        self.focus = read_focus(text, business=self.business)
         self.reply = None
         if self.intent is not None:
             choices = REPLIES[language][self.intent]

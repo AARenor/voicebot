@@ -14,7 +14,7 @@ const DEMO_COPY = {
     recapHelp:"Kuula broneeringu kokkuvõte algusest lõpuni või loe see vestlusest läbi ja kinnita lugemine. See ei loo broneeringut; kinnitamiseks saada seejärel eraldi sõnum.",
     guidance:"Abiline kasutab selle vestluse fiktiivset külalist. Kuula kokkuvõte algusest lõpuni või kinnita eraldi selle lugemine. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris restorani teenus.",
     examplesLabel:"Vestluse alustamise näited", transcriptLabel:"Selle lehe demovestlus", audioLabel:"Demoabilise vastus",
-    examples:{hours:["Lahtiolekuajad","Millal restoran avatud on?"], table:["Laud kahele","Soovin homme kell 18 lauda kahele."], rules:["Broneerimise reeglid","Kui kaua saab lauda kasutada ja kas lapsed lähevad inimeste arvu sisse?"]},
+    examples:{hours:["Lahtiolekuajad","Millal restoran avatud on?"], table:["Laud kahele","Soovin homme kell 18 lauda kahele."], rules:["Broneerimise reeglid","Kui kaua saab lauda kasutada ja kas lapsed lähevad inimeste arvu sisse?"], incomplete:["Puuduv kellaaeg","Palun broneeri homme laud neljale inimesele."], dietary:["Toitumise erisoov","Kas menüüs on gluteenivabu roogi?"]},
     signIn:"Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.", ready:"Alusta demovestlust või vajuta „Alusta häälvestlust”. Vestlus aegub 10 minutiga.",
     started:"Fiktiivne vestlus alustatud. Kuula tervitust, seejärel vajuta mikrofoni ja räägi.", greetingFailed:"Tervituse heli pole saadaval. Tekst on alles; jätkamiseks vajuta mikrofoni või kirjuta.",
     responding:"Demoabiline vastab… Ära saada sama kinnitust uuesti.", you:"Sina", assistant:"Demoabiline", heardFailed:"Kõnetuvastus ei olnud saadaval", heardNothing:"Kõnet ei tuvastatud",
@@ -39,7 +39,7 @@ const DEMO_COPY = {
     recapHelp:"Listen to the booking recap from beginning to end, or read it in the conversation and acknowledge reading. This does not create a booking; send a separate message afterwards to confirm.",
     guidance:"The assistant uses a fictional guest for this conversation. Listen to the whole recap or acknowledge reading it separately. Then say: “Yes, I confirm.” To cancel, say: “Please cancel this test booking.” Do not enter real contact details. Recordings are not kept in your browser. This is a fictional web voice demo, not a telephone call or a real restaurant service.",
     examplesLabel:"Conversation examples", transcriptLabel:"This page's demo conversation", audioLabel:"Demo assistant's reply",
-    examples:{hours:["Opening hours","What are the restaurant opening hours?"], table:["Table for two","I would like a table for two tomorrow at 6 pm."], rules:["Booking rules","How long is a sitting, and do children count towards the party size?"]},
+    examples:{hours:["Opening hours","What are the restaurant opening hours?"], table:["Table for two","I would like a table for two tomorrow at 6 pm."], rules:["Booking rules","How long is a sitting, and do children count towards the party size?"], incomplete:["Missing time","Please reserve a table for four tomorrow."], dietary:["Dietary question","Are there gluten-free dishes on the menu?"]},
     signIn:"To start, enter your operator token and press “Ühenda” (Connect).", ready:"Start a demo conversation or press “Start voice conversation”. The session lasts 10 minutes.",
     started:"Fictional conversation started. Listen to the greeting, then press the microphone button and speak.", greetingFailed:"Greeting audio is unavailable. The text is still here; continue with the microphone or type a message.",
     responding:"The demo assistant is replying… Do not send the same confirmation again.", you:"You", assistant:"Demo assistant", heardFailed:"Speech recognition was unavailable", heardNothing:"No speech detected",
@@ -827,12 +827,21 @@ function clearBookingSelection() {
   bookingControls();
 }
 function bookingRequestValid() {
-  const count=$("new-party-size").value;
-  return /^\d{4}-\d{2}-\d{2}$/.test($("new-table-date").value) && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test($("new-start-time").value) && /^[1-9]\d*$/.test(count) && Number(count)<=(bookingUi.rules?.max_party_size || 6);
+  const date=$("new-table-date"), time=$("new-start-time"), party=$("new-party-size"), max=bookingUi.rules?.max_party_size || 6;
+  let field, message;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date.value) || date.validity?.valid===false) {
+    field=date; message="Vali kehtiv kuupäev Tallinna aja järgi.";
+  } else if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time.value) || time.validity?.valid===false) {
+    field=time; message="Vali täpne alguskellaaeg Tallinna aja järgi (HH:MM).";
+  } else if(!/^[1-9]\d*$/.test(party.value) || Number(party.value)>max || party.validity?.valid===false) {
+    field=party; message=`Sisesta inimeste arv täisarvuna 1–${max}, kaasa arvatud kõik lauas istuvad lapsed.`;
+  }
+  if(!field) return true;
+  status("new-booking-status",message,"error"); field.focus(); return false;
 }
 async function searchBooking() {
   if(!state.connected || bookingUi.busy || bookingUi.uncertain) return;
-  if(!bookingRequestValid()) { status("new-booking-status","Vali kuupäev, täpne Tallinna kellaaeg ja lubatud täisarv inimesi, ka lapsed.","error"); return; }
+  if(!bookingRequestValid()) return;
   clearBookingSelection(); bookingUi.busy=true; controls();
   const generation=state.generation, epoch=bookingUi.epoch;
   status("new-booking-status","Kontrollin saadavust taustsüsteemist…");
@@ -849,7 +858,7 @@ async function searchBooking() {
       note.textContent=`${offer.table_name || offer.table_id} · kuni ${offer.capacity} inimest · ${offer.duration_minutes} min · vali ja loe kokkuvõte`;
       button.append(title,note); button.addEventListener("click",()=>prepareBooking(offer)); $("booking-offers").append(button);
     }
-    status("new-booking-status",offers.length?"Vali sobiv pakkumine. Broneering tekib pärast kokkuvõtte kinnitamist.":"Sellele valikule saadavust ei leitud. Proovi teist kuupäeva või külaliste arvu.");
+    status("new-booking-status",offers.length?"Vali sobiv pakkumine. Broneering tekib pärast kokkuvõtte kinnitamist.":"Sellele valikule saadavust ei leitud. Jäta inimeste arv samaks ja vali ise teine kuupäev või Tallinna kellaaeg.");
   } catch(error) { if(error.name!=="AbortError" && generation===state.generation && state.connected) { status("new-booking-status",error.message,"error"); if(error.status===410 || error.status===404) bookingUi.sessionId=null; } }
   finally { if(generation===state.generation) { bookingUi.busy=false; controls(); } }
 }

@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const {chromium}=require(process.argv[2] || 'playwright');
 const root=path.resolve(__dirname,'..');
 process.chdir(root);
-const available=['dashboard_browser_checks.js','booking_browser_checks.js','hotel_browser_checks.js','voice_browser_checks.js','microphone_race_browser_checks.js','english_demo_browser_checks.js','modern_voice_browser_checks.js','streaming_voice_browser_checks.js'];
+const available=['dashboard_browser_checks.js','booking_browser_checks.js','hotel_browser_checks.js','voice_browser_checks.js','microphone_race_browser_checks.js','english_demo_browser_checks.js','modern_voice_browser_checks.js','streaming_voice_browser_checks.js','public_contrast_browser_checks.js','restaurant_guest_browser_checks.js'];
 const checks=process.argv.slice(4);
 if(!checks.length)checks.push(...available);
 if(checks.some(name=>!available.includes(name)))throw new Error('expected a local browser check filename');

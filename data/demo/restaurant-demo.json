@@ -82,11 +82,11 @@
       },
       {
         "question_et": "Mitmele inimesele saab laua broneerida?",
-        "answer_et": "Laua saab broneerida 1–6 inimesele. Kõik istuvad lapsed lähevad inimeste arvu hulka. Laudu ei ühendata. Tulevase aja saab valida kuni 90 päeva ette; saadavust kontrollib broneerimissüsteem.",
+        "answer_et": "Laua saab broneerida 1–6 inimesele. Kõik istuvad lapsed lähevad inimeste arvu hulka. Suuremaid seltskondi demo ei broneeri ja laudu ei ühendata. Tulevase aja saab valida kuni 90 päeva ette; saadavust kontrollib broneerimissüsteem.",
         "question_en": "How many people can reserve a table?",
-        "answer_en": "A table can be reserved for 1–6 people, including all seated children. Tables are not combined. You can choose a future time up to 90 days ahead; the booking system checks availability.",
+        "answer_en": "A table can be reserved for 1–6 people, including all seated children. Larger groups are not supported and tables are not combined. You can choose a future time up to 90 days ahead; the booking system checks availability.",
         "question_ru": "На сколько человек можно забронировать столик?",
-        "answer_ru": "Столик можно забронировать на 1–6 человек, включая всех детей, которым нужно место за столом. Столики не объединяются. Можно выбрать время в будущем не более чем на 90 дней вперёд; наличие мест проверяет система бронирования."
+        "answer_ru": "Столик можно забронировать на 1–6 человек, включая всех детей, которым нужно место за столом. Большие группы не поддерживаются, столики не объединяются. Можно выбрать время в будущем не более чем на 90 дней вперёд; наличие мест проверяет система бронирования."
       },
       {
         "question_et": "Kus restoran asub?",
@@ -103,6 +103,22 @@
         "answer_en": "This demo does not collect payments or quote real restaurant prices. Real contact details are not requested and notifications are not sent.",
         "question_ru": "Нужно ли что-нибудь платить?",
         "answer_ru": "Эта демонстрация не принимает оплату и не подтверждает цены настоящего ресторана. Настоящие контактные данные не запрашиваются, уведомления не отправляются."
+      },
+      {
+        "question_et": "Kas allergiate info on kontrollitud?",
+        "answer_et": "Koostisosad, allergeenid, ristsaastumise ohutus ja sobivus eridieedile ei ole kinnitatud. Allergia või eridieedi korral küsi restoranilt üle enne söömist.",
+        "question_en": "Is allergy information verified?",
+        "answer_en": "Ingredients, allergens, cross-contact safety and dietary suitability are not verified. For allergies or dietary needs, check with the restaurant before eating.",
+        "question_ru": "Проверена ли информация об аллергии?",
+        "answer_ru": "Состав, аллергены, безопасность при перекрёстном контакте и пригодность для специальной диеты не подтверждены. При аллергии или особых требованиях к питанию уточните информацию у ресторана до еды."
+      },
+      {
+        "question_et": "Kas saan ootenimekirja?",
+        "answer_et": "Demo ei paku ootenimekirja, tagasikõnet ega suunamist töötajale. Saad proovida teist kuupäeva või kellaaega, säilitades tegeliku inimeste arvu; saadavust tuleb eraldi kontrollida.",
+        "question_en": "Can you add me to a waitlist?",
+        "answer_en": "The demo has no waitlist, callback or staff transfer. You can try another date or time with your actual diner count; availability needs a separate check.",
+        "question_ru": "Можно записаться в лист ожидания?",
+        "answer_ru": "В демо нет листа ожидания, обратного звонка или перевода сотруднику. Можно попробовать другую дату или время с фактическим числом гостей; наличие мест нужно проверить отдельно."
       }
     ]
   }

@@ -128,6 +128,15 @@ opening and a 90-day horizon. All seated diners count toward party size. There
 is no combined-table allocation, payment, invented price or real POS connector.
 Canonical repository: **Parnuhakk/voicebot** (branch `master`).
 
+Recognized menu, dietary and opening-hours questions use canonical replies in
+Estonian, English and Russian, without a model request. Read-only questions keep
+validated reservation preferences, never recap approval. Mixed or unrecognized
+requests still reach planning. Menu dishes are fictional
+examples; ingredients, allergens, cross-contact safety and dietary suitability
+are unverified. Larger parties, waitlists, callbacks and staff transfers are not
+supported. If the exact sitting is full, choose another date/time without
+understating the actual diner count.
+
 The table demo stores offers, expiring exclusive holds, reservations and
 fingerprinted write receipts in `RESTAURANT_STATE_DB` (default
 `/data/restaurant-booking.db`). The web app and native worker mount the same

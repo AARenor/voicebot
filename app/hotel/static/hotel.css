@@ -8,7 +8,7 @@
 :root {
   --forest:#24463b;
   --ink:#293b33;
-  --muted:#70796e;
+  --muted:#616d60;
   --paper:#fbfaf5;
   --sand:#ede8dc;
   --line:#dedfd5;
@@ -239,7 +239,7 @@ p {
   align-items:center;
   gap:13px;
   margin-top:43px;
-  color:#7e8778;
+  color:var(--muted);
   font-size:10px;
   line-height:1.7
 }

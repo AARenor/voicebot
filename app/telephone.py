@@ -1214,6 +1214,12 @@ class CallTools:
             else None
         )
         self._booking_request = booking_input(text) or named_fixture
+        if self.business == "restaurant" and self.conversation.focus in {
+            "hours",
+            "menu",
+        }:
+            # Fresh catalogue facts, never the fixture's opening-hours snapshot.
+            self._legacy_faq_answer = None
         self._faq_booking_kind = None
         if len(self.faq_entries) == 1 and self.faq_entries[0]["id"] == "booking-002":
             stay = bool(
@@ -1232,7 +1238,12 @@ class CallTools:
             and spa_hours_focus(text)
         )
         self._booking_inquiry = (
-            _table_inquiry_fields(text, self._booking_inquiry)
+            (
+                self._booking_inquiry
+                if self._legacy_faq_answer
+                or self.conversation.focus in {"hours", "menu", "dietary"}
+                else _table_inquiry_fields(text, self._booking_inquiry)
+            )
             if self.business == "restaurant" and not self.unsupported_language
             else (
                 _spa_inquiry_fields(text, self._booking_inquiry)
@@ -1365,8 +1376,7 @@ class CallTools:
     def faq_response(self, *, allow_actions=True):
         """The shared native/HTTP shortcut cannot write or infer availability."""
         if (
-            not self.faq_entries
-            or self.unsupported_language
+            self.unsupported_language
             or self.clarification
             or self.pending
             or self.cancel_approval
@@ -1374,6 +1384,22 @@ class CallTools:
             or self.mutation_uncertain
             or self.outcome == "write_outcome_unknown"
         ):
+            return None
+        if self.business == "restaurant":
+            if self._legacy_faq_answer:
+                return {
+                    "content": self.guard_reply(self._legacy_faq_answer, self.results)
+                }
+            if self.conversation.focus not in {"hours", "menu", "dietary"}:
+                return None
+            if (
+                self.results
+                or not allow_actions
+                or "get_table_catalogue" not in self.names
+            ):
+                return {"content": self.guard_reply("", self.results)}
+            return {"name": "get_table_catalogue", "arguments": {}}
+        if not self.faq_entries:
             return None
         reply = self.faq_reply()
         if reply is not None:
@@ -1588,6 +1614,12 @@ class CallTools:
             return ENGLISH[self.clarification]
         if errors:
             self.invalidate_recap()
+            if self.business == "restaurant" and all(
+                error == "table_unavailable" for error in errors
+            ):
+                return self._render_read_result(
+                    {"kind": "table", "offers": []}, self.language
+                )
             if english:
                 return (
                     ENGLISH_TOOL_ERRORS.get(errors[0], ENGLISH["failed"])
@@ -1726,12 +1758,64 @@ class CallTools:
     @staticmethod
     def _render_read_result(result, language="et", *, focus=None):
         """Render verified reads as natural speech, without model paraphrases."""
+        if not isinstance(result, dict):
+            return None
 
         def say(text, **values):
             translated = localize(text, language)
             return translated.format(**values) if values else translated
 
         try:
+            if (
+                focus in ("menu", "dietary")
+                and result.get("synthetic") is True
+                and result.get("source") == "demo_table"
+                and isinstance(result.get("tables"), list)
+            ):
+                if language not in ("et", "en", "ru"):
+                    return None
+                menu = result.get("menu")
+                if not isinstance(menu, list) or not menu:
+                    return None
+                choices = []
+                for item in menu[:3]:
+                    if not isinstance(item, dict):
+                        return None
+                    name = item.get("name_" + language)
+                    description = item.get("description_" + language)
+                    if (
+                        not isinstance(name, str)
+                        or len(name) > 80
+                        or not name.strip()
+                        or not isinstance(description, str)
+                        or len(description) > 240
+                        or not description.strip()
+                    ):
+                        return None
+                    choices.append(f"{name.strip()}: {description.strip()}")
+                prefix, caution = {
+                    "et": (
+                        "Fiktiivsed menüünäited: ",
+                        "Koostisosad, allergeenid, ristsaastumise ohutus ja sobivus "
+                        "eridieedile ei ole kinnitatud. Allergia või eridieedi korral "
+                        "küsi restoranilt üle enne söömist.",
+                    ),
+                    "en": (
+                        "Fictional menu examples: ",
+                        "Ingredients, allergens, cross-contact safety and dietary "
+                        "suitability are not verified. For allergies or dietary needs, "
+                        "check with the restaurant before eating.",
+                    ),
+                    "ru": (
+                        "Вымышленные примеры меню: ",
+                        "Состав, аллергены, безопасность при перекрёстном контакте и "
+                        "пригодность для специальной диеты не подтверждены. При аллергии "
+                        "или особых требованиях к питанию уточните информацию у ресторана до еды.",
+                    ),
+                }[language]
+                if focus == "dietary":
+                    return caution
+                return prefix + "; ".join(choices) + " " + caution
             if isinstance(result.get("tables"), list):
                 venue, rules = result["venue"], result["rules"]
                 opens, closes = rules["opening_time"], rules["closing_time"]
