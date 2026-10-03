@@ -7,7 +7,7 @@
   <meta name="description" content="Voiceboti vastuvõtulaud: spaa- ja toabroneeringud, kõneproov ning toimingupäevik.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23173844'/%3E%3Cpath d='M8 13v6m5-10v14m6-17v20m5-13v6' fill='none' stroke='%2399d5d4' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/dashboard.css?v=e1edc2bdde98">
+  <link rel="stylesheet" href="/dashboard.css?v=07214774f55e">
   <title>Vastuvõtulaud — Voicebot</title>
 </head>
 <body>
@@ -32,9 +32,9 @@
     <div class="property"><span class="property-icon"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span><div><strong>Meretuule Spa</strong><span>Fiktiivne demokeskkond</span></div></div>
     <nav class="navigation" aria-label="Töölaua jaotised">
       <a href="#booking-section" aria-current="location"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg>Broneeringud</a>
+      <a href="#calls-section"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg>Kõneajalugu</a>
       <a href="#demo-section"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>Kõneproov</a>
       <a href="#catalogue-section"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg>Teenused</a>
-      <a href="#calls-section"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg>Päevik</a>
     </nav>
     <div class="sidebar-bottom"><a class="hotel-link" href="/hotel">Vaata hotelli demo <span aria-hidden="true">↗</span></a><svg class="coastal-lines" viewBox="0 0 210 90" fill="none" aria-hidden="true"><path d="M-20 35c40-48 64 48 114 0s74 48 130 0M-20 51c40-48 64 48 114 0s74 48 130 0M-20 67c40-48 64 48 114 0s74 48 130 0"/></svg><div class="private-label"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>Privaatne tööruum</div><p>Rahulik vastuvõtt.<br>Selge ülevaade.</p></div>
   </aside>
@@ -65,6 +65,7 @@
         </div>
       </section>
       <section class="work-panel bookings-panel" id="booking-section" aria-labelledby="bookings-title">
+        <div class="stack-overview" aria-label="Veebiproovi teenuste seadistus"><ol><li><strong>Kõnetuvastus</strong><span id="stack-stt">Kontrollimata</span></li><li><strong>Abiline</strong><span id="stack-llm">Kontrollimata</span></li><li><strong>Helivastus</strong><span id="stack-tts">Kontrollimata</span></li><li><strong>Broneeringud</strong><span id="stack-booking">Kontrollimata</span></li></ol><p>Veebiproovi teenuste seadistus. Kõne toimimist saad kontrollida kõneproovi ja ajaloo kaudu.</p></div>
         <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg></span><div><h2 id="bookings-title">Broneeringud</h2><p>Sinu valitud päeva ülevaade</p></div></div><span class="source-label">Easy!Appointments</span></div>
         <div class="booking-toolbar"><div class="controls"><div class="field date-field"><label for="booking-date">Kuupäev</label><input id="booking-date" name="date" type="date" autocomplete="off"></div><span class="timezone"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>Europe/Tallinn</span></div><button class="button" id="refresh" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Uuenda andmeid</button></div>
         <p class="status booking-status" id="booking-status" role="status" aria-live="polite">Andmed on privaatsed. Ühenda esmalt.</p>
@@ -74,6 +75,20 @@
         <div class="paging"><span id="booking-page">Leht 1 · kuni 50 kirjet</span><div><button class="button compact" id="booking-prev" type="button" disabled>Eelmine leht</button><button class="button compact" id="booking-next" type="button" disabled>Järgmine leht</button></div></div>
       </section>
       <section class="work-panel stays-panel" id="stays-section" aria-labelledby="stays-title"><div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-bed"/></svg></span><div><h2 id="stays-title">Hotelli peatumised</h2><p>Valitud kuupäeval algavad või kestvad peatumised</p></div></div><span class="source-label">Sünteetiline hotell</span></div><div class="panel-body"><p class="status" id="stays-status" role="status" aria-live="polite">Ühenda peatumiste vaatamiseks.</p><div id="stays-list" class="stays-list"></div></div></section>
+      <section class="work-panel history-panel" id="calls-section" aria-labelledby="calls-title">
+        <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg></span><div><h2 id="calls-title">Kõneajalugu</h2><p>Telefonikõned, veebivestlused ja nende broneeringud</p></div></div><button class="button compact" id="history-refresh" type="button" disabled>Uuenda ajalugu</button></div>
+        <dl class="history-summary" aria-label="Valitud kõnede ülevaade">
+          <div><dt>Vestlusi</dt><dd id="history-total">—</dd></div>
+          <div><dt>Praegu aktiivsed</dt><dd id="history-active">—</dd></div>
+          <div><dt>Broneeringuga</dt><dd id="history-booked">—</dd></div>
+          <div><dt>Vajavad ülevaatamist</dt><dd id="history-attention">—</dd></div>
+        </dl>
+        <div class="history-filters"><div class="field"><label for="history-channel">Kanal</label><select id="history-channel" disabled><option value="all">Kõik kanalid</option><option value="telephone">Telefonikõned</option><option value="browser">Veebivestlused</option></select></div><div class="field"><label for="history-result">Tulemus</label><select id="history-result" disabled><option value="all">Kõik tulemused</option><option value="booked">Broneeringuga</option><option value="attention">Vajab ülevaatamist</option></select></div></div>
+        <p class="status history-status" id="history-status" role="status" aria-live="polite">Ühenda kõneajaloo vaatamiseks.</p>
+        <div class="history-layout"><div class="history-list-column"><ol class="history-list" id="history-list" aria-label="Kõned ja veebivestlused"></ol><p class="empty" id="history-empty" hidden>Siin pole veel vestlusi. Alusta kõneproovi või vali teine filter.</p><div class="paging"><span id="history-page">Leht 1</span><div><button class="button compact" id="history-prev" type="button" disabled>Eelmine</button><button class="button compact" id="history-next" type="button" disabled>Järgmine</button></div></div></div><div class="history-detail" id="history-detail" aria-label="Valitud vestluse üksikasjad"><div class="history-detail-placeholder"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg><h3>Vaata, kuidas kõne kulges</h3><p>Vali vestlus, et näha kõnetuvastust, toiminguid ja broneeringuid.</p></div></div></div>
+        <p class="history-note">Telefonikõned ja veebivestlused on eraldi märgitud. Salvestatakse toimingute olekud; heli ja vestluse sisu ei säilitata. Keskkond kasutab testbroneeringuid.</p>
+        <details class="legacy-journal"><summary>Varasem toimingupäevik</summary><ol class="call-journal" id="calls"></ol><p class="status" id="calls-status" role="status" aria-live="polite">Ühenda päeviku vaatamiseks.</p></details>
+      </section>
       <div class="conversation-grid">
         <section class="work-panel demo-panel" id="demo-section" aria-labelledby="demo-title">
           <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg></span><div><h2 id="demo-title">Proovi kõneabilist</h2><p>Kirjuta sõnum või räägi mikrofoniga</p></div></div><span class="demo-badge">HTTP demo</span></div>
@@ -83,8 +98,10 @@
             <p class="status" id="demo-status" role="status" aria-live="polite">Ühenda esmalt. Vestlus aegub 10 minutiga.</p>
             <p class="demo-warning" id="demo-warning" role="status" aria-live="polite" hidden></p><p class="sub" id="demo-timings" hidden></p>
             <div class="demo-examples" role="group" aria-label="Vestluse alustamise näited"><button class="example-button" type="button" data-message="Millal spaa avatud on?" disabled>Lahtiolekuajad</button><button class="example-button" type="button" data-message="Soovin broneerida spaakonsultatsiooni." disabled>Spaa aeg</button><button class="example-button" type="button" data-message="Soovin leida vaba hotellitoa." disabled>Hotellituba</button></div>
+            <button class="button compact" id="demo-history" type="button" hidden>Vaata vestluse ajalugu</button>
             <ol class="transcript" id="demo-messages" aria-label="Selle lehe demovestlus" aria-live="polite" aria-relevant="additions"></ol>
             <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" placeholder="Näiteks: soovin homme massaaži" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button mic-button" id="demo-mic" type="button" disabled>Luba mikrofon ja räägi</button></form>
+            <div class="mic-feedback" id="mic-feedback" hidden><label for="mic-level">Mikrofoni helitase</label><meter id="mic-level" min="0" max="1" value="0">0</meter><span id="mic-feedback-text">Räägi loomulikult.</span></div>
             <p class="sub mic-note"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Mikrofon avaneb nupuvajutusel, kuni 15 sekundiks. Teine vajutus saadab heli.</p>
             <audio id="demo-audio" controls preload="none" aria-label="Demoabilise vastus" hidden></audio>
             <details class="demo-guidance"><summary>Kuidas demovestlus töötab?</summary><p>Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.</p><p id="demo-models">Mudelite seadistust kontrollitakse serverist.</p></details>
@@ -92,12 +109,12 @@
         </section>
         <section class="work-panel catalogue-panel" id="catalogue-section" aria-labelledby="catalogue-title"><div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg></span><div><h2 id="catalogue-title">Spa teenused</h2><p>Teenused ja teenindajad</p></div></div></div><div class="panel-body"><p class="status" id="catalogue-status" role="status" aria-live="polite">Ühenda teenuste vaatamiseks.</p><ul class="catalogue" id="catalogue"></ul><div class="catalogue-placeholder" id="catalogue-placeholder"><svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg><p>Teenuste loend ilmub siia<br>pärast ühendamist.</p></div><p class="catalogue-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>Vabad ajad kontrollib abiline vestluse käigus. Siinne loend ei kinnita saadavust ega hinda.</p></div></section>
       </div>
-      <section class="work-panel journal-panel" id="calls-section" aria-labelledby="calls-title"><div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-journal"/></svg></span><div><h2 id="calls-title">Toimingupäevik</h2><p>Tehnilised tulemused, ilma vestluse sisuta</p></div></div><svg class="icon journal-decoration" aria-hidden="true"><use href="#i-clock"/></svg></div><div class="panel-body"><ol class="call-journal" id="calls"></ol><p class="status" id="calls-status" role="status" aria-live="polite">Ühenda päeviku vaatamiseks.</p></div></section>
       <details class="system-details"><summary>Ühendused ja demokeskkonna teave</summary><div class="readiness" aria-label="Valmisolek"><span id="livekit">Meediaseadistus: kontrollimata</span><span id="telephone">Telefonikõne: kinnitamata</span><span id="mode">HTTP kõneproov: kontrollimata</span></div><p>Seadistatud kõnepakkujad ei kinnita telefonivalmidust. Telefonikõne nõuab eraldi välise kõne tõendit.</p><details class="legacy-details"><summary>Näidisjärjekord — ei pärine broneerimissüsteemist</summary><p>Varasemad näidishoiud ja näidismõõdikud ei ole reaalne saadavus ega kvaliteedimõõtmine. HTTP kõneproovi tulemust kontrolli broneeringute tabelist.</p><table id="holds"><caption>Näidishoidude automaatne laadimine on välja lülitatud.</caption><tbody></tbody></table></details></details>
       <footer><span><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg>Voicebot · operaatori töölaud</span><span>Ühendatud ja nähtaval lehel uuenevad andmed iga 30 sekundi järel.</span></footer>
     </main>
   </div>
-  <script src="/dashboard.js?v=e3a8c3bc5027" defer></script>
+  <script src="/call-history.js?v=963f8b649643" defer></script>
+  <script src="/dashboard.js?v=60a8f7d39ca6" defer></script>
   <script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
 </body>
 </html>

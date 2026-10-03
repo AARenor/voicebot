@@ -104,6 +104,15 @@ DTOs. `/api/demo/session` and `/api/turn` share native booking ownership/consent
 the browser selects the actual booking day after a successful write. Operator
 credentials, conversation and microphone data are not persisted in the browser.
 The old example queue is labelled separately and never used as availability.
+`/api/call-history` lists actual browser/telephone session metadata with channel
+and attention filters. Session details show recognition activity, provider
+failures and owned spa/room booking receipts; booking links open the relevant
+day's records. New tables migrate additively inside `CALLS_DB`. Web and worker
+must use the same persistent `/data/calls.db` volume. Earlier technical log
+rows remain separate because they cannot reconstruct a conversation history.
+No audio, raw transcripts or guest contacts are stored in this history. The
+existing 30-day technical retention applies; process-loss end times are
+estimates from the last recorded activity.
 See the [original panel contract](docs/research/website-booking-architecture/DESIGN.md).
 The [older interactive diagram](.archify/architecture-website-booking-20261001-213712/website-booking.html)
 is a historical source snapshot, not current deployment evidence.
@@ -128,9 +137,13 @@ The browser check intercepts API calls with local fictional fixtures; it does
 not verify live speech or booking providers. It checks authentication, paging,
 empty/stale states, chat, microphone-denial guidance, logout during a pending
 read, keyboard navigation, reduced motion, and layouts from 320 to 1440 pixels.
+It also checks call filters/details, receipt links, digital silence, actual
+browser capture of a synthetic tone and filtered resampling to 16 kHz mono WAV.
 Screenshots go to `output/playwright/`. Committed
 [desktop](docs/evidence/dashboard-redesign/desktop.png) and
 [mobile](docs/evidence/dashboard-redesign/mobile.png) previews use those fixtures.
+The latest call-history previews and verification limits are recorded in
+[the call-history handoff](docs/evidence/2026-10-03-call-history.md).
 
 ## Rules
 

@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 pytest.importorskip("livekit.agents")
-from livekit import rtc
-from app import worker as w
-from tests.test_twilio_livekit import Sender, Transport, sdk
-from tests.test_twilio_security import ENV, security
-from app import twilio_bridge as b
+from livekit import rtc  # noqa: E402
+from app import worker as w  # noqa: E402
+from tests.test_twilio_livekit import Sender, Transport, sdk  # noqa: E402
+from tests.test_twilio_security import ENV, security  # noqa: E402
+from app import twilio_bridge as b  # noqa: E402
 
 
 @pytest.mark.parametrize("failure", ["publish", "unpublish", None])
@@ -49,7 +49,7 @@ def test_failure_audio_is_microphone_and_source_closes_on_every_path(failure):
     asyncio.run(run())
 
 
-def test_cached_apology_history_matches_actual_audio():
+def test_cached_apology_matches_completed_sdk_history_and_actual_pcm():
     from livekit.agents import AgentSession, tts
     from livekit.agents.voice import io
     from app.booking.tools import Dispatcher
@@ -118,14 +118,27 @@ def test_cached_apology_history_matches_actual_audio():
                 ]
                 assert len(assistant) == 1
                 assert assistant[0].text_content == FALLBACK
-                assert [
-                    item.text_content for item in session.history.items
-                    if getattr(item, "role", None) == "assistant"
-                ] == [FALLBACK]
+                assert agent.chat_ctx.items[-1].text_content == FALLBACK
+                assert session.history.items[-1].text_content == FALLBACK
             finally:
                 await session.aclose()
 
     asyncio.run(run())
+
+
+def test_old_failed_speech_cannot_replace_a_later_response():
+    from livekit.agents import llm
+    from app.booking.tools import Dispatcher
+    from app.telephone import CallTools, GREETING
+
+    agent = w.TelephoneAgent(CallTools(Dispatcher()))
+    agent._fallback_reply = GREETING
+    agent._fallback_speech = object()
+    session = NS(current_speech=object())
+    item = llm.ChatMessage(role="assistant", content=[GREETING])
+    with patch.object(w.TelephoneAgent, "session", property(lambda _: session)):
+        agent.on_conversation_item_added(NS(item=item))
+    assert item.text_content == GREETING
 
 
 def test_native_output_failure_keeps_failure_reason_for_carrier_handler():
@@ -151,9 +164,9 @@ def test_unpublished_original_microphone_does_not_hang_up_before_fallback():
         call = b.LiveKitCall(security().Config.from_env(ENV), Sender())
         call.stream = ended_stream()
         await call._output()
-        assert not call.ended.is_set(), (
-            "track retirement was treated as participant hangup"
-        )
+        assert (
+            not call.ended.is_set()
+        ), "track retirement was treated as participant hangup"
 
     asyncio.run(run())
 
@@ -362,12 +375,14 @@ def test_terminal_fallback_rejects_retired_mic_controls_and_close_cancels_predec
             agent = NS(kind=4, identity="fixture-agent")
             mic = NS(source=rtc.TrackSource.SOURCE_MICROPHONE)
             call._on_track(NS(kind=1, name="microphone"), mic, agent)
+
             def packet():
                 return NS(
                     topic="voicebot.interruption",
                     data=b"clear:" + b"a" * 32,
                     participant=agent,
                 )
+
             if scenario == "late_clear":
                 call._on_track(NS(kind=1, name="voicebot-fallback"), mic, agent)
             else:
@@ -377,9 +392,9 @@ def test_terminal_fallback_rejects_retired_mic_controls_and_close_cancels_predec
             call._on_data(packet())
             if scenario == "close_pending":
                 await call.close()
-                assert predecessor.done(), (
-                    "older control task survived owned call cleanup"
-                )
+                assert (
+                    predecessor.done()
+                ), "older control task survived owned call cleanup"
             else:
                 release.set()
                 await call.interruption

@@ -13,9 +13,9 @@ DATA_PATH = ROOT / "data/demo/telephone-demo.json"
 
 
 def demo_module():
-    assert importlib.util.find_spec("app.demo") is not None, (
-        "fictional demo loader is missing"
-    )
+    assert (
+        importlib.util.find_spec("app.demo") is not None
+    ), "fictional demo loader is missing"
     return importlib.import_module("app.demo")
 
 

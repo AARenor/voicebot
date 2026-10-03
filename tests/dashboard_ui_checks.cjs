@@ -29,6 +29,7 @@ const context=vm.createContext({console,Headers,URL,URLSearchParams,AbortControl
     if(path.includes('/api/bookings'))return response({items:[],has_more:false,fetched_at:'2026-10-02T10:00:00Z'});
     return response({ok:true});}
 });
+vm.runInContext(fs.readFileSync(process.argv[4],'utf8'),context);
 vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),context);
 vm.runInContext(fs.readFileSync(process.argv[3],'utf8').match(/<script>([\s\S]*?)<\/script>/)[1],context);
 const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};

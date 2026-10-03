@@ -19,12 +19,13 @@ from livekit.plugins import azure, groq, silero
 from .booking.easyappointments import EasyAppointmentsAdapter
 from .booking.demo_stay import DemoStayAdapter
 from .booking.tools import Dispatcher
-from . import callslog
+from . import callslog, call_history
 from .providers.voice_config import STT_LANGUAGE, VoiceConfig
 from .telephone import (
     CallTools,
     FALLBACK,
     GREETING,
+    UNVERIFIED_REPLY,
     sdk_tools,
     validate_environment,
 )
@@ -60,6 +61,13 @@ class TelephoneAgent(Agent):
             new_message.text_content if new_message.role == "user" else "",
             is_final=True,
         )
+        if self.state.history_enabled and new_message.role == "user":
+            status = (
+                "recognized"
+                if (new_message.text_content or "").strip()
+                else "no_speech"
+            )
+            callslog.history_safe(call_history.record_input, self.state.call_id, status)
 
     async def checked_reply(self, text):
         # No partial sentence or invented price is spoken before validation.
@@ -88,15 +96,33 @@ class TelephoneAgent(Agent):
         failed_speech, self._fallback_speech = self._fallback_speech, None
         if failed_reply is not None and (
             (failed_speech is not None and failed_speech is self._current_speech())
-            or (failed_speech is None and getattr(event.item, "text_content", None) == failed_reply)
+            or (
+                failed_speech is None
+                and getattr(event.item, "text_content", None) == failed_reply
+            )
         ):
             # The SDK stores this same message in agent/session history before
             # emitting the event. Cached apology PCM must have matching history.
-            event.item.content = [FALLBACK]
+            event.item.content = (
+                [] if getattr(event.item, "interrupted", False) else [FALLBACK]
+            )
+        if self.state.history_enabled:
+            outcome = (
+                "fallback"
+                if event.item.text_content == UNVERIFIED_REPLY
+                else self.state.outcome
+            )
+            callslog.history_safe(
+                call_history.record_result, self.state.call_id, outcome
+            )
         generated, self._generated_recap = self._generated_recap, None
         if getattr(event.item, "interrupted", False):
             self.state.invalidate_recap()
             logging.getLogger("voicebot.telephone").info("speech_interrupted")
+            if self.state.history_enabled:
+                callslog.history_safe(
+                    call_history.activity, self.state.call_id, "interrupted"
+                )
         elif generated and self.state.pending is generated[0]:
             if getattr(event.item, "text_content", None) == generated[1]:
                 self.state.mark_recap_delivered(generated[0]["hold_id"])
@@ -144,6 +170,10 @@ class TelephoneAgent(Agent):
             log_failure("tts_fallback", error)
             self._fallback_reply = reply or FALLBACK
             self._fallback_speech = speech
+            if self.state.history_enabled:
+                callslog.history_safe(
+                    call_history.provider_error, self.state.call_id, "tts_error"
+                )
             async for frame in fallback_audio():
                 yield frame
         finally:
@@ -155,8 +185,14 @@ class TelephoneAgent(Agent):
 def log_failure(stage, error):
     """Closed diagnostic fields only; provider bodies never enter worker logs."""
     if stage not in {
-        "configuration", "providers", "session_start", "media_connect",
-        "participant_wait", "greeting", "call_runtime", "tts_fallback",
+        "configuration",
+        "providers",
+        "session_start",
+        "media_connect",
+        "participant_wait",
+        "greeting",
+        "call_runtime",
+        "tts_fallback",
     }:
         stage = "call_runtime"
     status = getattr(error, "status_code", 0)
@@ -281,6 +317,14 @@ def log_call_summary(state, *, failed=False):
         )
     except Exception:
         logging.getLogger("voicebot.telephone").warning("call_summary_unavailable")
+    if getattr(state, "history_enabled", False):
+        callslog.history_safe(
+            call_history.record_result,
+            state.call_id,
+            outcome,
+            changes=getattr(state, "booking_receipts", ()),
+        )
+        callslog.history_safe(call_history.end, state.call_id, outcome)
 
 
 async def cleanup_call(ctx, session, adapter, *, state=None, failed=False):
@@ -358,6 +402,10 @@ async def publish_interruption(room, interrupted):
 
 def on_user_state(session, event, *, state=None, room=None, pending_tasks=None):
     if event.new_state == "speaking":
+        if state is not None and getattr(state, "history_enabled", False):
+            callslog.history_safe(
+                call_history.activity, state.call_id, "speech_started"
+            )
         # Stop queued speech on the VAD state edge, not only after batch STT.
         speech = getattr(session, "current_speech", None)
         interrupted = session.interrupt()
@@ -382,6 +430,12 @@ def on_user_state(session, event, *, state=None, room=None, pending_tasks=None):
 def on_provider_error(failed, event, *, state=None):
     if state is not None:
         state.invalidate_recap()
+        if getattr(state, "history_enabled", False):
+            callslog.history_safe(
+                call_history.provider_error,
+                state.call_id,
+                getattr(event.error, "type", "unknown"),
+            )
     if event.error.recoverable:
         return
     kind = getattr(event.error, "type", "unknown")
@@ -429,12 +483,19 @@ async def entrypoint(ctx: JobContext):
             allow_writes=True,
         )
         stay = None
-        if os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES")) == "1":
+        if (
+            os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
+            == "1"
+        ):
             stay = DemoStayAdapter(
                 os.environ.get("STAY_STATE_DB")
-                or os.path.join(os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db")
+                or os.path.join(
+                    os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db"
+                )
             )
         state = CallTools(Dispatcher(slot=adapter, stay=stay))
+        callslog.history_safe(call_history.start, state.call_id, "telephone")
+        state.history_enabled = True
         stage = "providers"
         chat_options = config.chat_options()
         # The Groq plugin does not expose include_reasoning. It forwards only
@@ -495,7 +556,9 @@ async def entrypoint(ctx: JobContext):
         stage = "media_connect"
         await asyncio.wait_for(ctx.connect(), timeout=10)
         await asyncio.wait_for(
-            ctx.room.local_participant.set_attributes({"voicebot.call_id": state.call_id}),
+            ctx.room.local_participant.set_attributes(
+                {"voicebot.call_id": state.call_id}
+            ),
             timeout=5,
         )
         stage = "participant_wait"
@@ -505,6 +568,7 @@ async def entrypoint(ctx: JobContext):
         if inspect.isawaitable(greeting):
             await asyncio.wait_for(greeting, timeout=20)
         stage = "call_runtime"
+        callslog.history_safe(call_history.activity, state.call_id, "greeting")
         tasks = [asyncio.create_task(closed.wait()), asyncio.create_task(failed.wait())]
         try:
             done, _ = await asyncio.wait(

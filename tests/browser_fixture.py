@@ -26,7 +26,7 @@ _storage = tempfile.TemporaryDirectory(prefix="voicebot-browser-")
 
 
 class FixtureSpeech:
-    def transcribe(self, audio):
+    def transcribe(self, audio, *, language="et"):
         return "Tere!"
 
     def synthesize(self, text):

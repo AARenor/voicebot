@@ -42,6 +42,7 @@ def test_dashboard_assets_use_content_versioned_urls() -> None:
         assert {urlsplit(url).path for url in urls} == {
             "/dashboard.css",
             "/dashboard.js",
+            "/call-history.js",
         }
         for url in urls:
             parts = urlsplit(url)
@@ -109,6 +110,7 @@ def test_auth_headers_logout_late_response_and_signed_out_poll() -> None:
             str(ROOT / "tests/dashboard_ui_checks.cjs"),
             str(SCRIPT),
             str(SCRIPT.with_name("index.html")),
+            str(SCRIPT.with_name("call-history.js")),
         ],
         capture_output=True,
         text=True,

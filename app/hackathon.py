@@ -16,6 +16,7 @@ from datetime import date, datetime
 from fastapi import HTTPException
 
 from .telephone import GREETING, CallTools
+from . import call_history, callslog
 
 SESSION_TTL = 600
 MAX_SESSIONS = 16
@@ -49,12 +50,18 @@ class DemoSessions:
         now = time.monotonic()
         for key, session in list(self.sessions.items()):
             if now >= session.expires_at and not session.busy:
-                self._remove(key)
+                self._remove(key, expired=True)
 
-    def _remove(self, key):
+    def _remove(self, key, *, expired=False, interrupted=False):
         session = self.sessions.pop(key)
         if session.expiry is not None:
             session.expiry.cancel()
+        callslog.history_safe(
+            call_history.end,
+            session.tools.call_id,
+            "expired" if expired else "interrupted" if interrupted else "completed",
+            expired=expired,
+        )
 
     def _expire(self, key):
         with self.lock:
@@ -67,7 +74,7 @@ class DemoSessions:
                     5, self._expire, key
                 )
             else:
-                self._remove(key)
+                self._remove(key, expired=True)
 
     def create(self, dispatcher, owner):
         with self.lock:
@@ -84,11 +91,13 @@ class DemoSessions:
             except Exception:
                 raise HTTPException(503, "demo_profile_unavailable") from None
             self.sessions[key] = session
+            callslog.history_safe(call_history.start, session.tools.call_id, "browser")
             session.expiry = asyncio.get_running_loop().call_later(
                 SESSION_TTL, self._expire, key
             )
             return {
                 "session_id": key,
+                "call_id": session.tools.call_id,
                 "greeting": GREETING,
                 "synthetic": True,
                 "transport": "http_not_telephone",
@@ -112,9 +121,12 @@ class DemoSessions:
             if session.busy:
                 raise HTTPException(409, "demo_session_busy")
             if time.monotonic() >= session.expires_at:
-                self._remove(key)
+                self._remove(key, expired=True)
                 raise HTTPException(410, "demo_session_expired")
             if session.turn_count >= MAX_TURNS:
+                callslog.history_safe(
+                    call_history.end, session.tools.call_id, "expired", expired=True
+                )
                 raise HTTPException(410, "demo_session_expired")
             session.busy = True
             session.turn_count += 1
@@ -136,7 +148,7 @@ class DemoSessions:
     def clear(self):
         with self.lock:
             for key in list(self.sessions):
-                self._remove(key)
+                self._remove(key, interrupted=True)
 
 
 async def read_turn_body(request):
@@ -392,22 +404,23 @@ class _SafeSpeaker:
 
 
 async def run_demo_turn(session, stack, audio, text, language):
-    from .turn import MAX_HISTORY_TURNS, run_turn
+    from .turn import MAX_HISTORY_TURNS, recognize_audio, run_turn
 
     started = time.perf_counter()
     stt_started = started
-    stt_failed = False
+    recognition_status = "typed"
     if audio:
-        try:
-            text = await asyncio.to_thread(stack["stt"].transcribe, audio)
-        except Exception:
-            text, stt_failed = "", True
+        text, recognition_status = await recognize_audio(stack["stt"], audio, language)
+    stt_failed = recognition_status == "stt_unavailable"
     stt_ms = (time.perf_counter() - stt_started) * 1000 if audio else 0.0
     if not isinstance(text, str) or len(text) > 500:
         session.tools.observe_user_text("", is_final=True)
         raise HTTPException(413, "transcript_too_large")
     # The server observes the final transcript before any LLM-generated tool call.
     session.tools.observe_user_text(text, is_final=True)
+    callslog.history_safe(
+        call_history.record_input, session.tools.call_id, recognition_status, language
+    )
     tools = _TurnTools(session)
     speaker = _SafeSpeaker(stack["tts"], tools)
     primary = _TrustedLlm(stack["llm_primary"], session)
@@ -426,6 +439,7 @@ async def run_demo_turn(session, stack, audio, text, language):
         text=text,
         language=language,
         history=session.history,
+        recognition_status=recognition_status,
     )
     result["reply"] = (
         speaker.reply
@@ -433,7 +447,7 @@ async def run_demo_turn(session, stack, audio, text, language):
         else speaker.normalize(result["reply"])
     )
     result["tts_failed"] = not bool(result["audio"])
-    result["fallback_used"] = result.get("fallback_used", False) or stt_failed
+    result["fallback_used"] = result.get("fallback_used", False)
     if result["tts_failed"] or result["fallback_used"]:
         session.tools.pending = None
     elif speaker.recap_id and result_outcome(result) not in (
@@ -445,6 +459,13 @@ async def run_demo_turn(session, stack, audio, text, language):
     # failed model follow-up. Native execution truth still owns the outcome.
     result["tool_results"] = [{"result": value} for value in tools.results]
     result["mutation_uncertain"] = session.tools.mutation_uncertain
+    callslog.history_safe(
+        call_history.record_result,
+        session.tools.call_id,
+        result_outcome(result),
+        tts_failed=result["tts_failed"],
+        changes=tools.changes,
+    )
     session.history = (
         session.history
         + [
@@ -459,9 +480,11 @@ async def run_demo_turn(session, stack, audio, text, language):
         warnings.append(
             {
                 "stage": "llm",
-                "code": "reply_provider_unavailable"
-                if secondary is None or secondary.failed
-                else "reply_provider_fallback",
+                "code": (
+                    "reply_provider_unavailable"
+                    if secondary is None or secondary.failed
+                    else "reply_provider_fallback"
+                ),
             }
         )
     if result["tts_failed"]:
@@ -483,6 +506,7 @@ async def run_demo_turn(session, stack, audio, text, language):
         "tools_used": len(result["tool_results"]),
         "fallback_used": result["fallback_used"],
         "tts_failed": result["tts_failed"],
+        "input_status": result.get("input_status", recognition_status),
         "outcome": result_outcome(result),
         "turn_count": session.turn_count,
         "expires_in_s": max(0, int(session.expires_at - time.monotonic())),

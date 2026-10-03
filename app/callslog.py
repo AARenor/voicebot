@@ -12,9 +12,11 @@ parent dirs made as needed.
 from __future__ import annotations
 
 import os
+import logging
 import sqlite3
-import threading
 import time
+
+from . import call_history
 
 SCHEMA = (
     "CREATE TABLE IF NOT EXISTS calls ("
@@ -47,7 +49,7 @@ DEMO_ROWS = [
     ),
 ]
 
-_LOCK = threading.RLock()
+_LOCK = call_history.DB_LOCK
 _default: sqlite3.Connection | None = None
 
 
@@ -76,6 +78,7 @@ def open_log(path: str = ":memory:") -> sqlite3.Connection:
     else:
         db = sqlite3.connect(path, check_same_thread=False)
     with _LOCK:
+        db.execute("PRAGMA foreign_keys=ON")
         db.execute(SCHEMA)
         try:
             db.execute(
@@ -84,6 +87,7 @@ def open_log(path: str = ":memory:") -> sqlite3.Connection:
         except sqlite3.OperationalError as exc:
             if "duplicate column" not in str(exc).lower():
                 raise  # real error (e.g. locked), not a rerun migration
+        call_history.migrate(db)
         prune(db)
         db.commit()
     return db
@@ -99,6 +103,12 @@ def prune(db: sqlite3.Connection, retention_days: int = 30) -> int:
         "%Y-%m-%d %H:%M", time.localtime(time.time() - retention_days * 86400)
     )
     with _LOCK:
+        from datetime import datetime, timezone
+
+        history_cutoff = datetime.fromtimestamp(
+            time.time() - retention_days * 86400, timezone.utc
+        ).isoformat(timespec="seconds")
+        call_history.prune(db, history_cutoff)
         cursor = db.execute("DELETE FROM calls WHERE at < ?", (cutoff,))
         db.commit()
         return cursor.rowcount
@@ -170,6 +180,14 @@ def get_default() -> sqlite3.Connection:
             if _default is None:
                 _default = open_log(os.environ.get("CALLS_DB", ":memory:"))
     return _default
+
+
+def history_safe(operation, *args, **kwargs) -> None:
+    """History failure never interrupts speech or an authoritative booking."""
+    try:
+        operation(get_default(), *args, **kwargs)
+    except Exception:
+        logging.getLogger("voicebot.telephone").warning("call_history_unavailable")
 
 
 def reset_default() -> None:

@@ -29,6 +29,36 @@ REPEAT_PROMPT = {
     "ru": "Извините, не расслышал. Повторите, пожалуйста?",
 }
 
+STT_UNAVAILABLE = {
+    "et": (
+        "Kõnetuvastus ei ole praegu saadaval. "
+        "Palun proovige mõne hetke pärast uuesti."
+    ),
+    "en": "Speech recognition is unavailable. Please try again in a moment.",
+    "ru": "Распознавание речи недоступно. Попробуйте чуть позже.",
+}
+
+TURN_UNAVAILABLE = {
+    "et": "Vabandust, teenus ei ole praegu saadaval. Palun proovige hiljem uuesti.",
+    "en": "The assistant is unavailable. Please try again in a moment.",
+    "ru": "Помощник сейчас недоступен. Попробуйте чуть позже.",
+}
+
+
+async def recognize_audio(stt, audio: bytes, language: str) -> tuple[str, str]:
+    """Return final text and a closed diagnostic code, never provider details."""
+    if not audio:
+        return "", "no_speech"
+    lang = language if language in ("et", "en", "ru") else "et"
+    try:
+        text = await asyncio.to_thread(stt.transcribe, audio, language=lang)
+        if not isinstance(text, str):
+            return "", "stt_unavailable"
+    except Exception:
+        return "", "stt_unavailable"
+    return text, "recognized" if text.strip() else "no_speech"
+
+
 FILLER = {
     "et": "Üks hetk, kontrollin...",
     "en": "One moment, checking...",
@@ -133,6 +163,7 @@ async def run_turn(
     language: str = "et",
     history: list | None = None,
     text: str | None = None,
+    recognition_status: str | None = None,
 ) -> dict:
     """Execute one voice turn. Returns heard/reply/audio/tool_results.
 
@@ -149,20 +180,19 @@ async def run_turn(
                 "audio": await _speak(tts, prompt),
                 "tool_results": [],
                 "fallback_used": False,
+                "input_status": "no_speech",
             }
-        try:
-            text = await asyncio.to_thread(stt.transcribe, audio)
-        except ProviderError:
-            # Any STT failure (retryable or bad-payload/4xx) degrades to the
-            # repeat prompt — the caller always hears something.
-            prompt = REPEAT_PROMPT.get(lang, REPEAT_PROMPT["et"])
-            return {
-                "text_heard": "",
-                "reply": prompt,
-                "audio": await _speak(tts, prompt),
-                "tool_results": [],
-                "fallback_used": True,
-            }
+        text, recognition_status = await recognize_audio(stt, audio, lang)
+    if recognition_status == "stt_unavailable":
+        prompt = STT_UNAVAILABLE[lang]
+        return {
+            "text_heard": "",
+            "reply": prompt,
+            "audio": await _speak(tts, prompt),
+            "tool_results": [],
+            "fallback_used": True,
+            "input_status": "stt_unavailable",
+        }
     if not (text or "").strip():
         prompt = REPEAT_PROMPT.get(lang, REPEAT_PROMPT["et"])
         return {
@@ -171,10 +201,11 @@ async def run_turn(
             "audio": await _speak(tts, prompt),
             "tool_results": [],
             "fallback_used": False,
+            "input_status": "no_speech",
         }
 
     try:
-        return await _run_dialogue(
+        result = await _run_dialogue(
             text,
             lang,
             messages=sanitize_history(history) + [{"role": "user", "content": text}],
@@ -184,16 +215,19 @@ async def run_turn(
             dispatcher=dispatcher,
             llm_secondary=llm_secondary,
         )
+        result["input_status"] = recognition_status or "typed"
+        return result
     except Exception:
         # Last resort: programming bugs still produce a handoff, never a
         # dropped call. (PII-free static text.)
-        handoff = PRICE_HANDOFF.get(lang, PRICE_HANDOFF["et"])
+        handoff = TURN_UNAVAILABLE[lang]
         return {
             "text_heard": text if isinstance(text, str) else "",
             "reply": handoff,
             "audio": await _speak(tts, handoff),
             "tool_results": [],
             "fallback_used": True,
+            "input_status": recognition_status or "typed",
         }
 
 
@@ -239,9 +273,11 @@ async def _run_dialogue(
             except Exception as exc:  # noqa: BLE001 - errors become results
                 result = {
                     "ok": False,
-                    "error": f"{type(exc).__name__}: {exc}"
-                    if not isinstance(exc, ProviderError)
-                    else str(exc),
+                    "error": (
+                        f"{type(exc).__name__}: {exc}"
+                        if not isinstance(exc, ProviderError)
+                        else str(exc)
+                    ),
                 }
             round_results.append({"id": call_id, "result": result})
         tool_results.extend(round_results)

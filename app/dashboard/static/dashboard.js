@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, turnBusy:false, audioUrl:null, mic:null};
+const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, mic:null, micStarting:false};
 const bookingUi = {kind:"slot", sessionId:null, busy:false, uncertain:false, holdId:null, acknowledged:false, selected:null, confirmed:null, services:[], providers:[], roomTypes:[], roomPresetApplied:false, stays:[], staysFetched:false, staysBusy:false, epoch:0};
 // Retire the old sessionStorage stopgap; never persist a new credential.
 try { sessionStorage.removeItem("voicebot.operatorToken"); localStorage.removeItem("voicebot.operatorToken"); } catch (_) {}
@@ -17,7 +17,7 @@ if (!$("booking-date").value) $("booking-date").value = tallinnDay();
 const initialPage = Number(query.get("page"));
 state.page = Number.isInteger(initialPage) && initialPage >= 1 && initialPage <= 100 ? initialPage : 1;
 
-function status(id, text, kind="") { $(id).textContent = text; $(id).className = "status " + (id === "booking-status" ? "booking-status " : "") + kind; }
+function status(id, text, kind="") { $(id).textContent = text; const component=id === "booking-status" ? "booking-status " : id === "history-status" ? "history-status " : ""; $(id).className = "status " + component + kind; }
 function presentation() {
   $("connection-label").textContent = state.connected ? "Operaator ühendatud" : state.credential ? "Ühendan…" : "Ühendamata";
   $("connection-badge").className = "connection-badge" + (state.connected ? " connected" : "");
@@ -42,6 +42,7 @@ function presentation() {
   $("overview-slots").textContent = state.fetchedAt ? String(state.bookings.length) : "—";
   $("overview-stays").textContent = bookingUi.staysFetched ? String(bookingUi.stays.length) : "—";
   $("new-booking-section").setAttribute("aria-busy", String(bookingUi.busy));
+  $("mic-feedback").hidden=!state.mic;
 }
 function stopAudio() {
   $("demo-audio").pause(); $("demo-audio").removeAttribute("src"); $("demo-audio").load(); $("demo-audio").hidden = true;
@@ -65,18 +66,22 @@ function controls() {
   $("refresh").disabled = !state.connected || state.readBusy;
   $("demo-start").disabled = !state.connected || !!state.sessionId || state.turnBusy;
   $("demo-end").disabled = !state.sessionId || state.turnBusy;
-  for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy;
+  for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy || (id !== "demo-mic" && state.micStarting);
+  $("demo-mic").disabled ||= state.micStarting;
+  $("demo-history").hidden=!state.callId;
+  $("demo-history").disabled=!state.connected;
   $("booking-prev").disabled = !state.connected || state.readBusy || state.page <= 1;
   $("booking-next").disabled = !state.connected || state.readBusy || !state.hasMore || state.page >= 100;
   bookingControls();
   for (const button of document.querySelectorAll?.(".example-button") || []) button.disabled = !state.sessionId || state.turnBusy;
   presentation();
+  historyControls();
 }
 function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata.", kind="") {
   state.generation++;
   state.controllers.forEach(controller => controller.abort()); state.controllers.clear();
   stopMic(); stopAudio();
-  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, bookingError:false, retryAt:0, failures:0, highlightId:null, sessionId:null, turnBusy:false});
+  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, bookingError:false, retryAt:0, failures:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, micStarting:false});
   resetBookingUi();
   $("token").value = ""; $("demo-text").value = "";
   $("demo-warning").hidden=true; $("demo-warning").textContent=""; $("demo-timings").hidden=true; $("demo-timings").textContent="";
@@ -88,6 +93,7 @@ function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata
   status("catalogue-status", "Ühenda teenuste vaatamiseks.");
   status("calls-status", "Ühenda päeviku vaatamiseks.");
   status("demo-status", "Ühenda esmalt. Vestlus aegub 10 minutiga.");
+  resetHistory();
   controls();
 }
 async function api(path, opts={}) {
@@ -133,7 +139,7 @@ async function connect() {
     renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus.");
     status("new-booking-status",bookingUi.kind==="slot"?"Vali teenus ja kuupäev. Vabad ajad tulevad broneerimissüsteemist.":"Vali peatumise kuupäevad ja kontrolli demotubade saadavust.");
     status("demo-status", "Alusta demovestlust. Vestlus aegub 10 minutiga."); controls();
-    await Promise.allSettled([loadBookings(true), loadCatalogue(), loadRooms(), loadStays(), loadStatus()]);
+    await Promise.allSettled([loadBookings(true), loadCatalogue(), loadRooms(), loadHistory(), loadStays(), loadStatus()]);
   } catch (error) {
     if (error.name !== "AbortError") logout(error.message, "error");
   }
@@ -176,13 +182,13 @@ async function loadBookings(force=false) {
     const data = await api("/api/bookings?" + params);
     if (generation !== state.generation || !state.connected || view !== state.view) return;
     Object.assign(state, {bookings:data.items || [], fetchedAt:data.fetched_at, hasMore:data.has_more === "unknown", failures:0, retryAt:0});
-    renderBookings(); status("booking-status", `Taustsüsteemist kontrollitud. Viimane edukas laadimine: ${data.fetched_at}`);
+    renderBookings(); status("booking-status", `Taustsüsteemist kontrollitud. Uuendatud ${historyTime(data.fetched_at)}.`);
   } catch (error) {
     if (error.name === "AbortError" || generation !== state.generation || view !== state.view) return;
     state.hasMore = false;
     state.bookingError = true;
     state.retryAt = Date.now() + Math.min(120000, 30000 * 2 ** state.failures++);
-    status("booking-status", (state.fetchedAt ? `Aegunud andmed. Viimane edukas laadimine: ${state.fetchedAt}. ` : "Broneeringuid ei õnnestunud kontrollida. ") + error.message, state.fetchedAt ? "stale" : "error");
+    status("booking-status", (state.fetchedAt ? `Aegunud andmed. Viimane laadimine: ${historyTime(state.fetchedAt)}. ` : "Broneeringuid ei õnnestunud kontrollida. ") + error.message, state.fetchedAt ? "stale" : "error");
     $("booking-empty").hidden = true;
   } finally {
     if (generation === state.generation) { state.readBusy=false; controls(); if (view !== state.view) await loadBookings(true); }
@@ -218,17 +224,22 @@ function renderCalls(calls) {
   }
   status("calls-status", calls.length ? "Toimingute tehnilised tulemused. Näidiskirjed on eraldi märgitud." : "Toiminguid pole.");
 }
-async function loadCalls() { if (state.connected) { const generation=state.generation; try { const data=await api("/api/calls"); if(generation!==state.generation || !state.connected) return; renderCalls(data.calls || []); } catch(error) { if(error.name!=="AbortError" && state.connected) status("calls-status", "Päevik on aegunud. " + error.message, "stale"); } } }
+async function loadLegacyCalls() { if (state.connected) { const generation=state.generation; try { const data=await api("/api/calls"); if(generation!==state.generation || !state.connected) return; renderCalls(data.calls || []); } catch(error) { if(error.name!=="AbortError" && state.connected) status("calls-status", "Päevik on aegunud. " + error.message, "stale"); } } }
+async function loadCalls() { await Promise.allSettled([loadLegacyCalls(),loadHistory()]); }
 async function loadStatus(path="/api/status") {
   try {
     const data=await api(path), cap=data.capabilities || {}, telephone=data.telephone || {};
+    for (const [id,configured] of [["stack-stt",data.wired?.stt],["stack-llm",data.wired?.llm_primary],["stack-tts",data.wired?.tts],["stack-booking",cap.booking_read_ready]]) {
+      $(id).textContent=configured === true ? "Seadistatud" : configured === false ? "Seadistus puudub" : "Kontrollimata";
+      $(id).className=configured === true ? "configured" : configured === false ? "unconfigured" : "";
+    }
     $("livekit").textContent = telephone.media_credentials_configured ? "Meedia: seadistus olemas, ühendus pole siin kontrollitud" : "Meedia: seadistamata";
     $("telephone").textContent = telephone.public_ingress_verified && telephone.carrier_call_verified ? "Telefonikõne: tõendatud" : "Telefonikõne: kinnitamata";
     $("mode").textContent = cap.text_turn_ready ? "HTTP kõneproov: kõnepakkujad seadistatud" : "HTTP kõneproov: kõnepakkujad seadistamata";
     $("overview-voice").textContent = cap.text_turn_ready ? "Proovi abilist" : "Seadistamata";
     const models=data.models || {};
     if(models.stt || models.llm || models.tts) $("demo-models").textContent=`Seadistatud: transkriptsioon ${models.stt?.model || "puudub"}; vastused ${models.llm?.model || "puudub"}; hääl ${models.tts?.voice || "puudub"}. Seadistus ei tõenda edukat telefonikõnet.`;
-  } catch (_) { $("mode").textContent="HTTP kõneproov: olek kontrollimata"; $("overview-voice").textContent="Kontrollimata"; }
+  } catch (_) { $("mode").textContent="HTTP kõneproov: olek kontrollimata"; $("overview-voice").textContent="Kontrollimata"; for(const id of ["stack-stt","stack-llm","stack-tts","stack-booking"]) { $(id).textContent="Kontrollimata"; $(id).className=""; } }
 }
 function addMessage(label, text) {
   const item=document.createElement("li"), author=document.createElement("strong"), content=document.createElement("span");
@@ -240,7 +251,7 @@ async function startDemo() {
   if (!state.connected || state.turnBusy || state.sessionId) return;
   state.turnBusy=true; controls();
   const generation=state.generation;
-  try { const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); if(generation!==state.generation || !state.connected) return; state.sessionId=data.session_id; $("demo-messages").replaceChildren(); addMessage("Demoabiline", data.greeting); status("demo-status", "Fiktiivne vestlus alustatud. Saadavus ja kirjutused kontrollitakse taustsüsteemist."); }
+  try { const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); if(generation!==state.generation || !state.connected) return; state.sessionId=data.session_id; state.callId=/^[a-f0-9]{32}$/.test(data.call_id || "") ? data.call_id : null; $("demo-messages").replaceChildren(); addMessage("Demoabiline", data.greeting); status("demo-status", "Fiktiivne vestlus alustatud. Saadavus ja kirjutused kontrollitakse taustsüsteemist."); await loadHistory(); }
   catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", error.message, "error"); }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
 }
@@ -251,12 +262,14 @@ async function sendTurn(input) {
   try {
     const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, language:"et", ...input})});
     if(generation!==state.generation || !state.connected) return;
-    addMessage("Sina", data.text_heard || "Heli ei tuvastatud"); addMessage("Demoabiline", data.reply);
+    addMessage("Sina", data.text_heard || (data.input_status === "stt_unavailable" ? "Kõnetuvastus ei olnud saadaval" : "Kõnet ei tuvastatud")); addMessage("Demoabiline", data.reply);
     renderTurnDiagnostics(data);
     $("demo-text").value="";
     const completedWrite=(data.booking_changes || []).some(change=>["confirmed","cancelled"].includes(change.action));
     const outcome={ok:"Vastus valmis.", tools_ok:"Taustsüsteemi tööriistad vastasid.", tools_failed:completedWrite?"Muu päring ebaõnnestus. Vaata vastust ja kontrolli taustsüsteemi.":"Mõni toiming ebaõnnestus — edu ei ole kinnitatud.", unknown_outcome:"Kirjutuse tulemus on ebaselge. Ära korda broneerimist; kontrolli taustsüsteemi.", fallback:"Kasutati varuvastust.", tts_failed:"Kõnesüntees ebaõnnestus; tekst on alles."};
     status("demo-status", (outcome[data.outcome] || "Vastus valmis.") + (data.tts_failed ? " Heli pole saadaval; loe vastust tekstina." : "") + ` Voor ${data.turn_count || 1}; vestlus aegub ${data.expires_in_s || 0} s pärast.`, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
+    if (data.input_status === "stt_unavailable") status("demo-status", "Kõnetuvastuse teenus ebaõnnestus. Proovi hetke pärast uuesti või kirjuta sõnum. Kõneajalugu sisaldab vea olekut.","error");
+    else if (data.input_status === "no_speech") status("demo-status", "Kõnet ei tuvastatud. Kontrolli mikrofoni helitaset ja räägi pärast mikrofoni avanemist.","stale");
     if (data.audio_b64) {
       const bytes=Uint8Array.from(atob(data.audio_b64), c=>c.charCodeAt(0));
       state.audioUrl=URL.createObjectURL(new Blob([bytes], {type:data.audio_type === "audio/wav" ? "audio/wav" : "audio/mpeg"}));
@@ -274,31 +287,60 @@ async function endDemo() {
   if(!state.sessionId || state.turnBusy) return;
   stopMic(); stopAudio();
   const id=state.sessionId, generation=state.generation; state.turnBusy=true; controls();
-  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", "Vestlus lõpetatud. Broneeringuid see automaatselt ei tühista."); }
+  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", "Vestlus lõpetatud. Broneeringuid see automaatselt ei tühista."); await loadHistory(); }
   catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", error.message,"error"); }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
 }
-function wav(mic) {
-  const count=mic.chunks.reduce((sum,c)=>sum+c.length,0), input=new Float32Array(count); let at=0;
-  for(const chunk of mic.chunks) { input.set(chunk,at); at+=chunk.length; }
-  const rate=16000, frames=Math.min(240000, Math.floor(count*rate/mic.context.sampleRate)), buffer=new ArrayBuffer(44+frames*2), view=new DataView(buffer);
+function encodeWav(input, rate=16000) {
+  const frames=Math.min(240000,input.length), buffer=new ArrayBuffer(44+frames*2), view=new DataView(buffer);
   const text=(offset,s)=>{for(let i=0;i<s.length;i++)view.setUint8(offset+i,s.charCodeAt(i));};
   text(0,"RIFF"); view.setUint32(4,36+frames*2,true); text(8,"WAVE"); text(12,"fmt "); view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true); view.setUint32(24,rate,true); view.setUint32(28,rate*2,true); view.setUint16(32,2,true); view.setUint16(34,16,true); text(36,"data"); view.setUint32(40,frames*2,true);
-  for(let i=0;i<frames;i++) { const sample=Math.max(-1,Math.min(1,input[Math.floor(i*mic.context.sampleRate/rate)] || 0)); view.setInt16(44+i*2,sample<0?sample*32768:sample*32767,true); }
+  for(let i=0;i<frames;i++) { const sample=Math.max(-1,Math.min(1,input[i] || 0)); view.setInt16(44+i*2,sample<0?sample*32768:sample*32767,true); }
   const bytes=new Uint8Array(buffer); let binary=""; for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192)); return btoa(binary);
 }
+async function wav(mic) {
+  const count=mic.chunks.reduce((sum,c)=>sum+c.length,0), input=new Float32Array(count); let at=0;
+  for(const chunk of mic.chunks) { input.set(chunk,at); at+=chunk.length; }
+  if (mic.context.sampleRate === 16000) return encodeWav(input);
+  // Let the browser resample with its audio filter; dropping every third
+  // sample aliases higher frequencies into the speech band at 48 kHz.
+  const frames=Math.min(240000, Math.floor(count*16000/mic.context.sampleRate));
+  if (!frames) throw new Error("Mikrofonist ei saabunud heli. Proovi uuesti.");
+  const Offline=window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const offline=new Offline(1,frames,16000), buffer=offline.createBuffer(1,count,mic.context.sampleRate);
+  buffer.copyToChannel(input,0);
+  const source=offline.createBufferSource(); source.buffer=buffer; source.connect(offline.destination); source.start();
+  const rendered=await offline.startRendering(); return encodeWav(rendered.getChannelData(0));
+}
 async function toggleMic() {
-  if(state.mic) { const mic=stopMic(); await sendTurn({audio_b64:wav(mic)}); return; }
-  if(!state.sessionId || state.turnBusy) return;
+  if(state.mic) {
+    const mic=stopMic(), generation=state.generation, session=state.sessionId;
+    if (!mic.frames || mic.peak < 0.00001) { status("demo-status", "Mikrofonist ei saabunud helisignaali. Kontrolli valitud mikrofoni ja proovi uuesti.","error"); return; }
+    state.micStarting=true; controls();
+    try { const audio=await wav(mic); if(generation===state.generation && session===state.sessionId && state.connected) await sendTurn({audio_b64:audio}); }
+    catch(error) { if(generation===state.generation) status("demo-status", "Heliproovi ei saanud ette valmistada. " + error.message,"error"); }
+    finally { if(generation===state.generation) { state.micStarting=false; controls(); } }
+    return;
+  }
+  if(!state.sessionId || state.turnBusy || state.micStarting) return;
   const generation=state.generation, session=state.sessionId;
   let stream=null, context=null;
+  state.micStarting=true; controls(); status("demo-status", "Ootan mikrofoni luba…");
   try {
-    stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     if(generation!==state.generation || session!==state.sessionId || state.mic || state.turnBusy) { stream.getTracks().forEach(track=>track.stop()); return; }
     context=new (window.AudioContext || window.webkitAudioContext)();
     const source=context.createMediaStreamSource(stream), processor=context.createScriptProcessor(4096,1,1), gain=context.createGain(); gain.gain.value=0;
-    const mic={stream,context,source,processor,gain,chunks:[],frames:0}; state.mic=mic;
-    processor.onaudioprocess=event=>{if(state.mic!==mic)return; const chunk=event.inputBuffer.getChannelData(0); const remaining=Math.max(0,Math.floor(context.sampleRate*15)-mic.frames); mic.chunks.push(new Float32Array(chunk.subarray(0,remaining))); mic.frames+=Math.min(chunk.length,remaining); if(!remaining) toggleMic();};
+    const mic={stream,context,source,processor,gain,chunks:[],frames:0,peak:0}; state.mic=mic;
+    processor.onaudioprocess=event=>{
+      if(state.mic!==mic)return;
+      const chunk=event.inputBuffer.getChannelData(0), remaining=Math.max(0,Math.floor(context.sampleRate*15)-mic.frames), kept=chunk.subarray(0,remaining);
+      mic.chunks.push(new Float32Array(kept)); mic.frames+=kept.length;
+      let energy=0; for(const sample of kept) { energy+=sample*sample; mic.peak=Math.max(mic.peak,Math.abs(sample)); }
+      const level=Math.min(1,Math.sqrt(energy/Math.max(1,kept.length))*5); $("mic-level").value=level;
+      $("mic-feedback-text").textContent=`${Math.floor(mic.frames/context.sampleRate)} / 15 s. ` + (level < .005 ? "Heli on vaikne. Kontrolli, kas valitud on õige mikrofon." : "Heli jõuab mikrofonist kohale. Lõpetamiseks vajuta uuesti.");
+      if(mic.frames>=Math.floor(context.sampleRate*15)) toggleMic();
+    };
     source.connect(processor); processor.connect(gain); gain.connect(context.destination); await context.resume();
     if(generation!==state.generation || state.mic!==mic) return;
     mic.timer=setTimeout(()=>{if(state.mic===mic)toggleMic();},15000);
@@ -309,6 +351,7 @@ async function toggleMic() {
     else { stream?.getTracks().forEach(track=>track.stop()); context?.close().catch(()=>{}); }
     if(generation===state.generation) status("demo-status", "Mikrofon ei avanenud. Luba brauseris mikrofon või saada tekstsõnum.","error");
   }
+  finally { if(generation===state.generation) { state.micStarting=false; controls(); } }
 }
 async function changeView(page=1, highlightId=null) {
   state.view++; state.page=page; state.highlightId=highlightId; state.bookings=[]; state.fetchedAt=null; state.hasMore=false; state.bookingError=false; renderBookings();
@@ -327,6 +370,7 @@ $("booking-next").addEventListener("click",()=>{if(state.hasMore && state.page<1
 $("demo-start").addEventListener("click",startDemo); $("demo-end").addEventListener("click",endDemo);
 $("demo-form").addEventListener("submit", event=>{event.preventDefault(); const text=$("demo-text").value.trim(); if(text) { stopMic(); sendTurn({text}); }});
 $("demo-mic").addEventListener("click",toggleMic);
+$("demo-history").addEventListener("click",async()=>{const id=state.callId; if(!state.connected || !id)return; location.hash="calls-section"; await loadHistory(); if(state.connected) await selectHistory(id);});
 window.addEventListener?.("pagehide",()=>logout());
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMic(); else poll();});
 // Navigation stays useful without scripts; reflect the current anchor when available.
@@ -343,6 +387,7 @@ updateNavigation();
 $("booking-auth-link").addEventListener("click", event => { event.preventDefault(); $("token").focus(); });
 $("today-label").textContent = new Intl.DateTimeFormat("et-EE", {timeZone:"Europe/Tallinn", day:"numeric", month:"long", year:"numeric"}).format(new Date());
 $("today-label").setAttribute("datetime", tallinnDay());
+initializeHistory();
 controls();
 
 function dayAfter(day, days=1) { return new Date(Date.parse(day+"T12:00:00Z")+days*86400000).toISOString().slice(0,10); }

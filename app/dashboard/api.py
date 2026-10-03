@@ -41,6 +41,62 @@ try:
         has_more: Literal[False, "unknown"]
         items: list[BookingRow]
 
+    class CallBooking(BaseModel):
+        id: str
+        kind: Literal["slot", "stay"] = "slot"
+        action: Literal["confirmed", "cancelled"]
+        date: str
+        start_local: str
+        timezone: Literal["Europe/Tallinn"]
+        checkout: str | None = None
+
+    class CallSession(BaseModel):
+        id: str
+        started_at: str
+        updated_at: str
+        ended_at: str | None
+        channel: Literal["browser", "telephone"]
+        language: str
+        status: Literal["active", "ended", "expired"]
+        outcome: str
+        turns: int
+        recognized_turns: int
+        typed_turns: int
+        empty_turns: int
+        stt_errors: int
+        tts_errors: int
+        provider_errors: int
+        vad_events: int
+        duration_s: int
+        bookings: list[CallBooking]
+        needs_attention: bool
+        data_mode: Literal["synthetic"]
+
+    class CallSummary(BaseModel):
+        total: int
+        active: int
+        with_booking: int
+        needs_attention: int
+
+    class CallHistoryPage(BaseModel):
+        items: list[CallSession]
+        page: int
+        length: int
+        has_more: bool
+        summary: CallSummary
+        fetched_at: str
+        data_mode: Literal["synthetic"]
+
+    class CallEvent(BaseModel):
+        id: int
+        at: str
+        kind: str
+        outcome: str
+
+    class CallHistoryDetail(BaseModel):
+        session: CallSession
+        events: list[CallEvent]
+
     router = APIRouter(prefix="/api")
     _LOCK = threading.Lock()  # demo single-worker guard (see COOLIFY notes)
     _DEMO_MODE = True
@@ -130,6 +186,47 @@ try:
 
         _require_operator(authorization)
         return {"calls": callslog.list_calls(callslog.get_default())}
+
+    @router.get("/call-history", response_model=CallHistoryPage)
+    def call_history(
+        page: str = "1",
+        length: str = "20",
+        channel: str = "all",
+        result: str = "all",
+        authorization: str | None = Header(default=None),
+    ):
+        from .. import call_history, callslog
+
+        _require_operator(authorization)
+        try:
+            if not all(
+                value.isascii() and value.isdecimal() for value in (page, length)
+            ):
+                raise ValueError()
+            return call_history.list_sessions(
+                callslog.get_default(),
+                page=int(page),
+                length=int(length),
+                channel=channel,
+                result=result,
+            )
+        except ValueError:
+            raise HTTPException(400, "call_history_query_invalid") from None
+
+    @router.get("/call-history/{call_id}", response_model=CallHistoryDetail)
+    def call_history_detail(
+        call_id: str, authorization: str | None = Header(default=None)
+    ):
+        from .. import call_history, callslog
+
+        _require_operator(authorization)
+        try:
+            item = call_history.detail(callslog.get_default(), call_id)
+        except ValueError:
+            item = None
+        if item is None:
+            raise HTTPException(404, "call_history_unknown")
+        return item
 
     @router.get("/config")
     def get_config() -> dict:

@@ -108,7 +108,7 @@ async (page) => {
   await page.locator('#demo-mic').click();
   await page.waitForFunction(()=>!!state.mic && state.mic.frames>10000);
   await page.locator('#demo-mic').click();
-  await page.waitForFunction(()=>!state.turnBusy);
+  await page.waitForFunction(()=>!state.micStarting && !state.turnBusy);
   await page.waitForFunction(()=>document.getElementById('demo-audio').readyState===4);
   assert(await page.locator('#demo-messages li').count()===5,'microphone reply missing');
   assert(await page.locator('#demo-audio').evaluate(element=>element.duration>0),'reply audio did not decode');

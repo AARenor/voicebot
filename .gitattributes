@@ -1,0 +1,6 @@
+app/dashboard/static/*.html text eol=lf
+app/dashboard/static/*.css text eol=lf
+app/dashboard/static/*.js text eol=lf
+app/hotel/static/*.html text eol=lf
+app/hotel/static/*.css text eol=lf
+app/hotel/static/*.js text eol=lf
