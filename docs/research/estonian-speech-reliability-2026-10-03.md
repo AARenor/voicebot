@@ -164,6 +164,26 @@ and cancellation used **zero model requests**, with controller totals
 **419.3/340.0 ms**, including TTS. Backend data was completely isolated; no
 real-customer writes occurred. Durable artifact: `live-http-booking-summary.json`.
 
+Before delivery, upstream additionally merged guarded English telephone work
+(`f541da6`). It is preserved rather than reverted: language-aware recognition,
+voice selection, consent and cached English/bilingual PCM coexist with the
+generation-owned history and speech-handle delivery repair. A real SSE
+disconfirming test failed when the original Estonian-only empty-stream seed
+was used for an English call; the language-aware guarded seed passes. Real
+generated/say recap completion and cached apology PCM/history now cover both
+languages. The latest integrated suites supersede the earlier counts:
+**1026 media tests / 4 skipped / 36 subtests**, **822 core tests / 43 skipped /
+36 subtests**. This is compatibility verification, not an independent English
+ASR benchmark or physical English telephone acceptance claim.
+
+The narrow multilingual merge review found one P2: English recaps labelled
+UTC slot starts as Tallinn time, including the wrong day across midnight.
+Public search → hold → prepare → guard regressions reproduced both errors
+before the repair. Timestamp conversion is now shared before the language
+branch; the backend metadata is unchanged. All six Estonian/English date cases
+pass. Prior HIGH/MEDIUM review findings remain closed; the remaining P2
+correction was self-reviewed and followed by the full suites above.
+
 ## Research round 3 — opposing evidence and privacy
 
 Retrieved/corroborated 2026-10-03 through primary-source page fetching and

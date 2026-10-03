@@ -52,7 +52,8 @@ def test_failure_audio_is_microphone_and_source_closes_on_every_path(failure):
 @pytest.mark.parametrize(
     "kind", ["tts_error", "empty_audio", "confirmed", "unknown", "partial"]
 )
-def test_cached_apology_history_matches_actual_audio(kind):
+@pytest.mark.parametrize("language", ["et", "en"])
+def test_cached_apology_history_matches_actual_audio(kind, language):
     from livekit.agents import AgentSession, tts
     from livekit.agents.voice import io
     from app.booking.tools import Dispatcher
@@ -99,7 +100,12 @@ def test_cached_apology_history_matches_actual_audio(kind):
             if kind != "empty_audio":
                 raise RuntimeError("fixture TTS failure")
 
-        agent = w.TelephoneAgent(CallTools(Dispatcher()))
+        agent = w.TelephoneAgent(CallTools(Dispatcher(), language=language))
+        fallback = (
+            "Sorry, the service is unavailable. Please try again later."
+            if language == "en"
+            else FALLBACK
+        )
         if kind == "confirmed":
             agent.state.turn_mutation = "confirmed"
         elif kind == "unknown":
@@ -116,7 +122,7 @@ def test_cached_apology_history_matches_actual_audio(kind):
             try:
                 await asyncio.wait_for(session.say(GREETING), 3)
                 expected = b"".join(
-                    [bytes(frame.data) async for frame in w.fallback_audio()]
+                    [bytes(frame.data) async for frame in w.fallback_audio(language)]
                 )
                 if kind == "partial":
                     expected = b"\x10\x01" * 480 + expected
@@ -128,14 +134,14 @@ def test_cached_apology_history_matches_actual_audio(kind):
                     if getattr(item, "role", None) == "assistant"
                 ]
                 assert len(assistant) == 1
-                assert assistant[0].text_content == FALLBACK
-                assert agent.chat_ctx.items[-1].text_content == FALLBACK
-                assert session.history.items[-1].text_content == FALLBACK
+                assert assistant[0].text_content == fallback
+                assert agent.chat_ctx.items[-1].text_content == fallback
+                assert session.history.items[-1].text_content == fallback
                 assert [
                     item.text_content
                     for item in session.history.items
                     if getattr(item, "role", None) == "assistant"
-                ] == [FALLBACK]
+                ] == [fallback]
             finally:
                 await session.aclose()
 

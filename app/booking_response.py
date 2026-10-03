@@ -1,10 +1,9 @@
 """Booking replies/actions decided by trusted call state, before an LLM call."""
-from .telephone import UNKNOWN_REPLY
 
 
 def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
     if state.mutation_uncertain:
-        return {"content": UNKNOWN_REPLY}
+        return {"content": state.guard_reply("", state.results)}
     if after_tool:
         # Existing guards preserve errors, price truth and actual write state.
         choose_room = bool(state.results and state.results[-1].get("needs_room_type"))

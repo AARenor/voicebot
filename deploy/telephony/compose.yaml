@@ -45,6 +45,9 @@ services:
       AZURE_REGION: ${AZURE_REGION:?required}
       AZURE_VOICE: ${AZURE_VOICE:-et-EE-AnuNeural}
       AZURE_LANG: ${AZURE_LANG:-et-EE}
+      AZURE_EN_VOICE: ${AZURE_EN_VOICE:-en-US-JennyNeural}
+      AZURE_EN_LANG: ${AZURE_EN_LANG:-en-US}
+      VOICEBOT_TELEPHONE_LANGUAGE: ${VOICEBOT_TELEPHONE_LANGUAGE:-auto}
       EASY_BASE_URL: ${EASY_BASE_URL:?required}
       EASY_API_KEY: ${EASY_API_KEY:?required}
       EASY_API_PREFIX: ${EASY_API_PREFIX:-/index.php/api/v1}

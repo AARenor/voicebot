@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from .telephone import GREETING, CallTools
 from .booking_response import trusted_booking_response
+from .providers.azure_tts import AzureTtsClient
 from . import call_history, callslog
 from .providers.errors import PROVIDER_FAILURE_REASONS, ProviderError
 
@@ -361,14 +362,21 @@ class _TrustedLlm:
             question = messages[-1].get("content")
             if isinstance(question, str):
                 question = " ".join(question.strip().rstrip("?!.").casefold().split())
-                if question == "tere":
+                if state.language == "en" and question in {"hello", "hi", "hello there"}:
+                    return {"content": "Hello! How can I help you?"}
+                if state.language == "et" and question == "tere":
                     return {"content": "Tere! Kuidas saan aidata?"}
+                suffix = state.language
                 for entry in state.demo["faq"]:
+                    approved_question = entry.get("question_" + suffix)
+                    approved_answer = entry.get("answer_" + suffix)
+                    if not approved_question or not approved_answer:
+                        continue
                     approved = " ".join(
-                        entry["question_et"].strip().rstrip("?!.").casefold().split()
+                        approved_question.strip().rstrip("?!.").casefold().split()
                     )
                     if question == approved:
-                        return {"content": entry["answer_et"]}
+                        return {"content": approved_answer}
         context = {
             "pending": state.pending,
             "booking_ids": sorted(state.bookings)[-16:],
@@ -472,12 +480,15 @@ async def run_demo_turn(
     ):
         session.tools.mark_recap_delivered(receipt["pending"]["hold_id"])
     # The server observes the final transcript before any LLM-generated tool call.
-    session.tools.observe_user_text(text, is_final=True)
+    session.tools.observe_user_text(text, is_final=True, language=language)
     callslog.history_safe(
         call_history.record_input, session.tools.call_id, recognition_status, language
     )
     tools = _TurnTools(session)
-    speaker = _SafeSpeaker(stack["tts"], tools)
+    provider = stack["tts"]
+    if isinstance(provider, AzureTtsClient):
+        provider = provider.for_language(session.tools.language)
+    speaker = _SafeSpeaker(provider, tools)
     primary = _TrustedLlm(stack["llm_primary"], session)
     secondary = (
         _TrustedLlm(stack["llm_secondary"], session)

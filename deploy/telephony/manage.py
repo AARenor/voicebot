@@ -53,6 +53,9 @@ def environment(source):
         "GROQ_MAX_COMPLETION_TOKENS",
         "AZURE_VOICE",
         "AZURE_LANG",
+        "AZURE_EN_VOICE",
+        "AZURE_EN_LANG",
+        "VOICEBOT_TELEPHONE_LANGUAGE",
         "STAY_STATE_DB",
         "STAY_DEMO_WRITES",
     ):

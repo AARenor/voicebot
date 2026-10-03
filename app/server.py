@@ -31,6 +31,7 @@ def build_stack() -> dict:
     from .providers.azure_tts import AzureTtsClient
     from .providers.gemini import GeminiClient
     from .providers.groq import GroqClient
+    from .providers.voice_config import SpeechConfig
 
     stack: dict = {
         "stt": None,
@@ -50,11 +51,13 @@ def build_stack() -> dict:
         # Text-only secondary: failover answers, never function-calls.
         stack["llm_secondary"] = GeminiClient(os.environ["GEMINI_API_KEY"])
     if os.environ.get("AZURE_SPEECH_KEY") and os.environ.get("AZURE_REGION"):
+        speech = SpeechConfig.from_env()
         stack["tts"] = AzureTtsClient(
             os.environ["AZURE_SPEECH_KEY"],
             os.environ["AZURE_REGION"],
             os.environ.get("AZURE_VOICE", "et-EE-AnuNeural"),
             os.environ.get("AZURE_LANG", "et-EE"),
+            languages={lang: speech.voice_for(lang) for lang in ("et", "en")},
         )
     # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
     if os.environ.get("APALEO_CLIENT_ID") and os.environ.get("APALEO_CLIENT_SECRET"):
@@ -270,9 +273,10 @@ def create_app():
     @app.get("/api/status")
     def status() -> dict:
         stack = app.state.stack
-        from .providers.voice_config import VoiceConfig
+        from .providers.voice_config import SpeechConfig, VoiceConfig
 
         config = getattr(stack.get("llm_primary"), "config", VoiceConfig())
+        speech = SpeechConfig.from_env()
         return {
             "wired": {
                 name: stack[name] is not None
@@ -301,6 +305,9 @@ def create_app():
             },
             "capabilities": app.state.capabilities,
             "telephone": {
+                "language_mode": speech.mode,
+                "supported_languages": ["et", "en"],
+                "english_voice": speech.english_voice,
                 "media_credentials_configured": stack["livekit"] is not None,
                 "worker_health_probe": "separate_private_endpoint",
                 "public_ingress_verified": False,

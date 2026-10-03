@@ -121,7 +121,7 @@ failover retries are disabled, including agent dispatch.
 | --- | --- |
 | `POST /api/twilio/voice` | Fixed HTTPS HMAC signature; URL-encoded body ≤16 KiB, ≤64 fields, each value ≤4096 characters. Every form value participates in signing. Account/To/CallSid must each be unambiguous. Private responses are `no-store`. |
 | WebSocket `/api/twilio/media` | Fixed WSS HMAC before accept; documented slash signing variant accepted. Actual route accepts with/without slash. Query strings and duplicate signature headers rejected. `connected` then `start`, each within 5 seconds. |
-| `GET /api/twilio/unavailable-et.wav` | Generic cached Estonian failure audio only; no credential, identity, or paid synthesis. |
+| `GET /api/twilio/unavailable-et.wav` | Legacy URL for cached Estonian/English failure audio; no credential, identity, or paid synthesis. |
 | `GET /health` | **Private liveness**, 200 with `alive:true` and a `configured` boolean, not a carrier-readiness claim. Missing configuration still gives 503 on voice/media before admission. |
 
 Successful TwiML is `<Response><Connect><Stream

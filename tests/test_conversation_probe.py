@@ -138,3 +138,26 @@ def test_synthetic_caller_uses_kert_while_native_reply_remains_anu():
     ):
         asyncio.run(probe.run(env))
     assert caller.call_args.args[2:4] == ("et-EE-KertNeural", "et-EE")
+
+
+def test_english_probe_uses_explicit_date_time_and_english_commitments():
+    from datetime import date
+    probe = module()
+    phrases = probe.scenario("en", date(2026, 11, 2))
+    assert phrases["voice"] == "en-US-GuyNeural"
+    assert "Monday, 2 November 2026" in phrases["request"]
+    assert "nine in the morning" in phrases["request"]
+    assert phrases["consent"] == "Yes, I confirm."
+    assert phrases["cancel"] == "Please cancel this test booking."
+    assert phrases["recap_marker"] == "Fictional test booking:"
+
+
+def test_english_probe_diagnostics_are_counts_only():
+    probe = module()
+    result = probe.diagnostic_counts(
+        ["PRIVATE caller", "Yes, I confirm.", "Please cancel this test booking."],
+        ["Fictional test booking: PRIVATE", "The request failed."],
+    )
+    assert result["affirmative_observed"] and result["cancellation_observed"]
+    assert result["recap_count"] == result["failed_action_reply_count"] == 1
+    assert "PRIVATE" not in repr(result)

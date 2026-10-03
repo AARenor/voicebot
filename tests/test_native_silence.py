@@ -93,10 +93,11 @@ def chunk(delta=None, finish=None):
         "text",
     ],
 )
-def test_native_sse_empty_recovery_never_executes_truncated_tools(mode):
+@pytest.mark.parametrize("language", ["et", "en"])
+def test_native_sse_empty_recovery_never_executes_truncated_tools(mode, language):
     async def run():
         requests, spoken, errors = [], [], []
-        state = CallTools(Dispatcher())
+        state = CallTools(Dispatcher(), language=language)
         agent = TelephoneAgent(state)
 
         async def handler(request):
@@ -126,7 +127,10 @@ def test_native_sse_empty_recovery_never_executes_truncated_tools(mode):
                     chunk(finish=finish),
                 ]
             elif mode in {"text", "tool_then_text"}:
-                chunks = [chunk({"content": "Tere!"}), chunk(finish="stop")]
+                chunks = [
+                    chunk({"content": "Hello!" if language == "en" else "Tere!"}),
+                    chunk(finish="stop"),
+                ]
             else:
                 chunks = [chunk(finish="length" if mode == "empty_length" else "stop")]
                 if mode == "usage_only":
@@ -177,7 +181,13 @@ def test_native_sse_empty_recovery_never_executes_truncated_tools(mode):
                 await asyncio.wait_for(speech, 3)
                 assert not speech.exception() and not errors
                 assert spoken == [
-                    "Tere!" if mode in {"text", "tool_then_text"} else ASK_DATE_TIME
+                    ("Hello!" if language == "en" else "Tere!")
+                    if mode in {"text", "tool_then_text"}
+                    else (
+                        "What date would you like for your test booking?"
+                        if language == "en"
+                        else ASK_DATE_TIME
+                    )
                 ]
                 assert sink.pcm and any(sink.pcm[0])
                 assert len(requests) == (2 if mode.startswith("tool_then") else 1)
@@ -267,7 +277,10 @@ def test_tool_chunk_is_preserved_without_spurious_question():
 
 
 @pytest.mark.parametrize("generated", [True, False])
-def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(generated):
+@pytest.mark.parametrize("language", ["et", "en"])
+def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(
+    generated, language
+):
     """say and generated speech emit SDK events in different orders."""
 
     async def run():
@@ -323,7 +336,7 @@ def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(gene
             parallel_tool_calls=False,
         )
         backend = LiveSlots()
-        state = CallTools(Dispatcher(slot=backend))
+        state = CallTools(Dispatcher(slot=backend), language=language)
         agent = TelephoneAgent(state)
         session = AgentSession(
             llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"}
@@ -334,10 +347,16 @@ def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(gene
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
             await session.start(agent=agent, record=False)
             try:
-                state.observe_user_text("Soovin testbroneeringut.")
+                request = (
+                    "I would like a test booking."
+                    if language == "en"
+                    else "Soovin testbroneeringut."
+                )
+                consent = "Yes, I confirm." if language == "en" else "Jah, kinnitan."
+                state.observe_user_text(request)
                 if generated:
                     await asyncio.wait_for(
-                        session.generate_reply(user_input="Soovin testbroneeringut."), 3
+                        session.generate_reply(user_input=request), 3
                     )
                 else:
                     assert (await state.dispatch("plan_demo_booking", REQUEST))["ok"]
@@ -346,10 +365,8 @@ def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(gene
                     "completed native PCM did not deliver its recap"
                 )
                 assert not state.pending["approved"] and not state.bookings
-                state.observe_user_text("Jah, kinnitan.")
-                await asyncio.wait_for(
-                    session.generate_reply(user_input="Jah, kinnitan."), 3
-                )
+                state.observe_user_text(consent)
+                await asyncio.wait_for(session.generate_reply(user_input=consent), 3)
                 assert state.bookings == {"42"}
                 assert sum(name == "confirm" for name, _ in backend.calls) == 1
                 assert len(requests) == (4 if generated else 2)

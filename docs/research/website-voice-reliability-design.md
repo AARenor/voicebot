@@ -1,6 +1,6 @@
 # Website and native speech reliability repair
 
-2026-10-03. Integrate above upstream `92dcb01`; retain fictional spa/room
+2026-10-03. Integrate with upstream through `f541da6`; retain fictional spa/room
 booking, call history, model configuration, native HTML/JavaScript and the
 existing inbound telephone route. No new application dependencies, continuous
 background listening, outbound calls or real-customer writes.
@@ -51,6 +51,10 @@ guards. Seed ASK_DATE_TIME only after successful exhaustion and let the
 existing authoritative guard render the outcome. Forward normal chunks;
 never execute length-truncated tools, retry mutations or swallow exceptions/
 cancellation. A TTS stream producing zero frames now plays the cached apology.
+Preserve concurrent upstream language recognition and Azure voice selection;
+the empty-stream seed and cached-apology metadata use the generation's language.
+English and bilingual fallback audio remain available without reverting to
+shared apology/history flags.
 
 Per-generation private TimedString metadata on PCM keeps completed history
 consistent with actual checked speech or cached apology, even if shared

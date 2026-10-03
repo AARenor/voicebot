@@ -9,6 +9,7 @@ import pytest
 from app.booking.demo_stay import DemoStayAdapter
 from app.booking.tools import Dispatcher
 from app.providers.errors import RateLimitedError
+from app.languages import CONSENT
 from tests.test_product_demo import (
     SimpleLlm,
     call,
@@ -16,11 +17,14 @@ from tests.test_product_demo import (
     send,
     start,
 )
-from tests.test_product_demo import client as client
+from tests.test_product_demo import client as demo_client
+
+client = demo_client
 
 
 @pytest.mark.parametrize("kind", ["slot", "stay"])
-def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind):
+@pytest.mark.parametrize("language", ["et", "en"])
+def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind, language):
     if kind == "slot":
         day, records, writes = install_backend(client, tmp_path)
         name, args = "plan_demo_booking", {"date": day, "start_time": "10:00"}
@@ -51,10 +55,15 @@ def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind):
     model = OnlyPlanning()
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    prepared = send(client, session, "Palun valmista testbroneering ette.").json()
+    request = (
+        "Please prepare a test booking."
+        if language == "en"
+        else "Palun valmista testbroneering ette."
+    )
+    prepared = send(client, session, request, language=language).json()
     assert prepared["outcome"] == "tools_ok" and prepared["warnings"] == []
     assert prepared["booking_ids"] == prepared["booking_changes"] == []
-    assert "Kas kinnitad selle testbroneeringu?" in prepared["reply"]
+    assert CONSENT[language] in prepared["reply"]
     assert base64.b64decode(prepared["audio_b64"]).decode() == prepared["reply"]
     state = client.app.state.demo_sessions.sessions[session].tools
     assert not state.pending["delivery"] and not state.pending["approved"]
@@ -63,7 +72,7 @@ def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind):
     )
     assert model.calls == 1
 
-    confirmed = send(client, session, "Jah, kinnitan.").json()
+    confirmed = send(client, session, CONSENT[language], language=language).json()
     assert confirmed["outcome"] == "tools_ok" and confirmed["warnings"] == []
     assert len(confirmed["booking_changes"]) == 1
     assert confirmed["booking_changes"][0]["action"] == "confirmed"
@@ -71,7 +80,12 @@ def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind):
     if kind == "slot":
         assert len(records) == 1
 
-    cancelled = send(client, session, "Palun tühista see testbroneering.").json()
+    request = (
+        "Please cancel this test booking."
+        if language == "en"
+        else "Palun tühista see testbroneering."
+    )
+    cancelled = send(client, session, request, language=language).json()
     assert cancelled["outcome"] == "tools_ok" and cancelled["warnings"] == []
     assert cancelled["booking_changes"][0]["action"] == "cancelled"
     assert model.calls == 1 and cancelled["timings_ms"]["llm"] == 0
@@ -125,8 +139,9 @@ def test_failed_recap_audio_does_not_enable_terminal_confirmation(client, tmp_pa
     assert result["booking_changes"] == [] and not records and not writes
 
 
+@pytest.mark.parametrize("language", ["et", "en"])
 def test_missing_room_choice_returns_backend_options_without_model_followup(
-    client, tmp_path
+    client, tmp_path, language
 ):
     adapter = DemoStayAdapter(str(tmp_path / "stay.db"))
     client.app.state.stack.update(stay=adapter, dispatcher=Dispatcher(stay=adapter))
@@ -152,8 +167,14 @@ def test_missing_room_choice_returns_backend_options_without_model_followup(
     model = Planning()
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    result = send(client, session, "Palun otsi demotube.").json()
+    request = "Please find a demo room." if language == "en" else "Palun otsi demotube."
+    result = send(client, session, request, language=language).json()
     assert model.calls == 1 and result["outcome"] == "tools_ok"
-    assert "Millist toatüüpi eelistad?" in result["reply"]
+    question = (
+        "Which room type would you prefer?"
+        if language == "en"
+        else "Millist toatüüpi eelistad?"
+    )
+    assert question in result["reply"]
     assert result["warnings"] == [] and result["booking_changes"] == []
     assert client.app.state.demo_sessions.sessions[session].tools.pending is None

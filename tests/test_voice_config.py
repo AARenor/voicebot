@@ -162,14 +162,16 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
             patch.object(worker, "AgentSession", return_value=session),
             patch.object(worker, "TelephoneAgent"),
             patch.object(worker.callslog, "log_call"),
-            patch.object(worker.groq, "STT") as stt,
+            patch.object(
+                worker, "TelephoneSTT", return_value=NS(aclose=AsyncMock())
+            ) as stt,
             patch.object(worker.groq, "LLM") as llm,
             patch.object(worker.azure, "TTS"),
         ):
             await worker.entrypoint(ctx)
         stay.assert_called_once_with(str(tmp_path / "stay-booking.db"))
         assert stt.call_args.kwargs["model"] == "whisper-large-v3"
-        assert stt.call_args.kwargs["language"] == "et"
+        assert stt.call_args.kwargs["mode"] == "auto"
         assert llm.call_args.kwargs["model"] == "openai/gpt-oss-120b"
         assert llm.call_args.kwargs["max_completion_tokens"] == 2048
         assert llm.call_args.kwargs["reasoning_effort"] == "low"

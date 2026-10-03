@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -18,6 +19,34 @@ def test_native_call_log_uses_the_shared_persistent_data_mount():
     compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
     assert "CALLS_DB: /data/calls.db" in compose
     assert "volumes: [booking_state:/data]" in compose
+
+
+def test_english_voice_and_mode_survive_trusted_environment_copy():
+    values = {
+        key: "fixture" for key in (
+            "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "GROQ_API_KEY",
+            "AZURE_SPEECH_KEY", "AZURE_REGION", "EASY_BASE_URL", "EASY_API_KEY",
+        )
+    }
+    values.update(
+        EASY_DEMO_WRITES="1", EASY_STATE_DB="/data/easy-booking.db",
+        VOICEBOT_TELEPHONE_LANGUAGE="en", AZURE_EN_VOICE="en-GB-SoniaNeural",
+        AZURE_EN_LANG="en-GB",
+    )
+    inspected = [{
+        "Config": {"Env": [key + "=" + value for key, value in values.items()]},
+        "Mounts": [{"Type": "volume", "Destination": "/data", "Name": "existing-booking-volume"}],
+    }]
+    result = subprocess.CompletedProcess([], 0, stdout=json.dumps(inspected).encode())
+    with patch.dict("os.environ", {}, clear=True), patch.object(manage.subprocess, "run", return_value=result):
+        env = manage.environment("trusted-web-fixture")
+    assert env["AZURE_EN_VOICE"] == "en-GB-SoniaNeural"
+    assert env["AZURE_EN_LANG"] == "en-GB"
+    assert env["VOICEBOT_TELEPHONE_LANGUAGE"] == "en"
+    assert env["VOICEBOT_DATA_VOLUME"] == "existing-booking-volume"
+    compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
+    for key in ("AZURE_EN_VOICE", "AZURE_EN_LANG", "VOICEBOT_TELEPHONE_LANGUAGE"):
+        assert key + ": ${" + key in compose
 
 
 def test_docker_failure_is_nonzero_without_sensitive_output(capsys):

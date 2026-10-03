@@ -27,6 +27,16 @@ from .errors import (
 TOKEN_TTL_SECONDS = 9 * 60
 
 
+class _LanguageSpeaker:
+    """Per-turn view of a shared client; never mutate another call's voice."""
+
+    def __init__(self, client, voice, lang):
+        self.client, self.voice, self.lang = client, voice, lang
+
+    def synthesize(self, text):
+        return self.client.synthesize(text, voice=self.voice, lang=self.lang)
+
+
 def ssml(text: str, voice: str, lang: str) -> str:
     """Minimal SSML (lean = fewer billable tag chars)."""
     escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -45,6 +55,8 @@ class AzureTtsClient:
         lang: str,
         output_format: str = "audio-16khz-32kbitrate-mono-mp3",
         transport: httpx.BaseTransport | None = None,
+        *,
+        languages: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         if not voice or not lang:
             raise ValueError("azure: voice and lang are required")
@@ -53,6 +65,7 @@ class AzureTtsClient:
         self._voice = voice
         self._lang = lang
         self._format = output_format
+        self._languages = dict(languages or {})
         self._http = httpx.Client(timeout=30.0, transport=transport)
         self._token: str | None = None
         self._token_at: float = 0.0
@@ -92,11 +105,16 @@ class AzureTtsClient:
         self._token_at = time.monotonic()
         return token
 
-    def synthesize(self, text: str) -> bytes:
-        """Synthesize one reply turn. Returns audio bytes."""
-        return self._synthesize_once(text, self.get_token())
+    def for_language(self, language):
+        voice, lang = self._languages.get(language, (self._voice, self._lang))
+        return _LanguageSpeaker(self, voice, lang)
 
-    def _synthesize_once(self, text: str, token: str) -> bytes:
+    def synthesize(self, text: str, *, voice=None, lang=None) -> bytes:
+        """Synthesize one reply turn. Returns audio bytes."""
+        return self._synthesize_once(text, self.get_token(), voice=voice, lang=lang)
+
+    def _synthesize_once(self, text: str, token: str, *, voice=None, lang=None) -> bytes:
+        body = ssml(text, voice or self._voice, lang or self._lang).encode("utf-8")
         try:
             response = self._http.post(
                 f"https://{self._region}.tts.speech.microsoft.com/cognitiveServices/v1",
@@ -105,7 +123,7 @@ class AzureTtsClient:
                     "Content-Type": "application/ssml+xml",
                     "X-Microsoft-OutputFormat": self._format,
                 },
-                content=ssml(text, self._voice, self._lang).encode("utf-8"),
+                content=body,
             )
         except httpx.RequestError as exc:
             raise RetryableProviderError(
@@ -123,7 +141,7 @@ class AzureTtsClient:
                         "Content-Type": "application/ssml+xml",
                         "X-Microsoft-OutputFormat": self._format,
                     },
-                    content=ssml(text, self._voice, self._lang).encode("utf-8"),
+                    content=body,
                 )
             except httpx.RequestError as exc:
                 raise RetryableProviderError(

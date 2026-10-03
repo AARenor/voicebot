@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import time
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -12,7 +13,9 @@ from app.booking.tools import Dispatcher
 from app.hackathon import DemoSession, run_demo_turn
 from app.telephone import CallTools, CONSENT_TEXT
 from tests.test_demo_plan import LiveSlots, REQUEST
-from tests.test_product_demo import AUTH, Speaker, call, client
+from tests.test_product_demo import AUTH, Speaker, call, client as demo_client
+
+client = demo_client
 
 
 def test_failed_search_cannot_grant_unreturned_slot_ownership():
@@ -171,9 +174,12 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
             assert state.pending is None
             if condition == "uncertain":
                 assert state.mutation_uncertain and result["booking_changes"] == []
-        else:
+        elif condition in {"declined", "expired"}:
             assert contexts[0]["pending"] is None
+        if condition == "uncertain":
+            assert result["outcome"] == "unknown_outcome"
         if condition == "cancel":
+            assert state.last_booking == "42"
             assert result["reply"] == "Testbroneering on tühistatud."
         assert sum(name == "confirm" for name, _ in backend.calls) == (
             condition == "approved"
@@ -186,7 +192,10 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-def test_completed_write_truth_survives_read_failure_and_skips_model_followup(cancel):
+@pytest.mark.parametrize("shortcut", [False, True])
+def test_completed_write_truth_survives_read_failure_and_skips_model_followup(
+    cancel, shortcut
+):
     class Sequence:
         def __init__(self, *answers):
             self.answers = iter(answers)
@@ -235,10 +244,10 @@ def test_completed_write_truth_survives_read_failure_and_skips_model_followup(ca
             else "Testbroneering on kinnitatud."
         )
         assert result["reply"].startswith(prefix)
-        assert result["outcome"] == "tools_ok"
-        assert stack["llm_primary"].calls == 0, (
-            "a canonical terminal action reached the provider"
-        )
+        assert result["outcome"] == ("tools_ok" if shortcut else "tools_failed")
+        assert stack["llm_primary"].calls == (0 if shortcut else 3)
+        if not shortcut:
+            assert "päring ebaõnnestus" in result["reply"]
         assert result["booking_changes"][0]["action"] == (
             "cancelled" if cancel else "confirmed"
         )
@@ -255,7 +264,13 @@ def test_completed_write_truth_survives_read_failure_and_skips_model_followup(ca
         )
         assert state.turn_mutation == ("cancelled" if cancel else "confirmed")
 
-    asyncio.run(run())
+    if shortcut:
+        asyncio.run(run())
+    else:
+        # Preserve upstream's model-issued mixed-tool regression as a separate
+        # disconfirming control, alongside the real terminal shortcut path.
+        with patch("app.hackathon.trusted_booking_response", return_value=None):
+            asyncio.run(run())
 
 
 @pytest.mark.parametrize("authorized", [False, True])
