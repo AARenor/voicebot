@@ -29,29 +29,69 @@ NO_BOOKING = {
     "ru": "В этом разговоре нет подтверждённого тестового бронирования. Хотите начать бронирование?",
 }
 ROOM_CONTEXT = {
-    "et": ("Vabad demotoad tuleb eraldi kontrollida.", "Demobroneeringus saab arvestada täiskasvanute ja laste arvu.", "Eraldi voodite olemasolu ei ole kinnitatud ja voodite ümberseadistamist demo ei toeta."),
-    "en": ("Available demo rooms need a separate check.", "A demo booking can include adults and children.", "Separate beds have not been verified, and the demo does not support changing the bed setup."),
-    "ru": ("Наличие свободных демонстрационных номеров нужно проверить отдельно.", "В тестовом бронировании можно указать взрослых и детей.", "Наличие отдельных кроватей не подтверждено. Демонстрация не поддерживает изменение расположения кроватей."),
+    "et": (
+        "Vabad demotoad tuleb eraldi kontrollida.",
+        "Demobroneeringus saab arvestada täiskasvanute ja laste arvu.",
+        "Eraldi voodite olemasolu ei ole kinnitatud ja voodite ümberseadistamist demo ei toeta.",
+    ),
+    "en": (
+        "Available demo rooms need a separate check.",
+        "A demo booking can include adults and children.",
+        "Separate beds have not been verified, and the demo does not support changing the bed setup.",
+    ),
+    "ru": (
+        "Наличие свободных демонстрационных номеров нужно проверить отдельно.",
+        "В тестовом бронировании можно указать взрослых и детей.",
+        "Наличие отдельных кроватей не подтверждено. Демонстрация не поддерживает изменение расположения кроватей.",
+    ),
 }
 
 
 def action_claim(text):
     """Keep the established receipt warning for an unsupported success claim."""
-    return bool(re.search(
-        r"\b(?:broneerisin|broneerisime|tühistasin|"
-        r"(?:test)?broneering\s+on\s+(?:kinnitatud|tühistatud|(?:edukalt\s+)?loodud)|"
-        r"(?:test\s+)?booking\s+(?:is|was|has been)\s+(?:confirmed|cancelled|canceled|created)|"
-        r"i\s+(?:have\s+)?(?:booked|reserved|cancelled|canceled)|"
-        r"(?:тестовое\s+)?бронирование\s+(?:подтвержд[её]н\w*|отмен[её]н\w*)|"
-        r"забронировал\w*|забронирован\w*)\b",
-        text, re.I,
-    ))
+    return bool(
+        re.search(
+            r"\b(?:broneerisin|broneerisime|tühistasin|"
+            r"(?:test)?broneering\s+on\s+(?:kinnitatud|tühistatud|(?:edukalt\s+)?loodud)|"
+            r"(?:test\s+)?booking\s+(?:is|was|has been)\s+(?:confirmed|cancelled|canceled|created)|"
+            r"i\s+(?:have\s+)?(?:booked|reserved|cancelled|canceled)|"
+            r"(?:тестовое\s+)?бронирование\s+(?:подтвержд[её]н\w*|отмен[её]н\w*)|"
+            r"забронировал\w*|забронирован\w*)\b",
+            text,
+            re.I,
+        )
+    )
 
 
 COURTESY = {
-    "et": ("tere palun öelge", "palun öelge", "öelge palun", "tere", "tervist", "palun", "vabandust"),
-    "en": ("hello could you tell me", "could you tell me", "can you tell me", "please tell me", "hello", "hi", "please", "excuse me"),
-    "ru": ("здравствуйте подскажите пожалуйста", "подскажите пожалуйста", "скажите пожалуйста", "подскажите", "здравствуйте", "привет", "пожалуйста"),
+    "et": (
+        "tere palun öelge",
+        "palun öelge",
+        "öelge palun",
+        "tere",
+        "tervist",
+        "palun",
+        "vabandust",
+    ),
+    "en": (
+        "hello could you tell me",
+        "could you tell me",
+        "can you tell me",
+        "please tell me",
+        "hello",
+        "hi",
+        "please",
+        "excuse me",
+    ),
+    "ru": (
+        "здравствуйте подскажите пожалуйста",
+        "подскажите пожалуйста",
+        "скажите пожалуйста",
+        "подскажите",
+        "здравствуйте",
+        "привет",
+        "пожалуйста",
+    ),
 }
 
 
@@ -61,14 +101,22 @@ def load_faq(path=None):
     try:
         data = json.loads(Path(path or FAQ_PATH).read_text(encoding="utf-8"))
         entries = data["entries"]
-        if data["schema_version"] != 1 or not isinstance(entries, list) or not 1 <= len(entries) <= 100:
+        if (
+            data["schema_version"] != 1
+            or not isinstance(entries, list)
+            or not 1 <= len(entries) <= 100
+        ):
             raise ValueError
         ids = set()
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("route") not in ROUTES:
                 raise ValueError
             identifier = entry["id"]
-            if not isinstance(identifier, str) or not re.fullmatch(r"booking-\d{3}", identifier) or identifier in ids:
+            if (
+                not isinstance(identifier, str)
+                or not re.fullmatch(r"booking-\d{3}", identifier)
+                or identifier in ids
+            ):
                 raise ValueError
             ids.add(identifier)
             for language in LANGUAGES:
@@ -77,9 +125,13 @@ def load_faq(path=None):
                     if not isinstance(text, str) or not text.strip() or len(text) > 500:
                         raise ValueError
                 variants = entry.get("variants_" + language, [])
-                if not isinstance(variants, list) or len(variants) > 20 or any(
-                    not isinstance(text, str) or not text.strip() or len(text) > 500
-                    for text in variants
+                if (
+                    not isinstance(variants, list)
+                    or len(variants) > 20
+                    or any(
+                        not isinstance(text, str) or not text.strip() or len(text) > 500
+                        for text in variants
+                    )
                 ):
                     raise ValueError
         return tuple(entries)
@@ -88,7 +140,9 @@ def load_faq(path=None):
 
 
 def normalize(text):
-    return " ".join(re.sub(r"[^\w]+", " ", unicodedata.normalize("NFKC", text).casefold()).split())
+    return " ".join(
+        re.sub(r"[^\w]+", " ", unicodedata.normalize("NFKC", text).casefold()).split()
+    )
 
 
 def _without_courtesy(text, language):
@@ -96,11 +150,19 @@ def _without_courtesy(text, language):
         original = text
         for prefix in COURTESY[language]:
             if text.startswith(prefix + " "):
-                text = text[len(prefix) + 1:]
+                text = text[len(prefix) + 1 :]
                 break
-        for suffix in ("palun", "aitäh", "please", "thanks", "thank you", "пожалуйста", "спасибо"):
+        for suffix in (
+            "palun",
+            "aitäh",
+            "please",
+            "thanks",
+            "thank you",
+            "пожалуйста",
+            "спасибо",
+        ):
             if text.endswith(" " + suffix):
-                text = text[:-len(suffix) - 1]
+                text = text[: -len(suffix) - 1]
                 break
         if original == text:
             break
@@ -109,27 +171,49 @@ def _without_courtesy(text, language):
 
 def match_question(text, language, entries=None):
     """Only complete reviewed questions; unmatched mixed requests keep planning."""
-    if language not in LANGUAGES or not isinstance(text, str) or not text.strip() or len(text) > 2000:
+    if (
+        language not in LANGUAGES
+        or not isinstance(text, str)
+        or not text.strip()
+        or len(text) > 2000
+    ):
         return ()
     entries = load_faq() if entries is None else entries
     lookup = {}
     for entry in entries:
-        for phrase in (entry["question_" + language], *entry.get("variants_" + language, [])):
+        for phrase in (
+            entry["question_" + language],
+            *entry.get("variants_" + language, []),
+        ):
             key = normalize(phrase)
             # Ambiguous aliases must never silently pick an unrelated answer.
-            if key in lookup and (lookup[key] is None or lookup[key]["id"] != entry["id"]):
+            if key in lookup and (
+                lookup[key] is None or lookup[key]["id"] != entry["id"]
+            ):
                 lookup[key] = None
             else:
                 lookup[key] = entry
     value = _without_courtesy(normalize(text), language)
     if value in lookup:
         return (lookup[value],) if lookup[value] else ()
-    parts = [part.strip(" .,!\n\t") for part in re.split(
-        r"[?!;\n]+|\s+(?:ja|and|и)\s+(?=(?:kas|mis|millal|can|is|do|what|можно|есть|как|где)\b)",
-        text, flags=re.I,
-    ) if part.strip(" .,!\n\t")]
+    parts = [
+        part.strip(" .,!\n\t")
+        for part in re.split(
+            r"[?!;\n]+|\s+(?:ja|and|и)\s+(?=(?:kas|mis|millal|can|is|do|what|можно|есть|как|где)\b)",
+            text,
+            flags=re.I,
+        )
+        if part.strip(" .,!\n\t")
+    ]
     # A greeting can precede questions, but an extra command must not disappear.
-    if parts and normalize(parts[0]) in {"tere", "tervist", "hello", "hi", "здравствуйте", "привет"}:
+    if parts and normalize(parts[0]) in {
+        "tere",
+        "tervist",
+        "hello",
+        "hi",
+        "здравствуйте",
+        "привет",
+    }:
         parts.pop(0)
     if not 1 <= len(parts) <= 3:
         return ()
@@ -148,7 +232,11 @@ def question_language(text, current):
     """Known written questions also identify English without an STT language tag."""
     if match_question(text, current):
         return current
-    matches = [language for language in LANGUAGES if language != current and match_question(text, language)]
+    matches = [
+        language
+        for language in LANGUAGES
+        if language != current and match_question(text, language)
+    ]
     return matches[0] if len(matches) == 1 else current
 
 
@@ -157,7 +245,9 @@ def booking_input(text):
     value = normalize(text)
     if not value:
         return False
-    if re.search(r"\b(?:broneeri\w*|bruneeri\w*|book|reserve|reserving|заброниру\w*)\b", value):
+    if re.search(
+        r"\b(?:broneeri\w*|bruneeri\w*|book|reserve|reserving|заброниру\w*)\b", value
+    ):
         return True
     desire = re.search(
         r"\b(?:soovin|sooviks\w*|tahaks\w*|tahan|otsi|leia|find|want|need|хочу|хотел\w*|найти|найдите|ищу)\b",
@@ -172,9 +262,18 @@ def booking_input(text):
     if re.fullmatch(r"[\d\s:./-]+", text.strip()):
         return True
     choices = {
-        "peretuba", "aiavaatega kaheinimesetuba", "spaa sviit", "demo spaakonsultatsioon",
-        "family room", "garden view double room", "spa suite", "demo spa consultation",
-        "семейный номер", "двухместный номер с видом на сад", "спа люкс", "демонстрационная спа консультация",
+        "peretuba",
+        "aiavaatega kaheinimesetuba",
+        "spaa sviit",
+        "demo spaakonsultatsioon",
+        "family room",
+        "garden view double room",
+        "spa suite",
+        "demo spa consultation",
+        "семейный номер",
+        "двухместный номер с видом на сад",
+        "спа люкс",
+        "демонстрационная спа консультация",
     }
     if value in choices:
         return True
@@ -185,24 +284,38 @@ def booking_input(text):
     ):
         return True
     # Short answers to date/time/guest-count questions still reach the planner.
-    count = r"(?:\d+|üks|kaks|kolm|neli|viis|kuus|one|two|three|four|five|six|один|одна|два|две|двое|три|трое|четыре|четверо)"
+    count = r"(?:\d+|null|none|üks|kaks|kolm|neli|viis|kuus|one|two|three|four|five|six|один|одна|два|две|двое|три|трое|четыре|четверо)"
     people = r"(?:täiskasvanu\w*|laps\w*|last|adults?|children|child|guests?|взрослы\w*|реб[её]нок|детей|реб[её]нка|гост\w*)"
-    guest_count = count + r"\s+" + people + r"(?:\s+(?:ja|and|и)\s+" + count + r"\s+" + people + r")?"
+    guest_count = (
+        count
+        + r"\s+"
+        + people
+        + r"(?:\s+(?:ja|and|и)\s+"
+        + count
+        + r"\s+"
+        + people
+        + r")?"
+    )
     if re.fullmatch(count, value):
         return True
     if re.fullmatch(guest_count, value):
         return True
-    if any(re.fullmatch(guest_count, normalize(part)) for part in re.split(r"[?!;\n]+", text)[1:]):
+    if any(
+        re.fullmatch(guest_count, normalize(part))
+        for part in re.split(r"[?!;\n]+", text)[1:]
+    ):
         return True
     relative_day = r"(?:täna|homme|ülehomme|today|tomorrow|day after tomorrow|сегодня|завтра|послезавтра)"
     clock = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|üks|kaks|kolm|neli|viis|kuus|seitse|kaheksa|üheksa|kümme|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять)(?:\s+\d+)?"
     day_part = r"(?:\s+(?:am|pm|in the morning|in the afternoon|in the evening|hommikul|päeval|õhtul|утра|дня|вечера))?"
     if re.fullmatch(r"(?:kell|at|в)\s+" + clock + r"(?:\s+часа?)?" + day_part, value):
         return True
-    return bool(re.fullmatch(
-        relative_day + r"(?:\s+(?:kell|at|в)\s+" + clock + day_part + r")?",
-        value,
-    ))
+    return bool(
+        re.fullmatch(
+            relative_day + r"(?:\s+(?:kell|at|в)\s+" + clock + day_part + r")?",
+            value,
+        )
+    )
 
 
 WORDS = {
@@ -228,7 +341,7 @@ WORDS = {
         "break": "paus",
         "to": "kuni kell",
         "availability": "Vabad ajad tuleb eraldi kontrollida.",
-        "no_massage": "Praeguses demokataloogis massaaži ei ole."
+        "no_massage": "Praeguses demokataloogis massaaži ei ole.",
     },
     "en": {
         "rooms": "Demo rooms",
@@ -252,7 +365,7 @@ WORDS = {
         "break": "break",
         "to": "to",
         "availability": "Available appointments need a separate check.",
-        "no_massage": "There is no massage service in the current demo catalogue."
+        "no_massage": "There is no massage service in the current demo catalogue.",
     },
     "ru": {
         "rooms": "Демонстрационные номера",
@@ -276,15 +389,47 @@ WORDS = {
         "break": "перерыв",
         "to": "до",
         "availability": "Доступное время нужно проверить отдельно.",
-        "no_massage": "В текущем демонстрационном каталоге нет массажа."
-    }
+        "no_massage": "В текущем демонстрационном каталоге нет массажа.",
+    },
 }
 DAYS = {
-    "et": ("esmaspäev", "teisipäev", "kolmapäev", "neljapäev", "reede", "laupäev", "pühapäev"),
-    "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
-    "ru": ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"),
+    "et": (
+        "esmaspäev",
+        "teisipäev",
+        "kolmapäev",
+        "neljapäev",
+        "reede",
+        "laupäev",
+        "pühapäev",
+    ),
+    "en": (
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ),
+    "ru": (
+        "понедельник",
+        "вторник",
+        "среда",
+        "четверг",
+        "пятница",
+        "суббота",
+        "воскресенье",
+    ),
 }
-DAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+DAY_KEYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 FEATURES = {
     "breakfast": {"hommikusöök", "breakfast", "завтрак"},
     "wifi": {"wi fi", "wifi"},
@@ -302,7 +447,9 @@ def _text(value):
 
 
 def _clock(value):
-    if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d", value
+    ):
         raise ValueError
     return value
 
@@ -334,20 +481,36 @@ def _hours(result, language, *, weekend=False):
                 breaks = value["breaks"]
                 if not isinstance(breaks, list) or len(breaks) > 4:
                     raise ValueError
-                summary += ", " + words["break"] + " " + ", ".join(
-                    interval(item) for item in breaks
+                summary += (
+                    ", "
+                    + words["break"]
+                    + " "
+                    + ", ".join(interval(item) for item in breaks)
                 )
             groups.setdefault(summary, []).append(DAYS[language][index])
         if groups:
-            schedules.append(_text(provider["name"]) + ": " + "; ".join(
-                ", ".join(days) + ": " + summary for summary, days in groups.items()
-            ))
-    return f"{words['hours']}: " + ". ".join(schedules) + ". " + words["availability"] if schedules else None
+            schedules.append(
+                _text(provider["name"])
+                + ": "
+                + "; ".join(
+                    ", ".join(days) + ": " + summary for summary, days in groups.items()
+                )
+            )
+    return (
+        f"{words['hours']}: " + ". ".join(schedules) + ". " + words["availability"]
+        if schedules
+        else None
+    )
 
 
 def render_catalogue(entries, result, language):
     """Speak only the requested facts; never use the saved research snapshot."""
-    if language not in LANGUAGES or not isinstance(result, dict) or result.get("error") or result.get("ok") is False:
+    if (
+        language not in LANGUAGES
+        or not isinstance(result, dict)
+        or result.get("error")
+        or result.get("ok") is False
+    ):
         return None
     words, replies = WORDS[language], []
     try:
@@ -359,33 +522,59 @@ def render_catalogue(entries, result, language):
                     return None
                 rooms = rooms[:4]
                 if number == 9:
-                    reply = words["rooms"] + ": " + "; ".join(_text(room["name"]) for room in rooms) + "."
+                    reply = (
+                        words["rooms"]
+                        + ": "
+                        + "; ".join(_text(room["name"]) for room in rooms)
+                        + "."
+                    )
                 elif number in {10, 11}:
                     descriptions = []
                     for room in rooms:
                         capacity = room["capacity"]
                         if type(capacity) is not int or not 1 <= capacity <= 100:
                             return None
-                        descriptions.append(f"{_text(room['name'])}: {words['up_to']} {capacity} {words['guests']}")
+                        descriptions.append(
+                            f"{_text(room['name'])}: {words['up_to']} {capacity} {words['guests']}"
+                        )
                     reply = "; ".join(descriptions) + ". " + ROOM_CONTEXT[language][0]
                     if number == 11:
                         reply = ROOM_CONTEXT[language][1] + " " + reply
                 elif number in {13, 15, 16, 17}:
-                    features = {13: ("breakfast",), 15: ("wifi",), 16: ("balcony", "garden"), 17: ("double", "extra")}[number]
+                    features = {
+                        13: ("breakfast",),
+                        15: ("wifi",),
+                        16: ("balcony", "garden"),
+                        17: ("double", "extra"),
+                    }[number]
                     descriptions = []
                     for room in rooms:
                         amenities = room["amenities"]
-                        if not isinstance(amenities, list) or any(not isinstance(item, str) for item in amenities):
+                        if not isinstance(amenities, list) or any(
+                            not isinstance(item, str) for item in amenities
+                        ):
                             return None
                         values = {normalize(item) for item in amenities}
-                        verified = [words[key] for key in features if values & FEATURES[key]]
+                        verified = [
+                            words[key] for key in features if values & FEATURES[key]
+                        ]
                         if verified:
-                            descriptions.append(_text(room["name"]) + ": " + ", ".join(verified))
-                    reply = "; ".join(descriptions) + "." if descriptions else words["not_verified"]
+                            descriptions.append(
+                                _text(room["name"]) + ": " + ", ".join(verified)
+                            )
+                    reply = (
+                        "; ".join(descriptions) + "."
+                        if descriptions
+                        else words["not_verified"]
+                    )
                     if number == 17:
                         reply += " " + ROOM_CONTEXT[language][2]
                 elif number in {18, 19}:
-                    key, label = ("checkin_time", "arrival") if number == 18 else ("checkout_time", "departure")
+                    key, label = (
+                        ("checkin_time", "arrival")
+                        if number == 18
+                        else ("checkout_time", "departure")
+                    )
                     reply = f"{words[label]} {_clock(result['property'][key])}, {words['local']}."
                 else:
                     return None
@@ -396,21 +585,46 @@ def render_catalogue(entries, result, language):
                 if number in {22, 28}:
                     selected = services[:4]
                     if number == 28:
-                        selected = [service for service in services if re.search(r"massaa\w*|massage|массаж", _text(service["name"]), re.I)][:4]
-                    reply = words["services"] + ": " + "; ".join(_text(service["name"]) for service in selected) + "." if selected else words["no_massage"]
+                        selected = [
+                            service
+                            for service in services
+                            if re.search(
+                                r"massaa\w*|massage|массаж",
+                                _text(service["name"]),
+                                re.I,
+                            )
+                        ][:4]
+                    reply = (
+                        words["services"]
+                        + ": "
+                        + "; ".join(_text(service["name"]) for service in selected)
+                        + "."
+                        if selected
+                        else words["no_massage"]
+                    )
                 elif number == 23:
                     descriptions = []
                     for service in services[:4]:
                         duration = service["duration"]
                         if type(duration) is not int or not 1 <= duration <= 1440:
                             return None
-                        descriptions.append(f"{_text(service['name'])}: {duration} {words['minutes']}")
+                        descriptions.append(
+                            f"{_text(service['name'])}: {duration} {words['minutes']}"
+                        )
                     reply = "; ".join(descriptions) + "."
                 elif number == 24:
                     providers = result["providers"]
                     if not isinstance(providers, list) or not providers:
                         return None
-                    reply = words["providers"] + ": " + "; ".join(_text(provider["name"]) for provider in providers[:4]) + ". " + words["availability"]
+                    reply = (
+                        words["providers"]
+                        + ": "
+                        + "; ".join(
+                            _text(provider["name"]) for provider in providers[:4]
+                        )
+                        + ". "
+                        + words["availability"]
+                    )
                 elif number in {25, 26}:
                     reply = _hours(result, language, weekend=number == 26)
                     if reply is None:

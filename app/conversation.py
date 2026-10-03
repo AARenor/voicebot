@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from .languages import ENGLISH
+
 
 def normalize(text: str) -> str:
     return " ".join(re.sub(r"[.,!?…]", " ", text.casefold()).split())
@@ -29,8 +31,28 @@ INTENTS = {
         "доброе утро",
         "добрый вечер",
     },
-    "thanks": {"aitäh", "suur tänu", "tänan", "thanks", "thank you", "thanks a lot", "спасибо", "большое спасибо", "спасибо большое", "благодарю"},
-    "goodbye": {"head aega", "nägemist", "bye", "goodbye", "bye bye", "до свидания", "пока", "всего доброго"},
+    "thanks": {
+        "aitäh",
+        "suur tänu",
+        "tänan",
+        "thanks",
+        "thank you",
+        "thanks a lot",
+        "спасибо",
+        "большое спасибо",
+        "спасибо большое",
+        "благодарю",
+    },
+    "goodbye": {
+        "head aega",
+        "nägemist",
+        "bye",
+        "goodbye",
+        "bye bye",
+        "до свидания",
+        "пока",
+        "всего доброго",
+    },
     "decline": {
         "ei",
         "ei aitäh",
@@ -95,7 +117,13 @@ INTENTS = {
         "вы робот",
         "вы человек",
     },
-    "how_are_you": {"kuidas sul läheb", "how are you", "how are you doing", "как дела", "как у вас дела"},
+    "how_are_you": {
+        "kuidas sul läheb",
+        "how are you",
+        "how are you doing",
+        "как дела",
+        "как у вас дела",
+    },
     "human": {
         "soovin inimesega rääkida",
         "kas saan inimesega rääkida",
@@ -111,8 +139,8 @@ REPLIES = {
     "et": {
         "greeting": ("Tere! Kuidas saan aidata?", "Tere! Millega saan aidata?"),
         "thanks": (
-            "Hea meelega! Kas saan veel millegagi aidata?",
-            "Palun! Kas sul on veel mõni küsimus?",
+            "Hea meelega!",
+            "Palun!",
         ),
         "goodbye": ("Aitäh helistamast. Head päeva!", "Head aega ja kena päeva!"),
         "decline": (
@@ -131,14 +159,14 @@ REPLIES = {
         ),
         "how_are_you": ("Olen valmis aitama. Mida soovid teha?",),
         "human": (
-            "Selles demos ei saa ma kõnet inimesele suunata. Saan aidata testbroneeringuga. Kas soovid seda proovida?",
+            "Selles demos ei saa kõnet inimesele suunata. Saan vastata demo küsimustele.",
         ),
     },
     "en": {
         "greeting": ("Hello! How can I help you?", "Hi! What can I help you with?"),
         "thanks": (
-            "You're welcome! Can I help with anything else?",
-            "Happy to help. Do you have any other questions?",
+            "You're welcome!",
+            "Happy to help.",
         ),
         "goodbye": (
             "Thanks for calling. Have a lovely day!",
@@ -160,7 +188,7 @@ REPLIES = {
         ),
         "how_are_you": ("I'm ready to help. What would you like to do?",),
         "human": (
-            "This demo can't transfer calls to a person. I can help with a test booking. Would you like to try that?",
+            "This demo can't transfer calls to a person. I can answer questions about the demo.",
         ),
     },
     "ru": {
@@ -169,8 +197,8 @@ REPLIES = {
             "Здравствуйте! Что вы хотите сделать?",
         ),
         "thanks": (
-            "Пожалуйста! Могу помочь ещё чем-нибудь?",
-            "Пожалуйста! Есть ещё вопросы?",
+            "Пожалуйста!",
+            "Не за что!",
         ),
         "goodbye": (
             "Спасибо за звонок. Хорошего дня!",
@@ -192,7 +220,7 @@ REPLIES = {
         ),
         "how_are_you": ("Могу помочь. Что вы хотите сделать?",),
         "human": (
-            "В этой демонстрации я не могу перевести звонок сотруднику. Могу помочь с тестовым бронированием. Хотите попробовать?",
+            "В этой демоверсии нельзя перевести звонок сотруднику. Могу ответить на вопросы о демоверсии.",
         ),
     },
 }
@@ -210,24 +238,42 @@ QUESTIONS = {
         "arrival": ("Millal soovid saabuda?",),
         "departure": ("Millal soovid lahkuda?",),
         "adults": ("Mitu täiskasvanut tuleb?",),
-        "children": ("Kas kaasa tuleb ka lapsi? Kui jah, siis mitu?",),
+        "children": ("Mitu last tuleb kaasa? Võid öelda ka null.",),
         "room": ("Millist toatüüpi eelistad?",),
         "guest": ("Millist demo külalist soovid kasutada?",),
     },
     "en": {
-        "booking_kind": ("Would you like a spa appointment or a hotel room?",),
+        "booking_kind": (
+            "Would you like a spa appointment or a hotel room?",
+            ENGLISH["booking_kind"],
+        ),
         "spa_service": (
             "Which spa treatment would you like?",
             "Which treatment interests you?",
+            ENGLISH["spa_service"],
         ),
-        "date": ("What date works for you?", "Which day would you prefer?"),
-        "time": ("What time works for you?", "What time would you prefer?"),
-        "arrival": ("When would you like to arrive?",),
-        "departure": ("When would you like to leave?",),
-        "adults": ("How many adults are coming?",),
-        "children": ("Are any children coming? If so, how many?",),
+        "date": (
+            "What date works for you?",
+            "Which day would you prefer?",
+            ENGLISH["ask_date"],
+        ),
+        "time": (
+            "What time works for you?",
+            "What time would you prefer?",
+            ENGLISH["ask_time"],
+        ),
+        "arrival": ("When would you like to arrive?", ENGLISH["stay_dates"]),
+        "departure": ("When would you like to leave?", ENGLISH["stay_departure"]),
+        "adults": ("How many adults are coming?", ENGLISH["stay_adults"]),
+        "children": (
+            "How many children are coming? You can say none.",
+            ENGLISH["stay_children"],
+        ),
         "room": ("Which room type would you prefer?",),
         "guest": ("Which demo guest would you like to use?",),
+        # Existing fixed English clarifications also have bounded replay identities.
+        "ambiguous_date": (ENGLISH["ambiguous_date"],),
+        "ambiguous_time": (ENGLISH["ambiguous_time"],),
     },
     "ru": {
         "booking_kind": ("Вы хотите забронировать спа-процедуру или номер в отеле?",),
@@ -252,6 +298,12 @@ STYLE_INSTRUCTIONS = {
     "ru": "Говори как дружелюбный помощник: короткими фразами и по одному вопросу за раз. Выбирай вопросы о недостающих данных из natural_questions. Сохраняй сведения, которые собеседник уже сообщил. Не начинай каждый ответ с приветствия и не повторяй описание демонстрации в каждом ходе. Избегай канцелярских оборотов, длинных списков, слов-паразитов и выдуманного смеха. Не выдавай себя за человека. Не обещай неподтверждённое бронирование, цену, наличие мест или перевод звонка сотруднику. Серверный текст итогов бронирования и слова согласия должны оставаться точными. Задавай один уточняющий вопрос, а не весь список вопросов о недостающих данных.",
 }
 
+REPAIR = {
+    "et": "Vabandust. Võtame ühe asja korraga.",
+    "en": "Sorry about that. Let's take it one step at a time.",
+    "ru": "Извините. Давайте шаг за шагом.",
+}
+
 
 def intent_for(text: str) -> str | None:
     value = normalize(text)
@@ -268,30 +320,35 @@ def spa_hours_focus(text: object) -> bool:
     if re.search(
         r"\b(?:broneer\w*|brooneer\w*|bruneer\w*|kinnita\w*|tühist\w*|book\w*|reserv\w*|"
         r"confirm\w*|cancel\w*|hotell\w*|hotel\w*|toa\w*|tuba\w*|tube\w*|"
-        r"room\w*|stay\w*|majut\w*)\b", value,
+        r"room\w*|stay\w*|majut\w*)\b",
+        value,
     ):
         return False
     if not re.search(
         r"\b(?:spaa?\w*|teenindaja\w*|teenusepakkuja\w*|terapeut\w*|"
-        r"massöör\w*|therapist\w*|provider\w*)\b", value,
+        r"massöör\w*|therapist\w*|provider\w*)\b",
+        value,
     ):
         return False
     if not re.search(
         r"\b(?:mis|millal|kas|palun|näita|ütle|kontrolli|what|when|can|could|"
-        r"please|show|tell|check)\b", value,
+        r"please|show|tell|check)\b",
+        value,
     ):
         return False
     if re.search(
         r"\b(?:tööa\w*|tööplaan\w*|töögraafik\w*|graafik\w*|teenindusa\w*|"
         r"lõunapaus\w*|puhkepaus\w*|paus\w*|opening hours|working hours|"
-        r"work plan|schedule\w*|timetable\w*|break\w*|lunch)\b", value,
+        r"work plan|schedule\w*|timetable\w*|break\w*|lunch)\b",
+        value,
     ):
         return True
     return bool(
         re.search(r"\b(?:kell|millal|when|what time|hours)\b", value)
         and re.search(
             r"\b(?:tööt\w*|alustab|lõpetab|avatud|lahti|work\w*|start\w*|"
-            r"finish\w*|open\w*|close\w*)\b", value,
+            r"finish\w*|open\w*|close\w*)\b",
+            value,
         )
     )
 
@@ -300,10 +357,14 @@ def read_focus(text: str) -> str | None:
     value = normalize(text)
     if spa_hours_focus(text):
         return "hours"
-    if re.search(r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b", value):
+    if re.search(
+        r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b",
+        value,
+    ):
         return "hours"
     if re.search(
-        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*|спа\w*|процедур\w*|услуг\w*|массаж\w*)\b", value
+        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*|спа\w*|процедур\w*|услуг\w*|массаж\w*)\b",
+        value,
     ):
         return "services"
     return None
@@ -315,22 +376,52 @@ def approved_dialogue(language: str) -> set[str]:
         for group in (REPLIES[language], QUESTIONS[language])
         for variants in group.values()
         for text in variants
+    } | {
+        f"{REPAIR[language]} {question}"
+        for variants in QUESTIONS[language].values()
+        for question in variants
     }
 
 
 class Conversation:
-    """Only bounded intent/counters survive a turn; never the caller's words."""
+    """Keep only bounded intents, question identities and counters, never transcripts."""
 
     def __init__(self) -> None:
         self.intent: str | None = None
         self.reply: str | None = None
         self.focus: str | None = None
         self._counts: dict[tuple[str, str], int] = {}
+        self._question: tuple[str, str, int] | None = None
+
+    def remember_reply(self, text: str, language: str) -> None:
+        """Remember only an approved question's identity, not arbitrary spoken facts."""
+        self._question = next(
+            (
+                (language, key, index)
+                for key, variants in QUESTIONS[language].items()
+                for index, question in enumerate(variants)
+                if text in {question, f"{REPAIR[language]} {question}"}
+            ),
+            None,
+        )
 
     def observe(self, text: str, language: str) -> None:
         self.intent = intent_for(text)
         self.focus = read_focus(text)
         self.reply = None
+        if self._question and (
+            self._question[0] != language or self.intent not in {"repeat", "frustrated"}
+        ):
+            self._question = None
+        if self._question:
+            _, key, index = self._question
+            question = QUESTIONS[language][key][index]
+            self.reply = (
+                question
+                if self.intent == "repeat"
+                else f"{REPAIR[language]} {question}"
+            )
+            return
         if self.intent is not None:
             choices = REPLIES[language][self.intent]
             key = (language, self.intent)

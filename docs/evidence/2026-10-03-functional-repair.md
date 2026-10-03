@@ -5,7 +5,7 @@ dirty checkout. It preserves the subsequent microphone/session UX, canonical
 booking shortcuts, Meretuule domain, natural dialogue, ET/EN/RU speech and the
 English browser controls, multilingual booking FAQs and safe release
 synchronization, selectable modern voices and incremental playback through
-published master `3791c6d`. The supported demo
+published master `e58a494`, including contextual receptionist follow-ups. The supported demo
 remains fictional; no real PMS connector, carrier
 acceptance or physical-microphone result is invented.
 
@@ -15,6 +15,10 @@ acceptance or physical-microphone result is invented.
   retaining consumed-hold and historical-write protections.
 - Proven failure before a remote write is a durable known failure, not a sticky
   unknown outcome. Ambiguous remote writes remain blocked from automatic retry.
+- Same-guest rebooking reuses only the adapter's own validated customer-creation
+  result, bound to its backend and all four cleaned guest fields. It never looks
+  up a customer by email or lets an explicit ID seed that proof. Existing bounded
+  memory storage, durable failure replay and unresolved-write blocking remain.
 - HTTP synthesis/rendering does not deliver a booking recap. An opaque receipt
   binds the current owned preparation; full playback or deliberate reading
   precedes its one-use acknowledgement with a later confirmation input.
@@ -44,8 +48,8 @@ the independently reviewed preparation deadline and custom-agent drift.
 
 | Check | Result |
 | --- | --- |
-| Full core suite, cleared environment | 2627 passed, 58 skipped, 36 subtests passed |
-| Full Python 3.12 pinned media/SDK suite, network disabled | 2880 passed, 10 skipped, 36 subtests passed |
+| Full core suite, cleared environment | 2678 passed, 58 skipped, 36 subtests passed |
+| Full Python 3.12 pinned media/SDK suite, network disabled | 2931 passed, 10 skipped, 36 subtests passed |
 | Real Chromium recap/playback/read/expiry/unhappy-path suite | 48 passed, zero external requests |
 | All eight local browser suites, including modern voices, streaming and microphone races | Passed, zero page errors or external requests |
 | Host Compose parser checks covering both release manifests and bridge isolation | 5 passed |
@@ -84,3 +88,17 @@ preparation TTL and actual current audio identity; no production guard was relax
 The final independent frontend addendum passed 54 cases/probes; combined with
 the backend review it gives a qualified FINAL-INTEGRATION PASS, with no evidenced
 outstanding P0/P1/P2 finding. It does not certify deployment or human hearing.
+
+The first deployed same-guest rebooking probe exposed the installed backend's
+unique-email customer constraint, absent from the original different-guest
+fixture. A strict retained-customer fixture reproduced three failures before
+the minimal reuse correction; twelve additional witnesses retain consent,
+guest/call isolation and ambiguous-write protections. The original failed
+synthetic attempt was independently reconciled and its history preserved;
+no ambiguous write was automatically retried. The updated full counts above
+include this follow-up; live acceptance is recorded separately in the goal.
+Independent review of the reuse delta passed 41 regressions and 21 additional
+edge/concurrency probes with zero sockets and no evidenced P0/P1/P2 finding.
+The newer, separately reviewed language release was merged without conflicts;
+its eleven published paths remain byte-identical. Complete combined checks
+above preserve both updates; deployment and provider acceptance remain separate.

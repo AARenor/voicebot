@@ -15,7 +15,7 @@ from app.providers.azure_tts import AzureTtsClient, ssml
 from app.providers.speech_delivery import SpeechDelivery, spoken_estonian_date
 from app.telephone import CallTools, UNKNOWN_REPLY, UNVERIFIED_REPLY
 from tests.test_telephone import Slots, prepared
-from tests.test_product_demo import client as demo_client, send, start
+from tests.test_product_demo import SimpleLlm, client as demo_client, send, start
 
 client = demo_client
 SSML = "{http://www.w3.org/2001/10/synthesis}"
@@ -45,18 +45,18 @@ def test_only_standalone_social_utterances_take_shortcuts(text, intent):
     assert intent_for(text) == intent
 
 
-@pytest.mark.parametrize("language", ["et", "en"])
+@pytest.mark.parametrize("language", ["et", "en", "ru"])
 def test_each_approved_dialogue_phrase_is_safe_but_extra_claims_are_rejected(language):
     state = CallTools(Slots(), language=language)
     for text in approved_dialogue(language):
         assert state.guard_reply(text, []) == text
-        extra = (
-            " Your booking is confirmed."
-            if language == "en"
-            else " Broneering on kinnitatud."
-        )
+        extra = {
+            "et": " Broneering on kinnitatud.",
+            "en": " Your booking is confirmed.",
+            "ru": " Бронирование подтверждено.",
+        }[language]
         assert state.guard_reply(text + extra, []) == (
-            ENGLISH["unverified"] if language == "en" else UNVERIFIED_REPLY
+            ENGLISH["unverified"] if language == "en" else state.say(UNVERIFIED_REPLY)
         )
     instructions = state.conversation_instructions
     assert "natural_questions" in instructions
@@ -83,8 +83,207 @@ def test_variation_is_call_scoped_and_does_not_store_the_callers_words():
 
 
 @pytest.mark.parametrize(
+    "language,question,utterance,expected",
+    [
+        ("et", "Mis kell sulle sobiks?", "Korda palun", "Mis kell sulle sobiks?"),
+        (
+            "en",
+            "What time works for you?",
+            "Please repeat that",
+            "What time works for you?",
+        ),
+        ("ru", "Какое время вам подходит?", "Повторите", "Какое время вам подходит?"),
+        (
+            "et",
+            "Mis kell sulle sobiks?",
+            "See on segane",
+            "Vabandust. Võtame ühe asja korraga. Mis kell sulle sobiks?",
+        ),
+        (
+            "en",
+            "What time works for you?",
+            "This is confusing",
+            "Sorry about that. Let's take it one step at a time. What time works for you?",
+        ),
+        (
+            "ru",
+            "Какое время вам подходит?",
+            "Это непонятно",
+            "Извините. Давайте шаг за шагом. Какое время вам подходит?",
+        ),
+    ],
+)
+def test_repeat_and_repair_reuse_the_last_checked_question(
+    language,
+    question,
+    utterance,
+    expected,
+):
+    state = CallTools(Slots(), language=language)
+    assert state.guard_reply(question, []) == question
+    state.observe_user_text(utterance, language=language)
+    assert state.direct_reply == expected
+    assert (
+        not state.pending and not state.cancel_approval and not state.dispatcher.calls
+    )
+
+
+@pytest.mark.parametrize(
+    "language,thanks",
+    [
+        ("et", "Aitäh"),
+        ("en", "Thank you"),
+        ("ru", "Спасибо"),
+    ],
+)
+def test_thanks_does_not_prompt_another_question(language, thanks):
+    state = CallTools(Slots(), language=language)
+    for _ in range(2):
+        state.observe_user_text(thanks, language=language)
+        assert state.direct_reply.count("?") == 0
+    assert (
+        not state.pending and not state.cancel_approval and not state.dispatcher.calls
+    )
+
+
+@pytest.mark.parametrize(
+    "language,human",
+    [
+        ("et", "Soovin inimesega rääkida"),
+        ("en", "Can I speak to a person"),
+        ("ru", "Можно поговорить с сотрудником"),
+    ],
+)
+def test_transfer_limit_does_not_push_a_test_booking(language, human):
+    state = CallTools(Slots(), language=language)
+    state.observe_user_text(human, language=language)
+    reply = state.direct_reply
+    assert "?" not in reply
+    assert {"et": "ei saa", "en": "can't", "ru": "нельзя"}[language] in reply
+    assert {"et": "testbroneering", "en": "test booking", "ru": "бронирован"}[
+        language
+    ] not in reply
+    assert (
+        not state.pending and not state.cancel_approval and not state.dispatcher.calls
+    )
+
+
+@pytest.mark.parametrize("intervening", ["answer", "rejection", "language"])
+def test_repeat_does_not_resurrect_a_question_after_context_is_replaced(intervening):
+    state = CallTools(Slots(), language="en")
+    question = "What time works for you?"
+    assert state.guard_reply(question, []) == question
+    if intervening == "answer":
+        state.guard_reply("You're welcome!", [])
+    elif intervening == "rejection":
+        assert state.guard_reply("PRIVATE invented room is available", []) != question
+    else:
+        state.observe_user_text("Russian, please")
+    state.observe_user_text("Please repeat that", language=state.language)
+    assert state.direct_reply != question
+    assert state.direct_reply in approved_dialogue(state.language)
+    assert "PRIVATE" not in repr(vars(state.conversation))
+
+
+@pytest.mark.parametrize(
+    "language,count_prompt",
+    [
+        ("et", "Mitu last"),
+        ("en", "How many children"),
+        ("ru", "Сколько детей"),
+    ],
+)
+def test_children_question_asks_for_one_count_not_a_second_yes_no_answer(
+    language, count_prompt
+):
+    state = CallTools(Slots(), language=language)
+    reply = state.guard_reply(QUESTIONS[language]["children"][0], [])
+    assert reply.count("?") == 1 and count_prompt in reply
+
+
+@pytest.mark.parametrize(
+    "language,booking_request,answer,next_question",
+    [
+        (
+            "et",
+            "Aitäh, broneeri tuba kahele täiskasvanule.",
+            "Null.",
+            "Millist toatüüpi eelistad?",
+        ),
+        (
+            "en",
+            "Thanks, book a room for two adults.",
+            "None.",
+            "Which room type would you prefer?",
+        ),
+        (
+            "en",
+            "Thanks, book a room for two adults.",
+            "0",
+            "Which room type would you prefer?",
+        ),
+    ],
+)
+def test_advertised_zero_children_answer_continues_clarification_without_writes(
+    client,
+    language,
+    booking_request,
+    answer,
+    next_question,
+):
+    model = SimpleLlm(reply=QUESTIONS[language]["children"][0])
+    client.app.state.stack["llm_primary"] = model
+    session = start(client)
+    first = send(client, session, booking_request, language=language).json()
+    assert first["reply"] == QUESTIONS[language]["children"][0]
+    model.reply = next_question
+    result = send(client, session, answer, language=language).json()
+    assert result["reply"] == next_question
+    assert (
+        result["tools_used"] == 0
+        and result["booking_changes"] == result["booking_ids"] == []
+    )
+    assert not result["recap_delivery_id"]
+    assert len(model.messages) == 2
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What date would you like for your test booking?",
+        "What time would you like for your test booking?",
+        "Would you like to book a spa treatment or a hotel room?",
+        "Which spa service would you like?",
+        "What is your arrival date?",
+        "What is your departure date?",
+        "How many adults will stay?",
+        "How many children will stay?",
+        "Please say the month and day in words, so I can get the date right.",
+        "Do you mean in the morning or in the afternoon or evening? All times are local to Tallinn.",
+    ],
+)
+def test_still_approved_english_clarifications_share_the_replay_identity(question):
+    state = CallTools(Slots(), language="en")
+    assert state.guard_reply(question, []) == question
+    state.observe_user_text("Please repeat that", language="en")
+    assert state.direct_reply == question
+    state.observe_user_text("This is confusing", language="en")
+    assert (
+        state.direct_reply
+        == "Sorry about that. Let's take it one step at a time. " + question
+    )
+    assert (
+        not state.dispatcher.calls and not state.pending and not state.cancel_approval
+    )
+
+
+@pytest.mark.parametrize(
     "language,utterance",
-    [("et", "Palun korda kuupäeva."), ("en", "Could you repeat that?")],
+    [
+        ("et", "Palun korda kuupäeva."),
+        ("en", "Could you repeat that?"),
+        ("ru", "Повторите"),
+    ],
 )
 def test_repeating_recap_preserves_hold_but_requires_delivery_again(
     language, utterance
@@ -109,7 +308,8 @@ def test_repeating_recap_preserves_hold_but_requires_delivery_again(
 
 
 @pytest.mark.parametrize(
-    "language,utterance", [("et", "Korda palun"), ("en", "Please repeat that")]
+    "language,utterance",
+    [("et", "Korda palun"), ("en", "Please repeat that"), ("ru", "Повторите")],
 )
 def test_repeated_recap_can_be_confirmed_only_after_trusted_playout(
     language, utterance
@@ -128,7 +328,8 @@ def test_repeated_recap_can_be_confirmed_only_after_trusted_playout(
 
 
 @pytest.mark.parametrize(
-    "language,utterance", [("et", "Korda palun"), ("en", "Please repeat that")]
+    "language,utterance",
+    [("et", "Korda palun"), ("en", "Please repeat that"), ("ru", "Повторите")],
 )
 def test_repeat_never_revives_an_expired_hold(language, utterance):
     async def run():
@@ -161,6 +362,9 @@ def test_politeness_cannot_hide_an_unknown_write(language, utterance):
         ("en", "thank you"),
         ("en", "i didn't understand"),
         ("en", "are you human"),
+        ("ru", "спасибо"),
+        ("ru", "я не понял"),
+        ("ru", "вы человек"),
     ],
 )
 def test_authenticated_social_turns_need_no_model_or_booking_write(
@@ -334,9 +538,9 @@ def test_native_social_reply_uses_public_llm_node_without_model_request():
             "livekit.agents.Agent.default.llm_node",
             side_effect=AssertionError("Provider called"),
         ):
-            assert [chunk async for chunk in agent.llm_node(context, [], ModelSettings())] == [
-                state.direct_reply
-            ]
+            assert [
+                chunk async for chunk in agent.llm_node(context, [], ModelSettings())
+            ] == [state.direct_reply]
 
     asyncio.run(run())
 
@@ -360,9 +564,9 @@ def test_native_booking_request_still_uses_provider_planning():
             yield "provider planning"
 
         with patch("livekit.agents.Agent.default.llm_node", plan):
-            assert [chunk async for chunk in agent.llm_node(context, [], ModelSettings())] == [
-                "provider planning"
-            ]
+            assert [
+                chunk async for chunk in agent.llm_node(context, [], ModelSettings())
+            ] == ["provider planning"]
 
     asyncio.run(run())
 
