@@ -80,7 +80,7 @@ def match_question(
         r"\?|^(?:kas|kuidas|miks|do|does|can|are|is|how|what|may|мож\w*|как|сколько|вход\w*|учит\w*)\b",
         text,
     ))
-    if not policy_question:
+    if not policy_question or re.search(r"\b(?:book|reserve|broneeri\w*|заброниру\w*)\b", text):
         topics = [topic for topic in topics if topic not in {"children", "groups"}]
     if "kitchen" in topics:
         topics = [topic for topic in topics if topic != "hours"]
