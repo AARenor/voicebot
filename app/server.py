@@ -444,7 +444,8 @@ def create_app():
     ):
         """Fictional HTTP turn. Optional session_id owns multi-turn state.
 
-        Auth before providers; only text/audio, language and session_id pass.
+        Auth before providers; only text/audio, ET/EN/RU/auto language, voice,
+        session_id and a next-input canonical recap delivery receipt pass.
         Without a session the call is isolated and cannot reuse another hold.
         Never retries a mutation automatically, never accepts browser history.
         """
@@ -480,6 +481,7 @@ def create_app():
                 turn_count=1,
                 voice_id=body.get("voice", "azure"),
             )
+        recap_delivery_id = body.get("recap_delivery_id")
         try:
             if key is not None:
                 selected = choose_speaker(stack, session.voice_id)
@@ -490,6 +492,11 @@ def create_app():
                     "browser",
                     session.tools.language if language == "auto" else language,
                 )
+            if recap_delivery_id is not None:
+                # Reject before a streamed response commits 200 headers, while
+                # retaining the same one-use boundary before paid recognition.
+                session.consume_recap_delivery(recap_delivery_id)
+                recap_delivery_id = None
         except BaseException:
             if key is not None:
                 sessions.release(session)
@@ -522,11 +529,15 @@ def create_app():
                     audio,
                     text,
                     language,
-                    recap_delivery_id=body.get("recap_delivery_id"),
+                    recap_delivery_id=recap_delivery_id,
                     tts_override=selected,
                     emit=events.emit if events is not None else None,
                 )
                 response["session_id"] = key
+                if key is None:
+                    # Isolated turns have no reusable state to acknowledge next time.
+                    response["recap_delivery_id"] = None
+                    response["recap_expires_in_s"] = None
                 response["call_id"] = session.tools.call_id
                 try:
                     callslog.log_call(

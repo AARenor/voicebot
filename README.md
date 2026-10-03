@@ -10,6 +10,17 @@ Only fictional guests and approved fictional FAQ data.
 Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
+The supported speech languages are Estonian (`et`), English (`en`) and Russian
+(`ru`), with automatic recognition (`auto`). Other requested languages fail
+explicitly instead of silently using the wrong speech.
+HTTP booking recaps return
+a session-bound delivery receipt: the browser forwards it only after complete
+playback or an explicit reading action, with the later confirmation input.
+Synthesis/rendering alone is not delivery. Direct booking similarly requires a
+reading action followed by a separate confirmation. Interrupted/expired recaps
+cannot authorize a write; known pre-write failures do not lock unrelated fresh
+attempts, while unknown write outcomes remain blocked from automatic retry.
+
 Both voice transports use configurable Groq `openai/gpt-oss-120b` and
 `whisper-large-v3`. Telephone calls automatically detect Estonian, English or
 Russian and reply with Azure Anu, Jenny or Svetlana respectively. English covers the same

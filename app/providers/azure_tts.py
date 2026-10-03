@@ -1,4 +1,4 @@
-"""Azure Neural TTS REST client (ET primary: Anu/Kert).
+"""Azure Neural TTS REST client for the supported ET/EN/RU voice paths.
 
 Flow (Azure Speech REST, verified learn.microsoft.com language-support):
   POST https://{region}.api.cognitive.microsoft.com/sts/v1.0/issueToken
@@ -14,6 +14,7 @@ SSML tags other than break/phoneme count as billable — keep SSML lean.
 
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -37,6 +38,16 @@ from .modern_tts import (
 )
 
 TOKEN_TTL_SECONDS = 9 * 60
+
+
+def validated_voice(voice, lang):
+    voice = voice.strip() if isinstance(voice, str) else ""
+    lang = lang.strip() if isinstance(lang, str) else ""
+    if (
+        lang not in {"et-EE", "ru-RU"} and not re.fullmatch(r"en-[A-Z]{2}", lang)
+    ) or not re.fullmatch(re.escape(lang) + r"-[A-Za-z0-9]+Neural", voice):
+        raise ValueError("supported speech voice required")
+    return voice, lang
 
 
 class _LanguageSpeaker:
@@ -86,8 +97,7 @@ class AzureTtsClient:
         languages: dict[str, tuple[str, str]] | None = None,
         delivery: SpeechDelivery | None = None,
     ) -> None:
-        if not voice or not lang:
-            raise ValueError("azure: voice and lang are required")
+        voice, lang = validated_voice(voice, lang)
         self._key = subscription_key
         self._region = region
         self._voice = voice
@@ -95,6 +105,14 @@ class AzureTtsClient:
         self._format = output_format
         self._languages = dict(languages or {})
         self._delivery = delivery or SpeechDelivery()
+        for language, pair in self._languages.items():
+            checked = validated_voice(*pair)
+            if (
+                language not in {"et", "en", "ru"}
+                or checked[1].split("-")[0] != language
+            ):
+                raise ValueError("supported speech voice required")
+            self._languages[language] = checked
         self._http = httpx.Client(timeout=30.0, transport=transport)
         self._token: str | None = None
         self._token_at: float = 0.0
@@ -135,19 +153,32 @@ class AzureTtsClient:
         return token
 
     def for_language(self, language):
-        voice, lang = self._languages.get(language, (self._voice, self._lang))
+        if language not in {"et", "en", "ru"}:
+            raise ValueError("unsupported speech language")
+        if language in self._languages:
+            voice, lang = self._languages[language]
+        elif language == self._lang.split("-")[0]:
+            voice, lang = self._voice, self._lang
+        else:
+            raise ValueError("speech language not configured")
         return _LanguageSpeaker(self, voice, lang)
 
     def synthesize(self, text: str, *, voice=None, lang=None) -> bytes:
         """Synthesize one reply turn. Returns audio bytes."""
+        voice, lang = validated_voice(
+            self._voice if voice is None else voice,
+            self._lang if lang is None else lang,
+        )
         return self._synthesize_once(text, self.get_token(), voice=voice, lang=lang)
 
     def stream(self, text: str, *, voice=None, lang=None):
         """Real REST streaming; refresh once only before any audio is emitted."""
         validate_text(text)
-        body = ssml(
-            text, voice or self._voice, lang or self._lang, self._delivery
-        ).encode("utf-8")
+        voice, lang = validated_voice(
+            self._voice if voice is None else voice,
+            self._lang if lang is None else lang,
+        )
+        body = ssml(text, voice, lang, self._delivery).encode("utf-8")
         deadline = time.monotonic() + TOTAL_TIMEOUT
         try:
             token = self.get_token()

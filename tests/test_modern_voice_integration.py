@@ -2,18 +2,23 @@
 
 import asyncio
 import time
+from unittest.mock import patch
 
 import pytest
 
 from tests.test_browser_audio_stream import AsgiExchange, StreamingSpeaker
-from tests.test_product_demo import AUTH, client, start
+from tests.test_product_demo import AUTH, start
+from tests.test_product_demo import client as client
 
 
 def test_stream_fixture_controls_are_authenticated_and_not_shadowed_by_static():
     from fastapi.testclient import TestClient
     from tests.browser_fixture import create_streaming_app
 
-    with TestClient(create_streaming_app()) as fixture:
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        TestClient(create_streaming_app()) as fixture,
+    ):
         response = fixture.get("/test/stream/state", headers=AUTH)
         assert response.status_code == 200
         assert response.json() == {

@@ -16,10 +16,10 @@ from tests.test_product_demo import (
     BookingLlm,
     SimpleLlm,
     Speaker,
-    client,
     install_backend,
     start,
 )
+from tests.test_product_demo import client as client  # noqa: PLC0414
 
 STREAM_AUTH = {**AUTH, "Accept": "application/x-ndjson"}
 
@@ -116,7 +116,9 @@ def test_stream_receipt_authorizes_exactly_one_later_owned_write(
     )
     if not unknown:
         assert done["booking_changes"][0]["action"] == "confirmed"
-    events(client.post("/api/turn", headers=STREAM_AUTH, json=body))
+    replay = client.post("/api/turn", headers=STREAM_AUTH, json=body)
+    assert replay.status_code == 409
+    assert replay.json() == {"detail": "recap_delivery_expired_or_unknown"}
     assert (
         sum(r.method == "POST" and r.url.path.endswith("/appointments") for r in writes)
         == 1

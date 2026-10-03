@@ -17,7 +17,7 @@ from tests.test_product_demo import (
     BookingLlm,
     SimpleLlm,
     call,
-    client,
+    client as client,
     install_backend,
     send,
     start,
@@ -181,15 +181,20 @@ def test_http_faq_invalidates_a_pending_booking_instead_of_confirming_it(
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    prepared = send(client, session, "Soovin testbroneeringut")
-    assert prepared.status_code == 200 and prepared.json()["recap_delivery_id"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200 and preparation.json()["recap_delivery_id"]
     state = client.app.state.demo_sessions.sessions[session].tools
     assert state.pending and not state.pending["delivery"]
     client.app.state.stack["llm_primary"] = SimpleLlm(
         "Sinu testbroneering on edukalt loodud."
     )
 
-    result = send(client, session, "Kas see on päris spaa?").json()
+    result = send(
+        client,
+        session,
+        "Kas see on päris spaa?",
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()
     assert result["reply"] == state.demo["faq"][0]["answer_et"]
     assert state.pending is None
     assert send(client, session, CONSENT).json()["reply"] == UNVERIFIED
@@ -206,8 +211,14 @@ def test_http_old_booking_does_not_license_a_zero_tool_new_booking_claim(
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
-    assert send(client, session, CONSENT).json()["booking_ids"] == ["42"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200
+    assert send(
+        client,
+        session,
+        CONSENT,
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()["booking_ids"] == ["42"]
     client.app.state.stack["llm_primary"] = SimpleLlm(
         "Broneerisin sulle uue aja reedeks kell 11:00."
     )
@@ -624,8 +635,14 @@ def test_http_committed_delete_timeout_stays_unknown_next_turn_and_blocks_retry(
     model = BookingLlm(day)
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
-    assert send(client, session, CONSENT).json()["booking_ids"] == ["42"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200
+    assert send(
+        client,
+        session,
+        CONSENT,
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()["booking_ids"] == ["42"]
     assert records
 
     class CancelLlm:

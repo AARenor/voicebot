@@ -21,22 +21,28 @@ async (page) => {
   assert(await page.locator('.offer-button').count()>0,'spa availability missing');
   await page.locator('.offer-button').first().click();
   await page.waitForFunction(()=>!bookingUi.busy);
-  assert(await page.locator('#booking-confirm').isEnabled(),'recap acknowledgement did not open confirm');
+  assert(await page.locator('#booking-confirm').isDisabled(),'rendering opened consent before deliberate reading');
   assert((await page.locator('#booking-recap-text').textContent()).includes('Fiktiivne'),'spa recap lacks disclosure');
   assert(await page.locator('#bookings tbody tr').count()===0,'prepare created a booking before consent');
+  await page.locator('#booking-recap-read').click();
+  await page.waitForFunction(()=>!bookingUi.busy);
+  assert(await page.locator('#booking-confirm').isEnabled(),'deliberate reading did not open separate confirmation');
+  assert(await page.locator('#bookings tbody tr').count()===0,'reading created a booking before consent');
   await page.locator('#booking-decline').click();
   assert(await page.locator('#bookings tbody tr').count()===0,'decline created a booking');
   await page.locator('#booking-search').click();
   await page.waitForFunction(()=>!bookingUi.busy);
   await page.locator('.offer-button').last().click();
   await page.waitForFunction(()=>!bookingUi.busy);
-  await page.locator('#booking-confirm').click();
+  await page.locator('#booking-recap-read').click();
   await page.waitForFunction(()=>!bookingUi.busy);
+  await page.locator('#booking-confirm').click();
+  await page.waitForFunction(()=>!bookingUi.busy && document.querySelectorAll('#bookings tbody tr').length===1);
   assert(await page.locator('#bookings tbody tr').count()===1,'confirmed spa booking missing');
   const spaReceipt=await page.locator('#booking-receipt-text').textContent();
   await page.locator('#booking-cancel-request').click();
   await page.locator('#booking-cancel').click();
-  await page.waitForFunction(()=>!bookingUi.busy);
+  await page.waitForFunction(()=>!bookingUi.busy && !state.readBusy && document.querySelectorAll('#bookings tbody tr').length===0);
   assert(await page.locator('#bookings tbody tr').count()===0,'cancelled spa booking still active');
   await page.locator('#booking-kind-stay').click();
   await page.locator('#new-room-type').selectOption('');
@@ -49,8 +55,11 @@ async (page) => {
   await page.waitForFunction(()=>!bookingUi.busy);
   assert((await page.locator('#booking-recap-text').textContent()).includes('Näidishind'),'room recap lost synthetic price label');
   assert(await page.locator('.stay-row').count()===0,'room booked before consent');
-  await page.locator('#booking-confirm').click();
+  assert(await page.locator('#booking-confirm').isDisabled(),'room recap rendering opened consent');
+  await page.locator('#booking-recap-read').click();
   await page.waitForFunction(()=>!bookingUi.busy);
+  await page.locator('#booking-confirm').click();
+  await page.waitForFunction(()=>!bookingUi.busy && document.querySelectorAll('.stay-row').length===1);
   assert(await page.locator('.stay-row').count()===1,'confirmed room missing');
   const roomReceipt=await page.locator('#booking-receipt-text').textContent();
   // A fresh session cannot cancel the first session's receipt.
@@ -74,7 +83,7 @@ async (page) => {
   await page.screenshot({path:'output/playwright/booking-connected-mobile.png',fullPage:true});
   await page.locator('#booking-cancel-request').click();
   await page.locator('#booking-cancel').click();
-  await page.waitForFunction(()=>!bookingUi.busy);
+  await page.waitForFunction(()=>!bookingUi.busy && !bookingUi.staysBusy && document.querySelectorAll('.stay-row').length===0);
   assert(await page.locator('.stay-row').count()===0,'cancelled room still counted as active');
   assert(await page.locator('#overview-stays').textContent()==='0','cancelled room remained in overview');
   // Inject a lost write receipt and ensure the UI never repeats the write.
@@ -82,6 +91,8 @@ async (page) => {
   await page.locator('#booking-search').click();
   await page.waitForFunction(()=>!bookingUi.busy);
   await page.locator('.offer-button').first().click();
+  await page.waitForFunction(()=>!bookingUi.busy);
+  await page.locator('#booking-recap-read').click();
   await page.waitForFunction(()=>!bookingUi.busy);
   let uncertainWrites=0;
   await page.route('**/api/booking/confirm',route=>{uncertainWrites++;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'write_outcome_unknown'})});});

@@ -457,8 +457,10 @@ def test_owned_multiturn_prepare_confirm_read_cancel_and_fixture_alias(
         "Demo Esimene",
         CONSENT_TEXT,
     ):
-        assert recap in prepare.json()["reply"], "canonical recap was not supplied"
-    confirmed = send(client, session, CONSENT)
+        assert recap in prepare.json()["reply"], "canonical recap was not returned"
+    confirmed = send(
+        client, session, CONSENT, recap_delivery_id=prepare.json()["recap_delivery_id"]
+    )
     assert confirmed.status_code == 200
     assert confirmed.json()["outcome"] == "tools_ok"
     assert records and confirmed.json()["booking_ids"] == ["42"]
@@ -518,7 +520,8 @@ def test_unknown_write_logged_closed_and_not_automatically_retried(client, tmp_p
     day, _, writes = install_backend(client, tmp_path, unknown=True)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200
 
     class Retry:
         def chat(self, messages, tools=None):
@@ -535,9 +538,15 @@ def test_unknown_write_logged_closed_and_not_automatically_retried(client, tmp_p
 
     client.app.state.stack["llm_primary"] = Retry()
     with patch("app.callslog.log_call") as log:
-        response = send(client, session, CONSENT)
+        response = send(
+            client,
+            session,
+            CONSENT,
+            recap_delivery_id=prepared.json()["recap_delivery_id"],
+        )
     assert response.status_code == 200
     assert response.json()["outcome"] == "unknown_outcome"
+    assert response.json()["recap_delivery_id"] is None
     assert log.call_args.args[4] == "unknown_outcome"
     assert len([r for r in writes if r.url.path.endswith("/appointments")]) == 1
     assert "PRIVATE" not in response.text
@@ -596,8 +605,17 @@ def test_uncertain_cancellation_is_not_logged_as_success(client, tmp_path):
     day, records, writes = install_backend(client, tmp_path, cancel_unknown=True)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
-    assert send(client, session, CONSENT).status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200
+    assert (
+        send(
+            client,
+            session,
+            CONSENT,
+            recap_delivery_id=prepared.json()["recap_delivery_id"],
+        ).status_code
+        == 200
+    )
     with patch("app.callslog.log_call") as log:
         response = send(client, session, CANCEL)
     assert response.status_code == 200
@@ -615,7 +633,8 @@ def test_unknown_mutation_survives_failed_model_followup_in_response_and_log(
     model = BookingLlm(day)
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200
 
     class FailingFollowup:
         def chat(self, messages, tools=None):
@@ -625,7 +644,12 @@ def test_unknown_mutation_survives_failed_model_followup_in_response_and_log(
 
     client.app.state.stack["llm_primary"] = FailingFollowup()
     with patch("app.callslog.log_call") as log:
-        response = send(client, session, CONSENT)
+        response = send(
+            client,
+            session,
+            CONSENT,
+            recap_delivery_id=prepared.json()["recap_delivery_id"],
+        )
     assert response.status_code == 200
     assert response.json()["outcome"] == "unknown_outcome"
     assert response.json()["tools_used"] == 1
@@ -704,8 +728,10 @@ def test_failed_preparation_turn_does_not_arm_later_consent(client, tmp_path):
                 self.step = 5
                 # Terminal recaps now skip model follow-up. A premature write
                 # can still be attempted in the same model tool-call batch.
-                return {"tool_calls":
-                    call("prepare_demo_booking", {"hold_id": self.hold})["tool_calls"]
+                return {
+                    "tool_calls": call("prepare_demo_booking", {"hold_id": self.hold})[
+                        "tool_calls"
+                    ]
                     + call("confirm_slot_booking", {"hold_id": self.hold})["tool_calls"]
                 }
             if self.step >= 5:
@@ -719,13 +745,16 @@ def test_failed_preparation_turn_does_not_arm_later_consent(client, tmp_path):
     session = start(client)
     prepared = send(client, session, "Soovin testbroneeringut").json()
     assert prepared["outcome"] == "tools_failed"
+    assert prepared["recap_delivery_id"] is None
     assert not records and not writes
     confirmed = send(client, session, CONSENT).json()
     assert not records and not writes, "undelivered recap authorized a write"
     assert confirmed["booking_changes"] == []
 
 
-def test_failed_recap_synthesis_requires_new_preparation(client, tmp_path):
+def test_failed_recap_synthesis_without_explicit_read_ack_cannot_arm_consent(
+    client, tmp_path
+):
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
 
@@ -737,7 +766,9 @@ def test_failed_recap_synthesis_requires_new_preparation(client, tmp_path):
     session = start(client)
     assert send(client, session, "Soovin testbroneeringut").json()["tts_failed"] is True
     client.app.state.stack["tts"] = Speaker()
-    result = send(client, session, CONSENT).json()
+    result = client.post(
+        "/api/turn", json={"session_id": session, "text": CONSENT}, headers=AUTH
+    ).json()
     assert not records and not writes
     assert result["booking_changes"] == []
 
@@ -747,9 +778,15 @@ def test_cancelled_confirmation_replay_has_no_new_success_metadata(client, tmp_p
     model = BookingLlm(day)
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200
     assert (
-        send(client, session, CONSENT).json()["booking_changes"][0]["action"]
+        send(
+            client,
+            session,
+            CONSENT,
+            recap_delivery_id=prepared.json()["recap_delivery_id"],
+        ).json()["booking_changes"][0]["action"]
         == "confirmed"
     )
     assert (
