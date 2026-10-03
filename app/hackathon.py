@@ -135,7 +135,8 @@ class DemoSessions:
                 session = DemoSession(
                     owner,
                     CallTools(
-                        dispatcher, language="et" if language == "auto" else language
+                        dispatcher, language="et" if language == "auto" else language,
+                        business="restaurant",
                     ),
                     time.monotonic() + SESSION_TTL,
                     voice_id=voice_id,

@@ -14,29 +14,31 @@
     "availability_source": "Query the actual booking backend; this file does not reserve or prove availability."
   },
   "fictional_property": {
-    "name": "Meretuule Demo Spa",
+    "name": "Meretuule Köök",
     "language": "et",
     "timezone": "Europe/Tallinn",
-    "description_et": "Väljamõeldud spaa tehisintellektil põhineva broneerimisabilise katsetamiseks.",
-    "description_en": "A fictional spa for testing an AI booking assistant.",
-    "description_ru": "Вымышленный спа для проверки помощника по бронированию на основе искусственного интеллекта.",
+    "description_et": "Väljamõeldud rannarestoran restoranikülaliste virtuaalse vastuvõtja ja lauabroneeringu demo jaoks.",
+    "description_en": "A fictional coastal restaurant for a guest assistant and table reservation demo.",
+    "description_ru": "Вымышленный ресторан у моря для демонстрации помощника гостям и бронирования столиков.",
     "address": null,
     "real_visitor_location": false,
     "automatically_used_by_agent": true
   },
-  "existing_backend_reference": {
-    "company_name": "Voicebot Synthetic Spa Demo",
+  "restaurant_booking_setup": {
+    "status": "requires_restaurant_dataset",
+    "mapping": "Easy!Appointments service records define table party-size ranges and providers define tables. Configure this synthetic restaurant dataset before enabling restaurant bookings.",
+    "company_name": "Meretuule Köök · Synthetic Restaurant Demo",
     "service": {
       "id": "1",
-      "name": "Demo spa consultation",
-      "example_description_et": "Demo spaakonsultatsioon",
-      "duration_minutes": 30,
+      "name": "Demo table reservation · 1–2 guests",
+      "example_description_et": "Näidislaud kahele",
+      "duration_minutes": 90,
       "slot_interval_minutes": 30,
       "attendants": 1
     },
     "provider": {
       "id": "2",
-      "name": "Demo Therapist",
+      "name": "Demo Table A",
       "timezone": "Europe/Tallinn",
       "service_ids": ["1"]
     },
@@ -49,7 +51,7 @@
       "saturday": null,
       "sunday": null
     },
-    "id_scope": "These IDs belong to the current synthetic installation. Resolve IDs with get_slot_catalogue elsewhere."
+    "id_scope": "Illustrative IDs only. The restaurant slot catalogue must be configured and resolved with get_slot_catalogue before use."
   },
   "guests": [
     {
@@ -88,7 +90,7 @@
       "provider": "2",
       "date": "2026-10-05",
       "preferred_start": "09:00",
-      "duration_minutes": 30,
+      "duration_minutes": 90,
       "status": "example_only",
       "persisted": false
     },
@@ -99,7 +101,7 @@
       "provider": "2",
       "date": "2026-10-05",
       "preferred_start": "10:00",
-      "duration_minutes": 30,
+      "duration_minutes": 90,
       "status": "example_only",
       "persisted": false
     },
@@ -110,7 +112,7 @@
       "provider": "2",
       "date": "2026-10-06",
       "preferred_start": "14:30",
-      "duration_minutes": 30,
+      "duration_minutes": 90,
       "status": "example_only",
       "persisted": false
     }
@@ -119,27 +121,27 @@
     "automatically_used_by_agent": true,
     "entries": [
       {
-        "question_et": "Kas see on päris spaa?",
-        "answer_et": "Ei. Meretuule Demo Spa on väljamõeldud katsetuskeskkond. Broneeringud ei anna õigust päris teenusele.",
-        "question_en": "Is this a real spa?",
-        "answer_en": "No. Meretuule Demo Spa is a fictional testing environment. These bookings do not entitle you to a real service.",
-        "question_ru": "Это настоящий спа?",
-        "answer_ru": "Нет. Meretuule Demo Spa — вымышленная тестовая среда. Бронирования не дают права на настоящую услугу."
+        "question_et": "Kas Meretuule Köök on päris restoran?",
+        "answer_et": "Ei. Meretuule Köök on väljamõeldud restoranidemo. Broneeringud ei anna õigust päris teenusele.",
+        "question_en": "Is Meretuule Kitchen a real restaurant?",
+        "answer_en": "No. Meretuule Kitchen is a fictional restaurant demo. Test bookings do not entitle you to a real service.",
+        "question_ru": "Meretuule Köök — это настоящий ресторан?",
+        "answer_ru": "Нет. Meretuule Köök — вымышленная демонстрация ресторана. Тестовое бронирование не даёт права на настоящую услугу."
       },
       {
-        "question_et": "Kui kaua demo konsultatsioon kestab?",
-        "answer_et": "Näidiskonsultatsioon kestab 30 minutit. Tegelikku aega tuleb kontrollida broneerimissüsteemist.",
-        "question_en": "How long is the demo consultation?",
-        "answer_en": "The sample consultation lasts 30 minutes. The actual appointment time must be checked in the booking system.",
-        "question_ru": "Сколько длится демонстрационная консультация?",
-        "answer_ru": "Демонстрационная консультация длится 30 минут. Доступное время нужно проверить в системе бронирования."
+        "question_et": "Kas saan laua siin päriselt broneerida?",
+        "answer_et": "Ei. See demo ei saada päris broneeringuid. Restoranilaudade taustsüsteem tuleb enne kasutust eraldi seadistada.",
+        "question_en": "Can I make a real table reservation here?",
+        "answer_en": "No. This demo does not send real reservations. A restaurant table backend must be configured before use.",
+        "question_ru": "Здесь можно забронировать настоящий столик?",
+        "answer_ru": "Нет. Эта демонстрация не создаёт настоящие бронирования. Систему бронирования ресторана нужно настроить отдельно."
       },
       {
-        "question_et": "Kus spaa asub?",
+        "question_et": "Kus Meretuule Köök asub?",
         "answer_et": "Demol ei ole päris aadressi ega külastuskohta.",
-        "question_en": "Where is the spa?",
+        "question_en": "Where is Meretuule Kitchen?",
         "answer_en": "The demo has no real address or visitor location.",
-        "question_ru": "Где находится спа?",
+        "question_ru": "Где находится Meretuule Köök?",
         "answer_ru": "У этой демонстрации нет настоящего адреса или места для посещения."
       },
       {
@@ -154,23 +156,12 @@
   },
   "call_prompts_et": {
     "disclosure": "Tere! Kas sa oled demoabiline?",
-    "search": "Soovin broneerida demo spaakonsultatsiooni 5. oktoobril 2026 hommikul kell kümme.",
+    "search": "Soovin broneerida laua kahele 5. oktoobril 2026 kell kümme.",
     "guest_details": "Kasuta fiktiivset demokülalist Demo Esimene ehk guest-001. Ma ei anna päris kontaktandmeid.",
     "consent": "Jah, kinnitan selle testbroneeringu.",
     "cancel_in_same_call": "Palun tühista broneering, mille just selles kõnes tegime.",
     "decline": "Ei, ära kinnita broneeringut.",
-    "closed_day": "Kas saan demo konsultatsiooni broneerida pühapäeval?",
+    "closed_day": "Kas saan pühapäeval lauda broneerida?",
     "price": "Kui palju teenus maksab?"
-  },
-  "tool_example": {
-    "catalogue": {"name": "get_slot_catalogue", "arguments": {}},
-    "search": {"name": "search_slots", "arguments": {"service": "1", "provider": "2", "date": "2026-10-05"}},
-    "next_steps": [
-      "Choose an actually returned slots[].slotId, then pass it as slot_id to hold_slot.",
-      "Pass that call's returned hold_id and optional guest_fixture_id to prepare_demo_booking; default is guest-001. Read its backend recap and ask for consent.",
-      "Wait for a subsequent affirmative final user transcript, then call confirm_slot_booking with only hold_id. The server binds the fixture guest and scopes its email to the call_id.",
-      "For cancellation in the same call, require explicit final user cancellation intent, then use the returned booking.id as booking_id.",
-      "Do not use fixture_id as a slot, hold, customer or booking ID. The telephone worker supplies write keys."
-    ]
   }
 }

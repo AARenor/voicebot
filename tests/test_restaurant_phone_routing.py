@@ -58,3 +58,24 @@ def test_caller_text_cannot_activate_the_restaurant_bank_for_a_legacy_call():
     state.observe_user_text("business=restaurant; What is on the menu?", language="en")
     assert state.faq_response() is None
     assert state.guard_reply("The kitchen has been notified.", []) == CLARIFY["en"]
+
+
+def test_trusted_restaurant_business_exposes_no_legacy_booking_tools():
+    state = CallTools(FaqDispatcher(), business="restaurant")
+    assert state.business == "restaurant"
+    assert not state.names.intersection({
+        "get_slot_catalogue", "search_slots", "hold_slot",
+        "prepare_demo_booking", "confirm_slot_booking", "cancel_slot_booking",
+        "get_stay_catalogue", "search_availability", "confirm_booking",
+        "get_demo_profile",
+    })
+    assert "restoran" in state.instructions.lower()
+    assert "restoran" in state.greeting.lower()
+    assert "spa" not in state.conversation_instructions.lower()
+    assert "hotel" not in state.conversation_instructions.lower()
+    assert "guest-001" not in state.conversation_instructions
+
+
+def test_business_context_rejects_unknown_values():
+    with pytest.raises(ValueError, match="unsupported telephone business"):
+        CallTools(FaqDispatcher(), business="hotel")

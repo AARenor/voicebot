@@ -729,7 +729,8 @@ async def entrypoint(ctx: JobContext):
                 )
             )
         state = CallTools(
-            Dispatcher(slot=adapter, stay=stay), language=speech_config.initial_language
+            Dispatcher(slot=adapter, stay=stay), language=speech_config.initial_language,
+            business="restaurant",
         )
         callslog.history_safe(
             call_history.start, state.call_id, "telephone", state.language

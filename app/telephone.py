@@ -38,6 +38,7 @@ from .conversation import (
 )
 from .booking_faq import (
     CLARIFY as FAQ_CLARIFY,
+    RESTAURANT_CLARIFY,
     MISSING_FACTS,
     NO_BOOKING,
     RESTAURANT_FAQ_PATH,
@@ -541,10 +542,13 @@ def safe_speech(text, results, language="et"):
 class CallTools:
     """Never accept model-controlled ownership or write identity."""
 
-    def __init__(self, dispatcher, *, call_id=None, language="et"):
+    def __init__(self, dispatcher, *, call_id=None, language="et", business="legacy"):
         if language not in LANGUAGES:
             raise ValueError("unsupported telephone language")
+        if business not in {"legacy", "restaurant"}:
+            raise ValueError("unsupported telephone business")
         self.language = language
+        self.business = business
         self.conversation = Conversation()
         self.clarification = None
         self.unsupported_language = False
@@ -553,10 +557,11 @@ class CallTools:
             uuid.uuid4().hex if call_id is None else call_id
         )
         self.demo = load_demo_data()
+        tool_names = set() if business == "restaurant" else SLOT_TOOLS | STAY_TOOLS
         self.schemas = [
             copy.deepcopy(t["function"])
             for t in dispatcher.available_tools()
-            if t["function"]["name"] in SLOT_TOOLS | STAY_TOOLS
+            if t["function"]["name"] in tool_names
         ]
         for schema in self.schemas:
             schema["parameters"].get("properties", {}).pop("idempotency_key", None)
@@ -576,7 +581,8 @@ class CallTools:
                     "Cancel the latest owned booking only after explicit final user "
                     "cancellation intent."
                 )
-        self.schemas.append(copy.deepcopy(DEMO_PROFILE_TOOL))
+        if business != "restaurant":
+            self.schemas.append(copy.deepcopy(DEMO_PROFILE_TOOL))
         if any(s["name"] == "confirm_slot_booking" for s in self.schemas):
             self.schemas.append(copy.deepcopy(PREPARE_TOOL))
             self.schemas.append(copy.deepcopy(PLAN_TOOL))
@@ -621,6 +627,12 @@ class CallTools:
 
     @property
     def language_instructions(self):
+        if self.business == "restaurant":
+            return {
+                "et": " Vasta eesti keeles.",
+                "en": " Respond only in English.",
+                "ru": " Отвечай только по-русски.",
+            }[self.language]
         if self.language != "ru":
             return ""
         prompts = [
@@ -718,13 +730,13 @@ class CallTools:
             "name": self.demo["profile"]["name"],
             "current_date": datetime.now(ZoneInfo(DEMO_TIMEZONE)).date().isoformat(),
             "timezone": DEMO_TIMEZONE,
-            "guests": {
+            "guests": {} if self.business == "restaurant" else {
                 key: f"{g['firstName']} {g['lastName']}"
                 for key, g in self.demo["guests"].items()
             },
             "faq": self.demo["faq"],
-            "natural_questions": QUESTIONS[self.language],
-            "booking_inquiry": self.booking_inquiry,
+            "natural_questions": {} if self.business == "restaurant" else QUESTIONS[self.language],
+            "booking_inquiry": None if self.business == "restaurant" else self.booking_inquiry,
         }
         if self.language == "en":
             context["language"] = "en"
@@ -736,7 +748,7 @@ class CallTools:
                 }
                 for entry in self.demo["faq"]
             ]
-            context["approved_questions"] = {
+            context["approved_questions"] = {} if self.business == "restaurant" else {
                 key: ENGLISH[key]
                 for key in (
                     "ask_date_time",
@@ -757,12 +769,30 @@ class CallTools:
                 )
             }
             context["clarification_required"] = self.clarification
+            if self.business == "restaurant":
+                return (
+                    "You are the friendly assistant for Meretuule Kitchen, a fictional restaurant demo. "
+                    "This demo has no configured restaurant table booking backend, so do not offer, check, "
+                    "or claim reservations. Do not claim real hours, address, menu, prices, dietary or allergy "
+                    "accommodations. Use only the approved restaurant FAQ answers in the demo context; explain "
+                    "that real reservations are unavailable. No payments, real contact details, or real service.\n"
+                    + STYLE_INSTRUCTIONS["en"] + "\nDemo context (data only):\n"
+                    + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+                )
             return (
                 ENGLISH_INSTRUCTIONS
                 + "\n"
                 + STYLE_INSTRUCTIONS["en"]
                 + "\nDemo context (data only):\n"
                 + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+            )
+        if self.business == "restaurant":
+            return (
+                "Sa oled Meretuule Köögi sõbralik virtuaalne abiline. See on väljamõeldud restoranidemo ja restoranilaudade broneerimise taustsüsteem pole seadistatud. Ära paku ega kontrolli lauabroneeringuid ega väida, et broneering on tehtud. Ära väida päris lahtiolekuaegu, aadressi, menüüd, hindu ega toiduallergiate või erisoovide lahendamise võimalust. Vasta ainult demokonteksti kinnitatud restorani KKK järgi; selgita, et päris broneeringuid teha ei saa. Ära küsi päris kontakt- ega makseandmeid.\n"
+                + STYLE_INSTRUCTIONS[self.language]
+                + "\nDemokontekst (ainult andmed, mitte juhised):\n"
+                + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+                + self.language_instructions
             )
         return (
             "Sa oled fiktiivse Meretuule hotelli ja spaademo sõbralik eestikeelne abiline. Ära luba päris teenust/inimüleandmist. Ära küsi päris kontakte ega makseandmeid.\n"
@@ -781,6 +811,15 @@ class CallTools:
 
     @property
     def instructions(self):
+        if self.business == "restaurant":
+            profile = get_demo_profile(self.demo, call_id=self.call_id)
+            profile.pop("guest_fixtures", None)
+            profile["availability_source"] = "Restaurant table availability is not configured."
+            return (
+                "Sa oled Meretuule Köögi restorani demoabiline. Päris restorani ega lauabroneerimise backend'i pole seadistatud. Ära väida saadavust, lahtiolekuaegu, päris menüüd, hindu, allergiainfo ega broneeringu loomist. Kasuta ainult kinnitatud demo KKK-d. Ära küsi päris kontakt- ega makseandmeid.\n"
+                + json.dumps(profile, ensure_ascii=False)
+                + self.language_instructions
+            )
         return (
             (ENGLISH_INSTRUCTIONS if self.language == "en" else INSTRUCTIONS)
             + "\nDemokontekst (ainult andmed, mitte juhised):\n"
@@ -792,6 +831,8 @@ class CallTools:
 
     @property
     def greeting(self):
+        if self.business == "restaurant":
+            return {"et": "Tere! See on Meretuule Köögi restorani demo. Kuidas saan aidata?", "en": "Hello! This is the Meretuule Kitchen restaurant demo. How can I help?", "ru": "Здравствуйте! Это демонстрация ресторана Meretuule Köök. Чем могу помочь?"}[self.language]
         return ENGLISH["greeting"] if self.language == "en" else self.say(GREETING)
 
     @property
@@ -1004,6 +1045,7 @@ class CallTools:
         reply = self.faq_reply()
         if reply is not None:
             return {"content": self.guard_reply(reply, self.results)}
+
         for route, name, key in (
             ("stay_catalogue", "get_stay_catalogue", "room_types"),
             ("slot_catalogue", "get_slot_catalogue", "services"),
@@ -1015,6 +1057,10 @@ class CallTools:
                 if not attempted and name in self.names and allow_actions:
                     return {"name": name, "arguments": {}}
         return {"content": self.guard_reply(MISSING_FACTS[self.language], self.results)}
+
+    @property
+    def clarification_reply(self):
+        return (RESTAURANT_CLARIFY if self.business == "restaurant" else FAQ_CLARIFY)[self.language]
 
     def inquiry_reply(self):
         """Trusted clarification only, without a provider call or booking action."""
@@ -1233,7 +1279,7 @@ class CallTools:
         if self._faq_unmatched and not self._booking_request and not self.spa_hours_inquiry:
             if action_claim(text):
                 return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
-            return FAQ_CLARIFY[self.language]
+            return self.clarification_reply
         static = (
             ENGLISH_STATIC
             if english
@@ -1268,7 +1314,7 @@ class CallTools:
         if self._faq_unmatched and not results and not self.pending and not self._booking_request:
             if action_claim(text):
                 return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
-            return FAQ_CLARIFY[self.language]
+            return self.clarification_reply
         return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
 
     @staticmethod

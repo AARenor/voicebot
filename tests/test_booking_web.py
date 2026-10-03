@@ -144,7 +144,10 @@ def test_public_catalogue_does_not_expose_bookings_or_guest_contacts(
     assert profile.json()["phone"]["href"] == "tel:+12025550109"
     catalogue = client.get("/api/public/catalogue")
     assert catalogue.status_code == 200
-    assert len(catalogue.json()["rooms"]["room_types"]) == 3
+    assert catalogue.json()["services"] == []
+    assert catalogue.json()["providers"] == []
+    assert catalogue.json()["rooms"] is None
+    assert catalogue.json()["restaurant_booking_error"] == "dataset_not_configured"
     assert "guest" not in catalogue.text
     assert "fixture-provider-secret" not in profile.text + catalogue.text
     for path in ("/api/rooms", "/api/stays"):

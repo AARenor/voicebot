@@ -63,7 +63,7 @@ workflow; it is deliberately absent from this document. Keep admin access
 restricted to inspection/configuration: competing UI/API bookings violate the
 demo's sole-writer assumption.
 
-## Configured synthetic dataset
+## Existing synthetic dataset (spa)
 
 - Company: **Voicebot Synthetic Spa Demo**.
 - Service: **Demo spa consultation**, 30 minutes, 30-minute slots, one attendant.
@@ -77,6 +77,14 @@ demo's sole-writer assumption.
   existing positive `customerId`. Let the catalogue supply service/provider IDs.
 - The provider's configured price is not a voice quote. Slot snapshots have no
   `price_quote_id`; do not speak treatment prices from this demo.
+
+The website and telephone assistant now represent the fictional Meretuule Köök
+restaurant. This existing spa catalogue is **not** a restaurant table backend.
+Restaurant sessions deliberately expose no slot, stay, or booking tools, even
+when legacy `EASY_DEMO_WRITES=1` is enabled. Do not use the spa service or
+therapist as a restaurant reservation. Restaurant bookings require a separately
+configured and reviewed synthetic dataset before restaurant tools can be
+enabled.
 
 ## Voicebot runtime settings
 

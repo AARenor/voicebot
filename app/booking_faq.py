@@ -19,6 +19,11 @@ CLARIFY = {
     "en": "I didn't quite understand. Would you like information about the hotel, spa or a test booking?",
     "ru": "Я не совсем поняла. Вам нужна информация об отеле, спа или тестовом бронировании?",
 }
+RESTAURANT_CLARIFY = {
+    "et": "Ma ei saanud päris täpselt aru. Meretuule Köögi demo saab vastata kinnitatud restoraniteabe kohta, kuid päris lauabroneeringud pole seadistatud.",
+    "en": "I didn't quite understand. The Meretuule Kitchen demo can answer verified restaurant questions, but real table reservations are not configured.",
+    "ru": "Я не совсем понял. Демонстрация Meretuule Köök может отвечать на подтверждённые вопросы о ресторане, но настоящие бронирования столиков не настроены.",
+}
 MISSING_FACTS = {
     "et": "Selle küsimuse jaoks vajalikku infot ei saanud praegu süsteemist kinnitada. Palun proovi hiljem uuesti.",
     "en": "I couldn't verify the information needed for that question in the system. Please try again later.",

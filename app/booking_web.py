@@ -176,28 +176,13 @@ def add_booking_routes(app, sessions):
     async def public_catalogue():
         result = {
             "synthetic": True,
-            "source": "easyappointments",
+            "source": "unconfigured_restaurant_demo",
             "data_mode": "synthetic",
             "services": [],
             "providers": [],
             "rooms": None,
-            "spa_error": None,
+            "restaurant_booking_error": "dataset_not_configured",
         }
-        reader = app.state.stack.get("booking_reader")
-        if reader is not None:
-            try:
-                catalogue = await reader.get_operator_catalogue()
-                # Catalogue DTO omits contacts, appointments and credentials.
-                result["services"] = catalogue["services"]
-                result["providers"] = catalogue["providers"]
-            except Exception:
-                result["spa_error"] = "catalogue_unavailable"
-        else:
-            result["spa_error"] = "booking_reader_not_configured"
-        try:
-            result["rooms"] = await room_catalogue()
-        except HTTPException:
-            pass
         return result
 
     @app.get("/api/rooms")

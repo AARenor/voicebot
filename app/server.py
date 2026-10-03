@@ -252,21 +252,16 @@ def create_app():
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    advertised = {
-        tool["function"]["name"] for tool in stack["dispatcher"].available_tools()
-    }
     capabilities = {
         "text_turn_ready": stack["llm_primary"] is not None
         and stack["tts"] is not None,
         "audio_turn_ready": stack["stt"] is not None
         and stack["llm_primary"] is not None
         and stack["tts"] is not None,
-        "stay_booking_ready": "search_availability" in advertised,
-        "slot_booking_ready": "search_slots" in advertised,
-        "booking_read_ready": stack["booking_reader"] is not None,
-        "booking_view_source": (
-            "easyappointments" if stack["booking_reader"] is not None else None
-        ),
+        "stay_booking_ready": False,
+        "slot_booking_ready": False,
+        "booking_read_ready": False,
+        "booking_view_source": None,
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
         "serving_demo_data": True,
@@ -343,13 +338,9 @@ def create_app():
         }
 
     def reader_or_raise(authorization):
-        from fastapi import HTTPException
-
         dashboard_api._require_operator(authorization)
-        reader = app.state.stack.get("booking_reader")
-        if reader is None:
-            raise HTTPException(503, "booking_reader_not_configured")
-        return reader
+        from fastapi import HTTPException
+        raise HTTPException(503, "restaurant_booking_dataset_not_configured")
 
     async def private_read(operation):
         from fastapi import HTTPException
@@ -476,7 +467,7 @@ def create_app():
             selected = choose_speaker(stack, body.get("voice", "azure"))
             session = DemoSession(
                 operator_scope(authorization),
-                CallTools(stack["dispatcher"]),
+                CallTools(stack["dispatcher"], business="restaurant"),
                 time.monotonic() + SESSION_TTL,
                 turn_count=1,
                 voice_id=body.get("voice", "azure"),

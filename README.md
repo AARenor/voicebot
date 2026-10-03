@@ -5,11 +5,12 @@ LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
 and offers a protected text/microphone demo, plus a public fictional restaurant
 presentation at `https://meretuule.arleserver.cfd/`.
 
-The current booking adapters still represent spa appointments and synthetic
-rooms. Restaurant table capacity, party size and restaurant-specific
-availability are not configured; the public menu is illustrative only.
-Spoken writes require an owned hold, a delivered recap and subsequent explicit
-consent. Model prose is not booking evidence.
+The customer-facing demo represents the fictional Meretuule Köök restaurant.
+It answers reviewed restaurant FAQs in Estonian, English and Russian. The
+restaurant menu is illustrative; opening hours, allergens, table capacity,
+party size and restaurant availability are not configured. Restaurant sessions
+have no booking tools, and the operator dashboard does not show the existing
+private spa catalogue as restaurant data. Real table reservations are unavailable.
 
 The supported speech languages are Estonian (`et`), English (`en`) and Russian
 (`ru`), with automatic recognition (`auto`). Other requested languages fail
@@ -25,9 +26,9 @@ attempts, while unknown write outcomes remain blocked from automatic retry.
 Both voice transports use configurable Groq `openai/gpt-oss-120b` and
 `whisper-large-v3`. Telephone calls automatically detect Estonian, English or
 Russian and reply with Azure Anu, Jenny or Svetlana respectively. English covers the same
-fictional spa/room searches, opening hours, FAQs, recaps, confirmation and
-cancellation. Ambiguous English numeric dates and hours require clarification;
-changing language requires a fresh delivered recap before confirmation. See
+restaurant demo FAQs. The legacy booking adapters remain available for other
+explicitly configured internal integrations, but are not exposed by this
+restaurant demo. See
 `GROQ_CHAT_MODEL`, `GROQ_STT_MODEL` and `GROQ_MAX_COMPLETION_TOKENS` in
 `.env.example`. Configuration is reported by `/api/status`; it is not evidence
 of an actual successful carrier call. HTTP turns return per-stage timings and
@@ -128,8 +129,9 @@ voicebot/
 ## Installed booking demo
 
 Easy!Appointments **1.6.0** runs as a private separate service with persistent
-MySQL storage. The existing HTTP dialogue uses `SlotAdapter` → `Dispatcher` →
-the documented REST API for catalogue, slots, booking and cancellation.
+MySQL storage. Its configured dataset remains spa-only and is not used by the
+restaurant demo. Restaurant availability, booking and cancellation are disabled
+until a separate restaurant dataset is configured and reviewed.
 See [installation and operator runbook](deploy/easyappointments/README.md).
 This is synthetic spa data, not hotel room inventory or a real-property release.
 Canonical repository: **Parnuhakk/voicebot** (branch `master`).
@@ -152,8 +154,8 @@ the demo phone contact; otherwise the configured Twilio/SIP number is used.
 ## Website architecture
 
 The canonical guest website is [Meretuule](https://meretuule.arleserver.cfd/).
-The [operator dashboard](https://robot.arleserver.cfd/) retains booking and
-voice-demo workflows. The former public addresses
+The [operator dashboard](https://robot.arleserver.cfd/) hosts the protected
+restaurant assistant preview and conversation history. The former public addresses
 `https://robot.arleserver.cfd/hotel` and `https://robot.arleserver.cfd/hotel/`
 are retired: the public ingress permanently redirects them with HTTP 301 to
 `https://meretuule.arleserver.cfd/`, preserving query strings. Direct requests
@@ -162,10 +164,10 @@ is not used. Use the Meretuule root in guest-facing links; `/hotel` remains an
 internal proxy rewrite target and a local preview route.
 See the [Meretuule domain runbook](deploy/meretuule/README.md).
 
-`/api/bookings` and `/api/catalogue` read Easy REST through explicit allowlisted
-DTOs. `/api/demo/session` and `/api/turn` share native booking ownership/consent;
-the browser selects the actual booking day after a successful write. Operator
-credentials, conversation and microphone data are not persisted in the browser.
+The public restaurant catalogue deliberately contains no spa services or rooms.
+The private legacy booking adapter remains documented for operations, but the
+restaurant assistant advertises no booking tools. Operator credentials,
+conversation and microphone data are not persisted in the browser.
 The old example queue is labelled separately and never used as availability.
 `/api/call-history` lists actual browser/telephone session metadata with channel
 and attention filters. Session details show recognition activity, provider

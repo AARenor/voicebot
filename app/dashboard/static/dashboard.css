@@ -481,3 +481,7 @@ select:disabled { color: var(--muted); background: #f7f9fa; }
   .stack-overview { padding-inline: 17px; }
   .stack-overview ol { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+body.restaurant-demo .booking-composer,
+body.restaurant-demo .bookings-panel,
+body.restaurant-demo .catalogue-panel,
+body.restaurant-demo .overview-card:not(.overview-link) { display: none !important; }
