@@ -16,6 +16,7 @@ from datetime import date, datetime
 from fastapi import HTTPException, Request
 
 from .telephone import CallTools
+from .call_factory import make_call_tools
 from .languages import LANGUAGES
 from .booking_response import trusted_booking_response
 from .providers.azure_tts import AzureTtsClient
@@ -92,7 +93,7 @@ class DemoSessions:
             try:
                 session = DemoSession(
                     owner,
-                    CallTools(
+                    make_call_tools(
                         dispatcher, language="et" if language == "auto" else language
                     ),
                     time.monotonic() + SESSION_TTL,

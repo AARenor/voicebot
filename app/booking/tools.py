@@ -347,7 +347,9 @@ class Dispatcher:
     belongs in server logs, not transcripts.
     """
 
-    def __init__(self, stay=None, slot=None, faq=None) -> None:
+    def __init__(self, stay=None, slot=None, faq=None, *, business_type="hotel_spa", restaurant_data=None) -> None:
+        self.business_type: str = business_type
+        self.restaurant_data: dict = restaurant_data or {}
         self._stay: StayAdapter | None = stay
         self._slot: SlotAdapter | None = slot
         self._faq = faq  # callable(question) -> passages

@@ -17,7 +17,7 @@ from tests.test_product_demo import AUTH, install_backend
 def client(monkeypatch, tmp_path):
     from app import callslog
 
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator", "VOICEBOT_BUSINESS_TYPE": "hotel_spa"}, clear=True):
         callslog.reset_default()
         app = create_app()
     monkeypatch.setenv("OPERATOR_TOKEN", "fixture-operator")

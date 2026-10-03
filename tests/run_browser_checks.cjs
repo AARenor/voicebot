@@ -4,6 +4,7 @@ const path = require('node:path');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
 const available = ['dashboard_browser_checks.js', 'hotel_browser_checks.js', 'booking_browser_checks.js', 'voice_browser_checks.js', 'microphone_race_browser_checks.js', 'english_demo_browser_checks.js'];
+const allowed = [...available, 'restaurant_browser_checks.js'];
 (async()=>{
   fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
   process.chdir(root);
@@ -12,7 +13,7 @@ const available = ['dashboard_browser_checks.js', 'hotel_browser_checks.js', 'bo
   const browser = await chromium.launch({headless:true,...(channel ? {channel} : {})});
   try {
     for (const name of process.argv.length > 2 ? process.argv.slice(2) : available) {
-      if (!available.includes(name)) throw new Error('unknown browser check');
+      if (!allowed.includes(name)) throw new Error('unknown browser check');
       const page = await browser.newPage();
       try {
         const check = eval('('+fs.readFileSync(path.join(__dirname,name),'utf8')+')');

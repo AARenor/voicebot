@@ -4,6 +4,11 @@
 def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
     if state.mutation_uncertain:
         return {"content": state.guard_reply("", state.results)}
+    restaurant_response = getattr(state, "trusted_restaurant_response", None)
+    if callable(restaurant_response):
+        response = restaurant_response(after_tool=after_tool, allow_actions=allow_actions)
+        if response is not None:
+            return response
     if after_tool:
         # Existing guards preserve errors, price truth and actual write state.
         choose_room = bool(state.results and state.results[-1].get("needs_room_type"))

@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
     VOICEBOT_PROD=1 \
-    CALLS_DB=/data/calls.db
+    CALLS_DB=/data/calls.db \
+    VOICEBOT_BUSINESS_TYPE=restaurant
 
 WORKDIR /app
 

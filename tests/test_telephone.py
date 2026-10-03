@@ -123,6 +123,7 @@ ENV = {
     )
 }
 ENV.update(
+    VOICEBOT_BUSINESS_TYPE="hotel_spa",
     LIVEKIT_URL="ws://localhost:7880",
     VOICEBOT_TELEPHONE_DEMO="1",
     EASY_DEMO_WRITES="1",
@@ -134,7 +135,7 @@ ENV.update(
 
 def test_settings_fail_closed():
     validate_environment(ENV)
-    for k in ENV:
+    for k in (key for key in ENV if key != "VOICEBOT_BUSINESS_TYPE"):
         with pytest.raises(ValueError):
             validate_environment({n: v for n, v in ENV.items() if n != k})
     with pytest.raises(ValueError):

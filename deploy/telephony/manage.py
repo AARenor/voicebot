@@ -23,29 +23,51 @@ def environment(source):
     )
     container = json.loads(inspected.stdout)[0]
     source_env = dict(v.split("=", 1) for v in container["Config"]["Env"] if "=" in v)
+    business = source_env.get("VOICEBOT_BUSINESS_TYPE", "restaurant")
+    if business not in ("restaurant", "hotel_spa"):
+        raise ValueError("source runtime configuration incomplete")
     required = (
         "LIVEKIT_API_KEY",
         "LIVEKIT_API_SECRET",
         "GROQ_API_KEY",
         "AZURE_SPEECH_KEY",
         "AZURE_REGION",
-        "EASY_BASE_URL",
-        "EASY_API_KEY",
     )
-    if (
-        any(not source_env.get(k) for k in required)
-        or source_env.get("EASY_DEMO_WRITES") != "1"
-    ):
+    if business == "hotel_spa":
+        required += ("EASY_BASE_URL", "EASY_API_KEY")
+    write_flag = (
+        source_env.get(
+            "RESTAURANT_DEMO_WRITES", source_env.get("EASY_DEMO_WRITES", "0")
+        )
+        if business == "restaurant"
+        else source_env.get("EASY_DEMO_WRITES")
+    )
+    if any(not source_env.get(k) for k in required) or write_flag != "1":
         raise ValueError("source runtime configuration incomplete")
     volumes = [
         m["Name"]
         for m in container["Mounts"]
         if m["Type"] == "volume" and m["Destination"] == "/data"
     ]
-    if len(volumes) != 1 or source_env.get("EASY_STATE_DB") != "/data/easy-booking.db":
+    if len(volumes) != 1 or (
+        business == "hotel_spa"
+        and source_env.get("EASY_STATE_DB") != "/data/easy-booking.db"
+    ):
         raise ValueError("shared booking journal not identified")
     env = dict(os.environ)
     env.update({k: source_env[k] for k in required})
+    env["VOICEBOT_BUSINESS_TYPE"] = business
+    env["RESTAURANT_DEMO_WRITES"] = (
+        write_flag
+        if business == "restaurant"
+        else source_env.get("RESTAURANT_DEMO_WRITES", "0")
+    )
+    for key in ("EASY_BASE_URL", "EASY_API_KEY", "RESTAURANT_CONFIG_PATH"):
+        env[key] = source_env.get(key, "")
+    if env["RESTAURANT_CONFIG_PATH"] and not posixpath.normpath(
+        env["RESTAURANT_CONFIG_PATH"]
+    ).startswith("/data/"):
+        raise ValueError("shared restaurant configuration not identified")
     for k in (
         "EASY_AUTH_SCHEME",
         "EASY_API_PREFIX",
@@ -59,6 +81,9 @@ def environment(source):
         "AZURE_RU_VOICE",
         "AZURE_RU_LANG",
         "VOICEBOT_TELEPHONE_LANGUAGE",
+        "VOICEBOT_BUSINESS_TYPE",
+        "RESTAURANT_DEMO_WRITES",
+        "RESTAURANT_CONFIG_PATH",
         "VOICEBOT_SPEAKING_STYLE",
         "VOICEBOT_SPEECH_RATE",
         "VOICEBOT_RECAP_RATE",
@@ -66,19 +91,25 @@ def environment(source):
         if k in source_env:
             env[k] = source_env[k]
     env["STAY_DEMO_WRITES"] = source_env.get(
-        "STAY_DEMO_WRITES", source_env["EASY_DEMO_WRITES"]
+        "STAY_DEMO_WRITES", source_env.get("EASY_DEMO_WRITES", "0")
     )
     database_paths = {
-        "EASY_STATE_DB": source_env["EASY_STATE_DB"],
-        "STAY_STATE_DB": source_env.get("STAY_STATE_DB") or posixpath.join(
-            posixpath.dirname(source_env["EASY_STATE_DB"]), "stay-booking.db"
-        ),
+        "EASY_STATE_DB": source_env.get("EASY_STATE_DB", "/data/easy-booking.db"),
+        "STAY_STATE_DB": source_env.get("STAY_STATE_DB")
+        or posixpath.join("/data", "stay-booking.db"),
         "CALLS_DB": source_env.get("CALLS_DB", "/data/calls.db"),
+        "RESTAURANT_STATE_DB": source_env.get("RESTAURANT_STATE_DB")
+        or posixpath.join(
+            posixpath.dirname(source_env.get("EASY_STATE_DB", "/data/easy-booking.db")),
+            "restaurant-booking.db",
+        ),
     }
     for key, path in database_paths.items():
         # Containers use POSIX paths, even when deployment checks run on Windows.
         # Only /data is shared; an in-memory or other file path would split state.
-        if not posixpath.isabs(path) or not posixpath.normpath(path).startswith("/data/"):
+        if not posixpath.isabs(path) or not posixpath.normpath(path).startswith(
+            "/data/"
+        ):
             raise ValueError("shared database path not identified")
         env[key] = path
     env["VOICEBOT_DATA_VOLUME"] = volumes[0]

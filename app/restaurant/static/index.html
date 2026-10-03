@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="et">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Restaurant voice assistant and fictional table-reservation demo."
+    />
+    <title>Voicebot · Restaurant reception</title>
+    <link rel="stylesheet" href="/restaurant.css?v=9a9b181d01e5" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script src="/restaurant.js?v=707a1c781578" defer></script>
+    <script src="/speech-capture.js?v=ddcb97f2030c" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main" data-copy="skip">Hüppa sisu juurde</a>
+    <header class="site-header">
+      <a class="brand" href="#main"
+        >voicebot <span data-copy="brand">Restorani vastuvõtt</span></a
+      >
+      <span id="connection-state" class="connection" role="status"
+        >Ühendamata</span
+      >
+    </header>
+    <main id="main">
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <h1 id="page-title" data-copy="title">Restorani kõneabiline</h1>
+          <p data-copy="intro">
+            Üks abiline laua leidmiseks ja külaliste küsimustele vastamiseks.
+          </p>
+        </div>
+        <div class="language">
+          <label for="demo-language" data-copy="language"
+            >Vestluse keel / Conversation language</label
+          ><select id="demo-language" aria-describedby="language-help">
+            <option value="auto">Automaatne / Auto</option>
+            <option value="et">Eesti</option>
+            <option value="en">English</option>
+            <option value="ru">Русский</option></select
+          ><small id="language-help" data-copy="languageHelp"
+            >Keele vahetamiseks lõpeta pooleliolev vestlus.</small
+          >
+        </div>
+      </section>
+      <aside class="demo-notice">
+        <strong data-copy="demo">Fiktiivne restoranidemo.</strong>
+        <span data-copy="demoNotice"
+          >Kasuta ainult näidiskülalisi. Broneeringud ei anna õigust päris
+          külastusele.</span
+        >
+      </aside>
+      <section class="panel auth-panel" aria-labelledby="auth-title">
+        <div>
+          <h2 id="auth-title" data-copy="connectTitle">Ühenda töölaud</h2>
+          <p data-copy="connectHelp">
+            Operaatori tunnus avab lauabroneeringud ja kõneproovi.
+          </p>
+        </div>
+        <form id="auth-form">
+          <label for="operator-token" class="sr-only" data-copy="token"
+            >Operaatori tunnus</label
+          ><input
+            id="operator-token"
+            type="password"
+            autocomplete="off"
+            required
+            maxlength="512"
+          /><button id="connect" type="submit" data-copy="connect">
+            Ühenda</button
+          ><button
+            id="logout"
+            type="button"
+            class="secondary"
+            data-copy="logout"
+            disabled
+          >
+            Lõpeta ühendus
+          </button>
+        </form>
+        <p id="auth-status" class="status" role="status" data-copy="tokenHelp">
+          Tunnust hoitakse ainult selle lehe mälus.
+        </p>
+      </section>
+      <div class="workspace">
+        <section
+          id="demo-section"
+          class="panel voice-panel"
+          aria-labelledby="demo-title"
+        >
+          <div class="panel-heading">
+            <div>
+              <h2 id="demo-title" data-copy="voiceTitle">Proovi kõneabilist</h2>
+              <p data-copy="voiceHelp">
+                Küsi laua, menüü või lahtiolekuaegade kohta.
+              </p>
+            </div>
+            <span class="badge" data-copy="voiceBadge">Tekst ja mikrofon</span>
+          </div>
+          <div class="button-row">
+            <button id="demo-start" type="button" data-copy="start">
+              Alusta vestlust</button
+            ><button
+              id="demo-end"
+              type="button"
+              class="secondary"
+              data-copy="end"
+              disabled
+            >
+              Lõpeta vestlus
+            </button>
+          </div>
+          <p
+            id="demo-status"
+            class="status"
+            role="status"
+            aria-live="polite"
+            data-copy="signIn"
+          >
+            Ühenda esmalt operaatori tunnusega.
+          </p>
+          <div
+            id="demo-messages"
+            class="messages"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            data-aria="transcript"
+          ></div>
+          <audio id="demo-audio" controls hidden data-aria="audio"></audio>
+          <button
+            id="demo-recap-read"
+            type="button"
+            class="secondary"
+            hidden
+            data-copy="recapRead"
+          >
+            Olen kokkuvõtte läbi lugenud
+          </button>
+          <div class="examples">
+            <button
+              type="button"
+              class="example-button secondary"
+              data-example="reservation"
+              data-copy="exampleTable"
+            >
+              Lauabroneering</button
+            ><button
+              type="button"
+              class="example-button secondary"
+              data-example="menu"
+              data-copy="exampleMenu"
+            >
+              Menüü</button
+            ><button
+              type="button"
+              class="example-button secondary"
+              data-example="hours"
+              data-copy="exampleHours"
+            >
+              Lahtiolekuajad
+            </button>
+          </div>
+          <form id="demo-form">
+            <label for="demo-text" data-copy="message">Sõnum abilisele</label>
+            <div class="message-input">
+              <input
+                id="demo-text"
+                maxlength="500"
+                autocomplete="off"
+                required
+                data-placeholder="placeholder"
+              /><button id="demo-send" type="submit" data-copy="send">
+                Saada
+              </button>
+            </div>
+          </form>
+          <button
+            id="demo-mic"
+            type="button"
+            class="secondary"
+            data-copy="micStart"
+          >
+            Alusta häälvestlust
+          </button>
+          <div id="mic-feedback" hidden>
+            <label for="mic-level" data-copy="micLevel"
+              >Mikrofoni helitase</label
+            ><meter id="mic-level" min="0" max="1" value="0"></meter
+            ><span id="mic-feedback-text"></span>
+          </div>
+          <p class="helper" data-copy="micHelp">
+            Räägi loomulikult. Kõnepaus saadab heli; teine vajutus saadab kohe.
+            Üks salvestis kestab kuni 15 sekundit.
+          </p>
+          <details>
+            <summary data-copy="consentTitle">
+              Kuidas kinnitamine töötab?
+            </summary>
+            <p id="consent-help"></p>
+          </details>
+        </section>
+        <section class="panel" aria-labelledby="reservation-title">
+          <div class="panel-heading">
+            <div>
+              <h2 id="reservation-title" data-copy="reservationTitle">
+                Broneeri laud
+              </h2>
+              <p data-copy="reservationHelp">
+                Vali kuupäev, saabumisaeg ja külaliste koguarv.
+              </p>
+            </div>
+            <span id="reservation-duration" class="badge">90 min</span>
+          </div>
+          <form id="reservation-form" class="reservation-form">
+            <label for="reservation-date" data-copy="date">Kuupäev</label
+            ><input id="reservation-date" name="date" type="date" required />
+            <label for="reservation-time" data-copy="time">Saabumisaeg</label
+            ><input
+              id="reservation-time"
+              name="time"
+              type="time"
+              required
+              step="900"
+            />
+            <label for="reservation-party" data-copy="party"
+              >Külalisi koos lastega</label
+            ><input
+              id="reservation-party"
+              name="party"
+              type="number"
+              min="1"
+              max="6"
+              required
+              inputmode="numeric"
+            />
+            <button id="reservation-prepare" type="submit" data-copy="prepare">
+              Kontrolli lauda
+            </button>
+          </form>
+          <p
+            id="reservation-status"
+            class="status"
+            role="status"
+            aria-live="polite"
+            data-copy="reservationInitial"
+          >
+            Ühenda, et proovida lauabroneeringut.
+          </p>
+          <div id="reservation-recap" hidden>
+            <h3 data-copy="recapTitle">Kontrolli kokkuvõtet</h3>
+            <p id="reservation-recap-text"></p>
+            <button
+              id="reservation-read"
+              type="button"
+              class="secondary"
+              data-copy="recapRead"
+            >
+              Olen kokkuvõtte läbi lugenud</button
+            ><button
+              id="reservation-confirm"
+              type="button"
+              data-copy="confirm"
+              disabled
+            >
+              Kinnita lauabroneering
+            </button>
+          </div>
+          <button
+            id="reservation-cancel"
+            type="button"
+            class="secondary"
+            hidden
+            data-copy="cancel"
+          >
+            Tühista see broneering
+          </button>
+          <button
+            id="reservation-end"
+            type="button"
+            class="secondary"
+            data-copy="endReservation"
+            disabled
+          >
+            End reservation session
+          </button>
+          <p class="helper" data-copy="capacityHelp">
+            Suure grupi ja erisoovid peab kinnitama personal.
+          </p>
+        </section>
+      </div>
+      <section class="panel" aria-labelledby="bookings-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="bookings-title" data-copy="bookingsTitle">
+              Lauabroneeringud
+            </h2>
+            <p data-copy="bookingsHelp">
+              Broneerimissüsteemist loetud valitud päeva lauad.
+            </p>
+          </div>
+          <button
+            id="refresh"
+            type="button"
+            class="secondary"
+            data-copy="refresh"
+            disabled
+          >
+            Uuenda
+          </button>
+        </div>
+        <label for="booking-date" data-copy="date">Kuupäev</label
+        ><input id="booking-date" type="date" />
+        <p id="booking-status" class="status" role="status" data-copy="private">
+          Broneeringud on privaatsed. Ühenda esmalt.
+        </p>
+        <div id="bookings" class="booking-list"></div>
+        <div class="button-row">
+          <button
+            id="booking-prev"
+            type="button"
+            class="secondary"
+            data-copy="previous"
+            disabled
+          >
+            Eelmine</button
+          ><span id="booking-page">1</span
+          ><button
+            id="booking-next"
+            type="button"
+            class="secondary"
+            data-copy="next"
+            disabled
+          >
+            Järgmine
+          </button>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="information-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="information-title" data-copy="infoTitle">
+              Restorani teave
+            </h2>
+            <p id="restaurant-name">Meretuule Demo Restaurant</p>
+          </div>
+          <span class="badge" data-copy="demo">Fiktiivne restoranidemo.</span>
+        </div>
+        <div class="information">
+          <div>
+            <h3 data-copy="menuTitle">Menüü</h3>
+            <ul id="menu-list"></ul>
+            <p id="allergy-notice" class="helper"></p>
+          </div>
+          <div>
+            <h3 data-copy="hoursTitle">Lahtiolekuajad</h3>
+            <dl id="opening-hours"></dl>
+            <p id="restaurant-policies" class="helper"></p>
+          </div>
+        </div>
+        <p id="information-status" class="status" role="status"></p>
+      </section>
+      <section class="panel">
+        <h2 data-copy="historyTitle">Kõneajalugu</h2>
+        <p data-copy="historyHelp">
+          Salvestatakse tehnilised sündmused ja toimingute tulemused, mitte heli
+          ega vestluse sisu.
+        </p>
+        <p id="history-status" class="status" role="status" data-copy="private">
+          Broneeringud on privaatsed. Ühenda esmalt.
+        </p>
+        <div id="call-history" class="booking-list"></div>
+      </section>
+    </main>
+    <footer>
+      <span data-copy="footer">Restorani demo · Eesti, English, Русский</span
+      ><span id="service-status" role="status"></span>
+    </footer>
+  </body>
+</html>

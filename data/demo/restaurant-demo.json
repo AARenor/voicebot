@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "restaurant_id": "meretuule-restaurant-demo",
+  "name": "Meretuule Demo Restaurant",
+  "timezone": "Europe/Tallinn",
+  "address": null,
+  "description": {
+    "et": "Fiktiivne restoran kõneabilise ja lauabroneeringute katsetamiseks.",
+    "en": "A fictional restaurant for testing a voice assistant and table reservations.",
+    "ru": "Вымышленный ресторан для проверки голосового помощника и бронирования столиков."
+  },
+  "reservation_duration_minutes": 90,
+  "slot_interval_minutes": 15,
+  "advance_days": 90,
+  "maximum_party_size": 6,
+  "kitchen_closes_minutes_before": 30,
+  "opening_hours": {
+    "monday": {"start": "12:00", "end": "21:00"},
+    "tuesday": {"start": "12:00", "end": "21:00"},
+    "wednesday": {"start": "12:00", "end": "21:00"},
+    "thursday": {"start": "12:00", "end": "21:00"},
+    "friday": {"start": "12:00", "end": "23:00"},
+    "saturday": {"start": "12:00", "end": "23:00"},
+    "sunday": {"start": "12:00", "end": "20:00"}
+  },
+  "closures": {},
+  "tables": [
+    {"id": "1", "name": "Table 1", "capacity": 2},
+    {"id": "2", "name": "Table 2", "capacity": 2},
+    {"id": "3", "name": "Table 3", "capacity": 4},
+    {"id": "4", "name": "Table 4", "capacity": 4},
+    {"id": "5", "name": "Table 5", "capacity": 6}
+  ],
+  "menu": [
+    {"id": "vegetable-soup", "name": {"et": "Köögiviljasupp", "en": "Vegetable soup", "ru": "Овощной суп"}, "diet": ["vegan"], "allergens": ["celery"], "price": null},
+    {"id": "salmon", "name": {"et": "Ahjulõhe", "en": "Baked salmon", "ru": "Запечённый лосось"}, "diet": [], "allergens": ["fish", "milk"], "price": null},
+    {"id": "mushroom-risotto", "name": {"et": "Seenerisoto", "en": "Mushroom risotto", "ru": "Ризотто с грибами"}, "diet": ["vegetarian"], "allergens": ["milk"], "price": null}
+  ],
+  "policies": {
+    "et": "Broneering kestab 90 minutit. Üle kuue külalisega grupid tuleb personaliga kokku leppida. Laste arv sisaldub külaliste koguarvus. Terrassi, ligipääsetavust, lastetooli ja erisoove peab kinnitama personal. Tellimusi, makseid ja päris üleandmist demokeskkonnas ei tehta.",
+    "en": "Reservations last 90 minutes. Groups larger than six must arrange their visit with staff. Children count toward the total party size. Staff must confirm terrace seating, accessibility, highchairs and special requests. This demo does not place food orders, collect payments or transfer real calls.",
+    "ru": "Бронирование действует 90 минут. Группам больше шести человек нужно договориться с персоналом. Дети входят в общее число гостей. Места на террасе, доступность, детский стул и особые пожелания подтверждает персонал. Демонстрация не принимает заказы еды, платежи и не переводит реальные звонки."
+  },
+  "allergy_notice": {
+    "et": "Menüüs on märgitud teadaolevad allergeenid, kuid koostis ja ristkontakti võimalus tuleb personaliga üle kontrollida. Ma ei saa lubada allergeenivaba toitu. Raske allergia korral räägi enne tellimist otse restoraniga.",
+    "en": "The menu lists known allergens, but staff must verify ingredients and possible cross-contact. I cannot guarantee allergen-free food. For a serious allergy, speak directly with the restaurant before ordering.",
+    "ru": "В меню указаны известные аллергены, но состав и возможный перекрёстный контакт нужно уточнить у персонала. Я не могу гарантировать отсутствие аллергенов. При серьёзной аллергии поговорите с рестораном напрямую до заказа."
+  }
+}
