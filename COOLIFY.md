@@ -23,8 +23,11 @@ through the [host-specific dynamic proxy route](deploy/meretuule/README.md).
 This is the canonical guest address. `https://robot.arleserver.cfd/` remains
 the operator dashboard and the destination for booking and voice-demo links.
 The former guest paths `https://robot.arleserver.cfd/hotel` and
-`https://robot.arleserver.cfd/hotel/` are retired with HTTP 410; `/hotel` remains
-only the internal proxy rewrite target and local preview route.
+`https://robot.arleserver.cfd/hotel/` permanently redirect at public ingress
+with HTTP 301 to `https://meretuule.arleserver.cfd/`, preserving query strings.
+The application's robot-host handler returns HTTP 410 when that redirect is
+not used. `/hotel` remains the internal proxy rewrite target and local preview
+route.
 
 ## 2. Environment (Coolify → Environment Variables)
 
@@ -123,7 +126,9 @@ the separately deployed telephone and booking services remain unchanged.
   (provider-backed bookings, catalogue, text/microphone demo, technical calls).
 - `https://meretuule.arleserver.cfd/` → public fictional hotel and spa website;
   its homepage links use this exact canonical root.
-- Robot `/hotel` and `/hotel/` → HTTP 410, including the trailing slash variant.
+- Public robot `/hotel` and `/hotel/` → HTTP 301 with the exact canonical
+  Meretuule root in `Location` (query strings preserved). A direct app request
+  using the robot hostname → HTTP 410 with no `Location` header.
 - Confirm/cancel without or with a wrong client token → 403. 503 means
   the server itself has no `OPERATOR_TOKEN` configured — check Coolify env.
 

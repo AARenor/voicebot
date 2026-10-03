@@ -104,8 +104,11 @@ The canonical guest website is [Meretuule](https://meretuule.arleserver.cfd/).
 The [operator dashboard](https://robot.arleserver.cfd/) retains booking and
 voice-demo workflows. The former public addresses
 `https://robot.arleserver.cfd/hotel` and `https://robot.arleserver.cfd/hotel/`
-are retired and return HTTP 410. Use the Meretuule root in guest-facing links;
-`/hotel` remains an internal proxy rewrite target and a local preview route.
+are retired: the public ingress permanently redirects them with HTTP 301 to
+`https://meretuule.arleserver.cfd/`, preserving query strings. Direct requests
+to the application's robot-host handler return HTTP 410 if the ingress redirect
+is not used. Use the Meretuule root in guest-facing links; `/hotel` remains an
+internal proxy rewrite target and a local preview route.
 See the [Meretuule domain runbook](deploy/meretuule/README.md).
 
 `/api/bookings` and `/api/catalogue` read Easy REST through explicit allowlisted

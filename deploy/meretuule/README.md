@@ -5,7 +5,10 @@ fictional hotel website, including homepage links from local previews.
 `https://robot.arleserver.cfd/` remains the operator dashboard; booking and
 voice-demo links explicitly use that management domain.
 The former guest addresses `https://robot.arleserver.cfd/hotel` and
-`https://robot.arleserver.cfd/hotel/` are retired and return HTTP 410.
+`https://robot.arleserver.cfd/hotel/` are retired. Public ingress permanently
+redirects them with HTTP 301 to `https://meretuule.arleserver.cfd/`, preserving
+query strings. The application's direct robot-host handler returns HTTP 410
+with no `Location` header if the ingress redirect is not used.
 
 ## Existing ingress
 
@@ -43,7 +46,9 @@ retains the same service name, so the separate router survives redeployments.
   booking/demo links use the robot domain.
 - Robot `/` and `/health` remain healthy; private `/api/bookings` without
   authorization returns 403 with `Cache-Control: no-store` on both domains.
-- Robot `/hotel` and `/hotel/`: HTTP 410, with no redirect to another page.
+- Public robot `/hotel` and `/hotel/`: HTTP 301 with `Location` set to the exact
+  canonical Meretuule root; original query strings are preserved. Direct app
+  requests using the robot hostname: HTTP 410 with no `Location` header.
 - Run `tests/meretuule_browser_checks.js` through a Node.js Playwright browser-code
   runner for public HTTPS, canonical links, retired paths, asset hashes,
   catalogue and authorization checks.

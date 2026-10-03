@@ -58,9 +58,12 @@ async (page) => {
     for (const path of ['/hotel', '/hotel/']) {
       const url = `https://robot.arleserver.cfd${path}`;
       const retired = await tab.request.get(url, {maxRedirects: 0});
-      require(retired.status() === 410, `Retired guest address returned ${retired.status()}, expected 410: ${url}`);
-      require(!retired.headers().location, `Retired guest address redirected elsewhere: ${url}`);
-      retiredRoutes.push({url, status: retired.status()});
+      const statusCode = retired.status();
+      const location = retired.headers().location ?? null;
+      const canonicalRedirect = statusCode === 301 && location === 'https://meretuule.arleserver.cfd/';
+      const retiredFallback = statusCode === 410 && location === null;
+      require(canonicalRedirect || retiredFallback, `Retired guest address returned ${statusCode} with Location ${JSON.stringify(location)}, expected 301 to the canonical Meretuule root or 410 without Location: ${url}`);
+      retiredRoutes.push({url, status: statusCode, location});
     }
     const health = await tab.request.get('https://robot.arleserver.cfd/health');
     require(health.status() === 200 && (await health.json()).ok === true, 'Robot health check failed');
