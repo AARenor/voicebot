@@ -2,10 +2,12 @@
 
 import os
 import tempfile
+import httpx
 from pathlib import Path
 from unittest.mock import patch
 
 from app.server import create_app as server_app
+from app.providers.azure_tts import AzureTtsClient
 
 _storage = tempfile.TemporaryDirectory(prefix="voicebot-restaurant-browser-")
 
@@ -49,6 +51,21 @@ def create_app():
         callslog.get_default()
     os.environ["OPERATOR_TOKEN"] = "restaurant-fixture-operator"
     speech = FixtureSpeech()
-    app.state.stack.update(stt=speech, tts=speech, llm_primary=FixtureLlm())
+    def respond(request):
+        return httpx.Response(
+            200, content=b"fixture-token" if request.url.path.endswith("issueToken")
+            else speech.synthesize("fixture"),
+        )
+
+    tts = AzureTtsClient(
+        "fixture", "fixture", "et-EE-AnuNeural", "et-EE",
+        languages={
+            "et": ("et-EE-AnuNeural", "et-EE"),
+            "en": ("en-US-JennyNeural", "en-US"),
+            "ru": ("ru-RU-SvetlanaNeural", "ru-RU"),
+        },
+        transport=httpx.MockTransport(respond),
+    )
+    app.state.stack.update(stt=speech, tts=tts, llm_primary=FixtureLlm())
     app.state.capabilities.update(text_turn_ready=True, audio_turn_ready=True)
     return app

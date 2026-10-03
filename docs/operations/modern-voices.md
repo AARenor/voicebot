@@ -16,6 +16,8 @@ Unconfigured profiles are disabled in the selector rather than silently enabled.
 | Profile | Languages | Browser delivery |
 | --- | --- | --- |
 | Azure (existing) | Estonian, English, Russian | Incremental REST MP3; retains current voices, pronunciation and 48 kHz / 96 kbps output. |
+| Male voice | Estonian Kert, English Guy, Russian Dmitry | Uses the existing Azure credentials and MP3 streaming. Voice selection is request-local. |
+| Calm female voice | Estonian Anu, English Jenny, Russian Svetlana | Existing Azure credentials; a slower delivery variant of these voices, not another Estonian speaker. |
 | ElevenLabs v4 Turbo | Estonian, English, Russian | Documented dialogue WebSocket MP3; requires a configured licensed voice and provider acceptance validation. |
 | Google Chirp 3 HD | Estonian, English, Russian | Buffered REST MP3; this integration does not claim Google's gRPC native streaming. |
 | Cartesia Sonic 3.6 | English, Russian | Incremental HTTP MP3; automatic Estonian turns use Azure and report the fallback. |
@@ -25,6 +27,35 @@ rewrite recaps, execute bookings or supply consent. Provider failure can fall
 back to Azure before output begins. Failure after partial streamed audio stops
 delivery and cannot issue a completed-recap receipt; it does not rerun booking
 operations or automatically retry the turn POST.
+
+The restaurant interface offers **Listen to voice / Kuula häält** before a
+conversation. The authenticated `POST /api/demo/voices/preview` uses fixed
+restaurant audition text in the selected language (`auto` starts in Estonian).
+It never creates a session, calls a language model or performs a booking. Only
+`voice` and `language` arguments are accepted; two auditions may synthesize
+concurrently. Logout aborts the browser request and stops audio. Language or
+voice changes stop the earlier sample; preview is disabled during a conversation.
+
+Natural Azure delivery uses native intonation, a modest speaking rate and an
+absolute 180 ms sentence pause instead of adding artificial silence to the
+provider's pause. `VOICEBOT_SENTENCE_PAUSE_MS` accepts 100–500 ms. The calm
+profile lowers normal rate by 0.04 and recap rate by 0.03, bounded at 0.85, and
+uses 240 ms sentence pauses. Recaps keep the provider's natural pauses and
+retain canonical wording, pronunciation aliases and explicit consent. Jenny and
+Guy use their documented friendly style; Anu, Kert and the Russian voices do not
+claim unsupported emotion styles. `VOICEBOT_SPEAKING_STYLE=neutral` disables
+all style and pause adjustments, including the calm delivery adjustments.
+
+The two extra Azure profiles need no new credentials or environment changes.
+They become available with the real Azure client, and cannot be selected when
+the speech client is absent or an injected legacy fixture lacks profile support.
+Provider failure may use the existing Azure default before the first audio chunk;
+returned metadata identifies that fallback. A partial stream never switches voices.
+
+Microsoft contracts checked 2026-10-03:
+[voice and language support](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts),
+[sentence pause semantics](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-synthesis-markup-structure),
+[supported delivery controls](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-synthesis-markup-voice).
 
 ## Runtime configuration
 

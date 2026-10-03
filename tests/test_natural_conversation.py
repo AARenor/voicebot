@@ -468,6 +468,7 @@ def test_estonian_clock_times_keep_the_exact_recap_text(text, aliases):
     "voice,language,styled",
     [
         ("en-US-JennyNeural", "en-US", True),
+        ("en-US-GuyNeural", "en-US", True),
         ("en-GB-SoniaNeural", "en-GB", False),
         ("et-EE-AnuNeural", "et-EE", False),
     ],

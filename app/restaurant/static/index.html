@@ -8,10 +8,10 @@
       content="Restaurant voice assistant and fictional table-reservation demo."
     />
     <title>Voicebot · Restaurant reception</title>
-    <link rel="stylesheet" href="/restaurant.css?v=34bd7c817179" />
+    <link rel="stylesheet" href="/restaurant.css?v=16393168091f" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script src="/speech-playback.js?v=27698f675462" defer></script>
-    <script src="/restaurant.js?v=2f4e76fc1dad" defer></script>
+    <script src="/restaurant.js?v=4ad26f90be7e" defer></script>
     <script src="/speech-capture.js?v=09feffb8cdd4" defer></script>
   </head>
   <body>
@@ -134,9 +134,14 @@
           ></div>
           <audio id="demo-audio" controls hidden data-aria="audio"></audio>
           <label for="demo-voice" data-copy="voice">Abilise hääl</label>
-          <select id="demo-voice" aria-describedby="demo-voice-help">
-            <option value="azure">Azure Neural</option>
-          </select>
+          <div class="voice-choice">
+            <select id="demo-voice" aria-describedby="demo-voice-help">
+              <option value="azure">Loomulik hääl</option>
+            </select>
+            <button id="demo-voice-preview" type="button" class="secondary" data-copy="voicePreview" disabled>
+              Kuula häält
+            </button>
+          </div>
           <p id="demo-voice-help" class="helper" data-copy="voiceSelectorHelp">
             Vali hääl enne vestlust.
           </p>

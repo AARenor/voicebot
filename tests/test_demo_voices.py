@@ -58,6 +58,8 @@ def test_empty_configuration_catalog_is_safe_and_default_azure_is_late_bound():
             "elevenlabs",
             "google",
             "cartesia",
+            "azure-male",
+            "azure-calm",
         ]
         assert all(
             set(row)
@@ -112,8 +114,8 @@ def test_environment_configuration_is_not_live_verification_and_no_private_data_
     voices = registry().from_env(env)
     try:
         catalog = voices.catalog(azure=Speaker())
-        assert all(row["configured"] for row in catalog)
-        assert "et" not in catalog[-1]["languages"]
+        assert all(row["configured"] for row in catalog[:4])
+        assert "et" not in catalog[3]["languages"]
         assert catalog[2]["streaming"] is False
         public = json.dumps(catalog) + repr(voices)
         assert "synthetic" not in public and VOICE_ID not in public

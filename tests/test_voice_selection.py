@@ -16,7 +16,9 @@ def test_bootstrap_installs_optional_registry_without_capturing_default_azure():
     assert stack.get("voices") is not None, "bootstrap has no optional voice registry"
     azure = Speaker()
     rows = stack["voices"].catalog(azure=azure)
-    assert {row["id"] for row in rows} == {"azure", "elevenlabs", "google", "cartesia"}
+    assert {row["id"] for row in rows} == {
+        "azure", "elevenlabs", "google", "cartesia", "azure-male", "azure-calm"
+    }
     assert next(row for row in rows if row["id"] == "azure")["available"]
     assert (
         stack["voices"].choose(azure=azure).for_language("en").synthesize("Hello")
