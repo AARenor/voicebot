@@ -25,6 +25,7 @@ from app.providers.errors import (  # noqa: E402
     ProviderError,
     RateLimitedError,
     RetryableProviderError,
+    raise_for_provider,
 )
 from app.providers.groq import GroqClient  # noqa: E402
 from app.booking.base import UnknownQuoteError  # noqa: E402
@@ -32,6 +33,52 @@ from app.booking.base import UnknownQuoteError  # noqa: E402
 
 def run(coro):
     return asyncio.run(coro)
+
+
+class TestProviderErrors(unittest.TestCase):
+    def test_legacy_constructor_messages_and_retry_after_are_preserved(self):
+        error = ProviderError("private message", 7)
+        self.assertEqual(error.args, ("private message", 7))
+        self.assertEqual(str(error), str(Exception("private message", 7)))
+        self.assertIsNone(error.reason)
+        self.assertIsNone(error.status_code)
+        limited = RateLimitedError("original rate message", 2.5)
+        self.assertEqual(str(limited), "original rate message")
+        self.assertEqual(limited.retry_after, 2.5)
+        self.assertEqual((limited.reason, limited.status_code), ("rate_limited", 429))
+
+    def test_public_metadata_rejects_untrusted_or_invalid_values(self):
+        for reason in ("private provider response", [], {}, True, None):
+            with self.subTest(reason=reason):
+                self.assertIsNone(ProviderError("private", reason=reason).reason)
+        for status in ("403 private response", 99, 600, True, 403.0, None):
+            with self.subTest(status=status):
+                self.assertIsNone(ProviderError("private", status_code=status).status_code)
+        error = ProviderError("private", reason="request_rejected", status_code=403)
+        self.assertEqual((error.reason, error.status_code), ("request_rejected", 403))
+
+    def test_http_failures_have_closed_reasons_and_original_private_messages(self):
+        for status in (400, 401, 403, 404, 422, 429, 500, 503):
+            with self.subTest(status=status):
+                response = httpx.Response(status, text="private fixture detail")
+                with self.assertRaises(ProviderError) as caught:
+                    raise_for_provider(response, "fixture")
+                error = caught.exception
+                reason = (
+                    "rate_limited" if status == 429 else
+                    "provider_unavailable" if status >= 500 else "request_rejected"
+                )
+                self.assertEqual((error.reason, error.status_code), (reason, status))
+                expected = (
+                    "fixture: 429" if status == 429 else
+                    f"fixture: HTTP {status} body='private fixture detail'"
+                )
+                self.assertEqual(str(error), expected)
+                self.assertNotIn("private", error.reason)
+                self.assertIsInstance(
+                    error, RateLimitedError if status == 429 else
+                    RetryableProviderError if status >= 500 else ProviderError,
+                )
 
 
 class TestGroq(unittest.TestCase):
@@ -122,20 +169,60 @@ class TestGroq(unittest.TestCase):
         with self.assertRaises(RateLimitedError) as ctx:
             self.client(handler).transcribe(b"x")
         self.assertEqual(ctx.exception.retry_after, 2.0)
+        self.assertEqual((ctx.exception.reason, ctx.exception.status_code), ("rate_limited", 429))
 
     def test_500_is_retryable(self):
         def handler(request):
             return httpx.Response(500, text="boom")
 
-        with self.assertRaises(RetryableProviderError):
+        with self.assertRaises(RetryableProviderError) as caught:
             self.client(handler).chat([])
+        self.assertEqual((caught.exception.reason, caught.exception.status_code), ("provider_unavailable", 500))
+
+    def test_transport_failure_has_no_invented_http_status(self):
+        def handler(request):
+            raise httpx.ConnectError("private fixture detail", request=request)
+
+        for method in ("chat", "transcribe"):
+            with self.subTest(method=method):
+                client = self.client(handler)
+                try:
+                    with self.assertRaises(RetryableProviderError) as caught:
+                        getattr(client, method)([] if method == "chat" else b"RIFF")
+                    self.assertEqual(caught.exception.reason, "transport_error")
+                    self.assertIsNone(caught.exception.status_code)
+                    self.assertIn("private fixture detail", str(caught.exception))
+                finally:
+                    client.close()
+
+    def test_malformed_chat_payloads_are_classified(self):
+        for payload in (None, {}, {"choices": []}, {"choices": [None]},
+                        {"choices": [{"message": None}]}, {"choices": [{"message": 42}]}):
+            with self.subTest(payload=payload):
+                client = self.client(lambda request: httpx.Response(200, json=payload))
+                try:
+                    with self.assertRaises(ProviderError) as caught:
+                        client.chat([])
+                    self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
+                finally:
+                    client.close()
+
+    def test_non_json_chat_payload_is_classified(self):
+        client = self.client(lambda request: httpx.Response(200, text="private fixture detail"))
+        try:
+            with self.assertRaises(ProviderError) as caught:
+                client.chat([])
+            self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
+        finally:
+            client.close()
 
     def test_list_payload_typed(self):
         def handler(request):
             return httpx.Response(200, json=["not", "an", "object"])
 
-        with self.assertRaises(ProviderError):
+        with self.assertRaises(ProviderError) as caught:
             self.client(handler).transcribe(b"x")
+        self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
 
     def test_non_text_transcription_is_not_an_utterance(self):
         # A schema-invalid upstream success must not become billable dialogue

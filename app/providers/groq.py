@@ -55,7 +55,9 @@ class GroqClient:
         try:
             response = self._http.post(f"{self._base}{path}", **kwargs)
         except httpx.RequestError as exc:
-            raise RetryableProviderError(f"{context}: transport error: {exc}") from exc
+            raise RetryableProviderError(
+                f"{context}: transport error: {exc}", reason="transport_error"
+            ) from exc
         raise_for_provider(response, context)
         return response
 
@@ -91,7 +93,11 @@ class GroqClient:
                 raise TypeError("transcription text is not a string")
             return text
         except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
-            raise ProviderError(f"groq.transcribe: bad payload: {exc}") from exc
+            raise ProviderError(
+                f"groq.transcribe: bad payload: {exc}",
+                reason="invalid_response",
+                status_code=response.status_code,
+            ) from exc
 
     def chat(
         self,
@@ -115,10 +121,18 @@ class GroqClient:
             payload = response.json()
             choice = payload["choices"][0]
             if choice.get("finish_reason") == "length":
-                raise ProviderError("groq.chat: incomplete completion")
+                raise ProviderError(
+                    "groq.chat: incomplete completion",
+                    reason="completion_incomplete",
+                    status_code=response.status_code,
+                )
             message = dict(choice["message"])
             # Provider reasoning is neither a spoken reply nor conversation data.
             message.pop("reasoning", None)
             return message
         except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
-            raise ProviderError(f"groq.chat: bad payload: {exc}") from exc
+            raise ProviderError(
+                f"groq.chat: bad payload: {exc}",
+                reason="invalid_response",
+                status_code=response.status_code,
+            ) from exc

@@ -64,8 +64,10 @@ def test_truncated_tool_completion_is_provider_failure():
     payload = {"choices": [{"finish_reason": "length", "message": {"tool_calls": []}}]}
     client = GroqClient("fixture", transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload)))
     try:
-        with pytest.raises(ProviderError, match="incomplete completion"):
+        with pytest.raises(ProviderError, match="incomplete completion") as caught:
             client.chat([])
+        assert caught.value.reason == "completion_incomplete"
+        assert caught.value.status_code == 200
     finally:
         client.close()
 

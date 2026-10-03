@@ -162,6 +162,12 @@ async (page) => {
   assert(await page.locator('#demo-warning').isVisible(),'speech failure warning missing');
   assert((await page.locator('#demo-warning').textContent()).includes('tekstina alles'),'speech failure omitted text fallback guidance');
   assert(await page.locator('#demo-messages .assistant-message').count()===3,'speech failure discarded text reply');
+  await page.evaluate(()=>renderTurnDiagnostics({warnings:[{stage:'llm',code:'reply_provider_unavailable',cause:'rate_limited',http_status:429}]}));
+  assert((await page.locator('#demo-warning').textContent()).includes('kasutuslimiit'),'model rate limit guidance missing');
+  await page.evaluate(()=>renderTurnDiagnostics({warnings:[{stage:'llm',code:'reply_provider_unavailable',cause:'PRIVATE provider body',http_status:'PRIVATE status'}]}));
+  assert(!(await page.locator('#demo-warning').textContent()).includes('PRIVATE'),'unknown diagnostic leaked provider data');
+  await page.evaluate(()=>renderTurnDiagnostics({warnings:[{stage:'llm',code:'reply_provider_unavailable',cause:'request_rejected',http_status:400}]}));
+  assert((await page.locator('#demo-warning').textContent()).includes('lükkas vastusepäringu tagasi'),'model request rejection guidance missing');
   await page.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Fixture microphone permission denied','NotAllowedError');};});
   await page.locator('#demo-mic').click();
   await page.waitForFunction(()=>document.getElementById('demo-status').classList.contains('error') && document.getElementById('demo-status').textContent.includes('Mikrofon'));

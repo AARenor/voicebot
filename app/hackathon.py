@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from .telephone import GREETING, CallTools
 from . import call_history, callslog
+from .providers.errors import PROVIDER_FAILURE_REASONS, ProviderError
 
 SESSION_TTL = 600
 MAX_SESSIONS = 16
@@ -329,6 +330,7 @@ class _TrustedLlm:
         self.client, self.session = client, session
         self.latency_ms = 0.0
         self.failed = False
+        self.failure = {}
 
     def chat(self, messages, tools=None):
         state = self.session.tools
@@ -362,8 +364,15 @@ class _TrustedLlm:
             return self.client.chat(
                 [{"role": "system", "content": instructions}] + messages, tools=tools
             )
-        except Exception:
+        except Exception as error:
             self.failed = True
+            if isinstance(error, ProviderError):
+                reason = getattr(error, "reason", None)
+                if reason in PROVIDER_FAILURE_REASONS:
+                    self.failure["cause"] = reason
+                code = getattr(error, "status_code", None)
+                if type(code) is int and 100 <= code <= 599:
+                    self.failure["http_status"] = code
             raise
         finally:
             self.latency_ms += (time.perf_counter() - started) * 1000
@@ -491,6 +500,7 @@ async def run_demo_turn(session, stack, audio, text, language):
     if stt_failed:
         warnings.append({"stage": "stt", "code": "transcription_unavailable"})
     if primary.failed:
+        failure = secondary.failure if secondary is not None and secondary.failed else primary.failure
         warnings.append(
             {
                 "stage": "llm",
@@ -499,6 +509,7 @@ async def run_demo_turn(session, stack, audio, text, language):
                     if secondary is None or secondary.failed
                     else "reply_provider_fallback"
                 ),
+                **failure,
             }
         )
     if result["tts_failed"]:

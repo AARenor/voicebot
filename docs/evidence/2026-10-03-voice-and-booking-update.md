@@ -57,7 +57,7 @@ they do not prove the user's physical microphone or live speech providers.
 Local preview artifacts are in the ignored `output/playwright/` directory;
 their phone number `+12025550109` is a fictional fixture.
 
-## Live verification gap
+## Live deployment and checks
 
 At 06:37 UTC on 2026-10-03, before any deployment of this change set, both
 `https://robot.arleserver.cfd/health` and `https://coolify.arleserver.cfd/`
@@ -78,16 +78,42 @@ weekday 09:00–12:00 / 13:00–17:00 spa hours, closed weekends, working FAQs a
 room/spa booking links. The public hotel and signed-out dashboard fit
 320–1440px without overflow, JavaScript errors or failed public requests.
 Private booking/stay reads and session creation without authorization returned
-403 with `no-store`; no live booking write was attempted. The live public phone
+403 with `no-store` in the initial unauthenticated checks. The live public phone
 DTO remains unconfigured (`number:null`), and the page reports that honestly.
+
+Subsequent operator-authenticated production checks contacted the live Groq,
+Azure and booking backends. A text greeting, a database working-plan question
+and a synthetic audio round trip returned nonempty MP3 replies without warnings
+or fallback. These three sample turns took 2197.6, 1939.2 and 1265.0 ms total;
+the audio-input turn included 509.3 ms transcription. The hours answer used a
+database tool and included the break. These are individual observations, not
+a latency guarantee or proof of the user's physical microphone.
+
+Direct production spa and room controls searched availability, prepared the
+canonical recap, acknowledged it, confirmed exactly one fictional booking of
+each kind, verified each through an independent calendar read, and cancelled
+both. A final read found no active booking owned by either test session.
+
+A stronger live conversational spa check subsequently fetched the catalogue
+successfully, then hit an LLM follow-up failure after one tool execution while
+preparing the requested appointment. The turn returned a closed LLM warning
+and fallback; no booking was created. Conversational booking is therefore not
+yet established. New provider diagnostics distinguish a closed failure cause
+and HTTP status without returning provider bodies or exception text. The
+diagnostic patch passed 76 HTTP tests (6 native skips, 32 subtests), 43 native
+provider tests (32 subtests), lint/syntax checks and the Chromium dashboard
+suite at 320–1440px, including rate-limit/rejected-request guidance.
+
+## Remaining release gaps
 
 GitHub master pushes deploy only the Coolify web/API application. The native
 telephone worker and Twilio bridge require a separate server deployment.
 Existing server access is still needed to inspect those
 services, preserve their exact shared volume, rebuild/restart them and test
 the actual incoming call. It is also needed to supply the existing inbound
-number as `PUBLIC_PHONE_NUMBER` in the web application. Authenticated browser
-speech, volume/journal continuity and native deployment remain unverified.
+number as `PUBLIC_PHONE_NUMBER` in the web application. Physical browser
+microphone/playback, full live conversational booking, volume/journal continuity
+and native deployment remain unverified.
 No successful public PSTN call is claimed here.
 
 See [Coolify deployment](../../COOLIFY.md),

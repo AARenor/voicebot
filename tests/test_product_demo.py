@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.booking.easyappointments import EasyAppointmentsAdapter
 from app.booking.tools import Dispatcher
+from app.providers.errors import ProviderError
 from app.server import create_app
 from app.telephone import CONSENT_TEXT
 
@@ -240,6 +241,56 @@ def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client)
     assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()["warnings"]
     assert response.json()["reply"]
     assert response.json()["audio_b64"]
+    assert "PRIVATE" not in response.text
+
+
+@pytest.mark.parametrize("reason,status", [
+    ("rate_limited", 429), ("provider_unavailable", 503),
+    ("request_rejected", 400), ("transport_error", None),
+    ("completion_incomplete", 200), ("invalid_response", 200),
+])
+def test_model_failure_reports_only_closed_provider_diagnostics(client, reason, status):
+    error = ProviderError("PRIVATE provider body", reason=reason, status_code=status)
+    client.app.state.stack["llm_primary"] = SimpleLlm(error=error)
+    response = send(client, start(client), "Soovin spaahooldust.")
+    warning = response.json()["warnings"][0]
+    assert warning == {
+        "stage": "llm", "code": "reply_provider_unavailable", "cause": reason,
+        **({"http_status": status} if status is not None else {}),
+    }
+    assert "PRIVATE" not in response.text
+    assert response.json()["booking_changes"] == []
+
+
+def test_model_failure_rejects_untrusted_diagnostic_attributes(client):
+    error = ProviderError("PRIVATE provider body")
+    error.reason = "PRIVATE provider cause"
+    error.status_code = "PRIVATE provider status"
+    client.app.state.stack["llm_primary"] = SimpleLlm(error=error)
+    response = send(client, start(client), "Soovin spaahooldust.")
+    assert response.json()["warnings"] == [
+        {"stage": "llm", "code": "reply_provider_unavailable"}
+    ]
+    assert "PRIVATE" not in response.text
+
+
+def test_model_followup_failure_preserves_cause_after_successful_tool(client):
+    class FollowupFailure:
+        def chat(self, messages, tools=None):
+            if messages[-1]["role"] == "tool":
+                raise ProviderError("PRIVATE followup body", reason="request_rejected", status_code=400)
+            return call("get_demo_profile", {})
+
+    client.app.state.stack["llm_primary"] = FollowupFailure()
+    response = send(client, start(client), "Palun kontrolli demoprofiili.")
+    data = response.json()
+    assert data["tools_used"] == 1
+    assert data["warnings"] == [{
+        "stage": "llm", "code": "reply_provider_unavailable",
+        "cause": "request_rejected", "http_status": 400,
+    }]
+    assert data["fallback_used"] is True
+    assert data["booking_changes"] == []
     assert "PRIVATE" not in response.text
 
 

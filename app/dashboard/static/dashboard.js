@@ -400,7 +400,8 @@ controls();
 function dayAfter(day, days=1) { return new Date(Date.parse(day+"T12:00:00Z")+days*86400000).toISOString().slice(0,10); }
 function renderTurnDiagnostics(data) {
   const messages={transcription_unavailable:"Heli transkriptsioon ei ole praegu saadaval. Proovi tekstiga või kontrolli kõnetuvastuse seadistust.",reply_provider_unavailable:"Vastuse mudel ei vastanud. Kasutati varuvastust; kontrolli serveri mudeliseadistust.",reply_provider_fallback:"Vastuseks kasutati varumudelit.",reply_audio_unavailable:"Vastuse heli ei saanud luua. Vastus on tekstina alles; kontrolli kõnesünteesi seadistust."};
-  const warnings=(data.warnings || []).map(item=>messages[item.code]).filter(Boolean);
+  const causes={rate_limited:"Vastuse mudeli kasutuslimiit sai täis. Kontrolli mudeliteenuse limiite; ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",request_rejected:"Mudeliteenus lükkas vastusepäringu tagasi. Kontrolli serveri mudeliseadistust.",transport_error:"Ühendus vastuse mudeliga ebaõnnestus. Kontrolli serveri ühendust mudeliteenusega.",completion_incomplete:"Mudeli vastus jäi pooleli. Ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",invalid_response:"Mudeliteenus tagastas vigase vastuse. Broneeringu edu ei saa selle vastuse põhjal kinnitada."};
+  const warnings=(data.warnings || []).map(item=>item.stage==="llm" && item.code==="reply_provider_unavailable" ? causes[item.cause] || messages[item.code] : messages[item.code]).filter(Boolean);
   if(data.tts_failed && !warnings.some(item=>item===messages.reply_audio_unavailable)) warnings.push(messages.reply_audio_unavailable);
   $("demo-warning").textContent=warnings.join(" "); $("demo-warning").hidden=warnings.length===0;
   const timings=data.timings_ms || {}, labels={stt:"Kõnetuvastus",llm:"Vastus",tools:"Broneerimistööriistad",tts:"Kõnesüntees",total:"Kokku"};
