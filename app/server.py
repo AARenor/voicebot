@@ -304,7 +304,9 @@ def create_app():
         "booking_view_source": (
             stack.get("business_type", "hotel_spa")
             if stack.get("business_type") == "restaurant"
-            else "easyappointments" if stack["booking_reader"] is not None else None
+            else "easyappointments"
+            if stack["booking_reader"] is not None
+            else None
         ),
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
@@ -697,19 +699,33 @@ def create_app():
     else:
         add_booking_routes(app, sessions)
     hotel_dir = os.path.join(os.path.dirname(__file__), "hotel", "static")
+    public_restaurant_dir = os.path.join(
+        os.path.dirname(__file__), "restaurant", "public"
+    )
 
     @app.get("/hotel", include_in_schema=False)
     @app.get("/hotel/", include_in_schema=False)
     def hotel_page(request: Request):
-        if stack.get("business_type") == "restaurant":
-            return Response(status_code=410, headers={"Cache-Control": "no-store"})
         if (request.url.hostname or "").lower().rstrip(".") == "robot.arleserver.cfd":
             return Response(
                 status_code=410,
                 headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
             )
         return FileResponse(
-            os.path.join(hotel_dir, "index.html"), media_type="text/html"
+            os.path.join(
+                public_restaurant_dir
+                if stack.get("business_type") == "restaurant"
+                else hotel_dir,
+                "index.html",
+            ),
+            media_type="text/html",
+        )
+
+    @app.get("/restaurant-public.js", include_in_schema=False)
+    def public_restaurant_script():
+        return FileResponse(
+            os.path.join(public_restaurant_dir, "restaurant-public.js"),
+            media_type="application/javascript",
         )
 
     @app.get("/hotel.css", include_in_schema=False)

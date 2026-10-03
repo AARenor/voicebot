@@ -25,7 +25,7 @@ async (page) => {
     require(response?.status() === 200, `Meretuule root returned ${response?.status()}, expected 200`);
     const title = await tab.title();
     const headings = await tab.locator('h1').allTextContents();
-    require(/Meretuule/i.test(title), `Website title missing Meretuule: ${title}`);
+    require(title === 'Meretuule — restorani demo', `Wrong public restaurant title: ${title}`);
     require(!/Vastuvõtulaud/i.test(title), 'Public domain served the operator dashboard');
     require(tab.url() === 'https://meretuule.arleserver.cfd/', 'Website root redirected elsewhere');
     const homepageLinks = await tab.locator('a.wordmark, a.footer-brand').evaluateAll(elements =>
@@ -49,8 +49,8 @@ async (page) => {
       if (version) require(sha256.slice(0, 12) === version, `Stale versioned asset: ${url}`);
       assets.push({url, status: asset.status(), bytes: content.length, sha256});
     }
-    await tab.waitForFunction(() => document.querySelectorAll('.room-card').length > 0);
-    require(await tab.locator('#service-list li').count() > 0, 'Public spa catalogue did not load');
+    await tab.waitForFunction(() => document.querySelectorAll('.table-card').length > 0);
+    require(await tab.locator('#menu-list li').count() > 0, 'Public restaurant menu did not load');
     const operatorLinks = await tab.locator('a[href]').evaluateAll(elements =>
       elements.filter(el => /book=|demo-section/.test(el.href) || /operaatori töölaud/i.test(el.textContent || '')).map(el => el.href)
     );
@@ -63,9 +63,11 @@ async (page) => {
     }
     const robot = await tab.request.get('https://robot.arleserver.cfd/');
     const robotHtml = await robot.text();
-    require(robot.status() === 200 && robotHtml.includes('<title>Vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
+    require(robot.status() === 200 && robotHtml.includes('Restaurant reception'), 'Robot root no longer serves the restaurant dashboard');
+    require(robotHtml.includes('id="reservation-party"') && robotHtml.includes('id="operator-token"'), 'Robot root did not serve table-reservation/operator controls');
+    require(!robotHtml.includes('id="booking-kind-stay"') && !robotHtml.includes('id="booking-kind-slot"'), 'Robot retained the hotel/spa composer');
     const dashboardHotelLinks = await tab.evaluate(html =>
-      [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.hotel-link, .heading-actions a.button:not(.primary)')].map(el => el.getAttribute('href')),
+      [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a[href="https://meretuule.arleserver.cfd/"]')].map(el => el.getAttribute('href')),
     robotHtml);
     require(dashboardHotelLinks.length === 2 && dashboardHotelLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Dashboard hotel links did not use the exact canonical Meretuule root');
     const health = await tab.request.get('https://robot.arleserver.cfd/health');
@@ -77,11 +79,11 @@ async (page) => {
       require(await demoLinks.count() === 2, 'Dashboard demo links do not point directly to the public root');
       await demoLinks.first().click();
       await management.waitForURL('https://meretuule.arleserver.cfd/');
-      require(/Meretuule/.test(await management.title()), 'Dashboard demo link did not open the hotel website');
+      require(await management.title() === 'Meretuule — restorani demo', 'Dashboard demo link did not open the restaurant website');
     } finally { await management.close(); }
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,
-      rooms: await tab.locator('.room-card').count(), services: await tab.locator('#service-list li').count(),
+      tables: await tab.locator('.table-card').count(), menuItems: await tab.locator('#menu-list li').count(),
       homepageLinks, dashboardHotelLinks, operatorLinks, legacyRedirects, dashboardDemoLinkVerified: true,
       privateRoutesDenied: true, robotHealthy: true, errors};
   } finally {

@@ -342,4 +342,7 @@ def test_restaurant_page_and_assets_are_local_and_content_versioned(client):
         ).read_bytes()
         assert parse_qs(parsed.query)["v"] == [hashlib.sha256(content).hexdigest()[:12]]
         assert client.get(url).content == content
-    assert client.get("/hotel").status_code == 410
+    assert (
+        client.get("/hotel", headers={"Host": "robot.arleserver.cfd"}).status_code
+        == 410
+    )

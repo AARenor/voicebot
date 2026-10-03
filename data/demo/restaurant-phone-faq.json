@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "purpose": "Published, reviewed unsupported restaurant requests. Fictional menu facts are served separately from the selected restaurant catalogue.",
+  "entries": [
+    {
+      "id": "booking-101", "route": "static",
+      "question_et": "Kas saate minu allergiast köögile teatada?",
+      "variants_et": ["Kas saate mu allergia broneeringule kirja panna?", "Kas saate lisada broneeringule erisoovi?", "Teatage köögile mu pähkliallergiast.", "Märkige minu allergia üles."],
+      "answer_et": "See demo ei salvesta erisoove ega saada köögile teateid. Allergiaohutust ma kinnitada ei saa.",
+      "question_en": "Can you tell the kitchen about my allergy?",
+      "variants_en": ["Can you record an allergy note?", "Can you add a special request to my booking?", "Tell the kitchen about my peanut allergy.", "Make a note of my allergy."],
+      "answer_en": "This demo can't save special requests or notify the kitchen. I can't confirm allergy safety.",
+      "question_ru": "Можете сообщить кухне о моей аллергии?",
+      "variants_ru": ["Можете записать мою аллергию в бронирование?", "Можете добавить особое пожелание к бронированию?", "Сообщите кухне о моей аллергии на арахис.", "Запишите мою аллергию."],
+      "answer_ru": "Эта демонстрация не сохраняет особые пожелания и не уведомляет кухню. Я не могу подтвердить безопасность при аллергии."
+    },
+    {
+      "id": "booking-102", "route": "static",
+      "question_et": "Kas saan toitu kaasa tellida?",
+      "variants_et": ["Kas tellite toitu koju?", "Kas saab õhtusöögi ette tellida?", "Tellige mulle õhtusöök.", "Kas saan toitu tellida?"],
+      "answer_et": "See demo ei võta vastu toidu-, kaasamüügi- ega kohaletoimetamise tellimusi. Saan aidata fiktiivse lauabroneeringuga.",
+      "question_en": "Can I order takeaway?",
+      "variants_en": ["Can I order food delivery?", "Can I order dinner in advance?", "Order dinner for me.", "Can I order food?"],
+      "answer_en": "This demo doesn't take food, takeaway or delivery orders. I can help with a fictional table reservation.",
+      "question_ru": "Можно заказать еду навынос?",
+      "variants_ru": ["Можно заказать доставку еды?", "Можно заказать ужин заранее?", "Закажите мне ужин.", "Можно заказать еду?"],
+      "answer_ru": "Эта демонстрация не принимает заказы еды, навынос или с доставкой. Я могу помочь с тестовым бронированием столика."
+    }
+  ]
+}

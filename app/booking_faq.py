@@ -228,14 +228,14 @@ def match_question(text, language, entries=None):
     return tuple(found)
 
 
-def question_language(text, current):
+def question_language(text, current, entries=None):
     """Known written questions also identify English without an STT language tag."""
-    if match_question(text, current):
+    if match_question(text, current, entries=entries):
         return current
     matches = [
         language
         for language in LANGUAGES
-        if language != current and match_question(text, language)
+        if language != current and match_question(text, language, entries=entries)
     ]
     return matches[0] if len(matches) == 1 else current
 

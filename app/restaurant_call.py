@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from typing import Any
 
 from .languages import CONSENT, spoken_date, spoken_time
+from .booking_faq import FAQ_PATH, load_faq, match_question, question_language
 from .restaurant_data import DAYS, restaurant_demo_profile
 from .telephone import CallTools, UNKNOWN_MUTATION_ERRORS
 from .turn import REPEAT_PROMPT, STT_UNAVAILABLE, TURN_UNAVAILABLE
@@ -319,6 +320,13 @@ class RestaurantCallTools(CallTools):
         super().__init__(dispatcher, **kwargs)
         self.restaurant = copy.deepcopy(dispatcher.restaurant_data)
         self.demo = restaurant_demo_profile(self.restaurant)
+        self.restaurant_faq = (
+            *load_faq(FAQ_PATH.with_name("restaurant-phone-faq.json")),
+            *(
+                dict(entry, id=f"booking-{201 + index}", route="static")
+                for index, entry in enumerate(self.demo["faq"])
+            ),
+        )
         self.schemas.append(copy.deepcopy(INFORMATION_TOOL))
         if any(schema["name"] == "confirm_slot_booking" for schema in self.schemas):
             self.schemas.append(copy.deepcopy(RESERVATION_TOOL))
@@ -400,11 +408,25 @@ class RestaurantCallTools(CallTools):
         return False
 
     def observe_user_text(self, text, **kwargs):
+        if (
+            kwargs.get("is_final", True) is True
+            and kwargs.get("language") is None
+            and kwargs.get("detected_language") is None
+        ):
+            inferred = question_language(
+                text, self.language, entries=self.restaurant_faq
+            )
+            if match_question(text, inferred, entries=self.restaurant_faq):
+                kwargs["language"] = inferred
         super().observe_user_text(text, **kwargs)
         if kwargs.get("is_final", True) is not True:
             return
         self._booking_inquiry = None
-        self.faq_entries = ()
+        self.faq_entries = (
+            match_question(text, self.language, entries=self.restaurant_faq)
+            if not self.mutation_uncertain and not self.unsupported_language
+            else ()
+        )
         self._faq_unmatched = False
         self._legacy_faq_answer = None
         self._spa_hours_inquiry = False
@@ -469,6 +491,13 @@ class RestaurantCallTools(CallTools):
         ):
             self._restaurant_focus = "staff"
         if (
+            self._restaurant_focus != "domain"
+            and not self.faq_entries
+            and parse_restaurant_request(text) is not None
+        ):
+            # Do not let a menu/allergy clause hide a simultaneous table request.
+            self._restaurant_focus = None
+        if (
             not self._restaurant_focus
             and not self.pending
             and not self.cancel_approval
@@ -490,6 +519,8 @@ class RestaurantCallTools(CallTools):
             return None
         if self.conversation.intent:
             return None
+        if self.faq_entries:
+            return self.faq_reply()
         if self._restaurant_focus:
             return self.information_reply(self._restaurant_focus)
         inquiry = self._restaurant_inquiry
@@ -570,7 +601,9 @@ class RestaurantCallTools(CallTools):
                         )
                     ).strftime("%H:%M")
                     if hours and topic == "kitchen"
-                    else hours["end"] if hours else None
+                    else hours["end"]
+                    if hours
+                    else None
                 )
                 values.append(
                     DAY_LABELS[self.language][index]
@@ -773,7 +806,12 @@ class RestaurantCallTools(CallTools):
     def guard_reply(self, text, results):
         reply = self._restaurant_guard_reply(text, results)
         self.conversation.remember_reply(reply, self.language)
-        if self._restaurant_focus in {
+        if self.faq_entries and reply == self.faq_reply():
+            self._restaurant_last_response = (
+                "faq",
+                tuple(entry["id"] for entry in self.faq_entries),
+            )
+        elif self._restaurant_focus in {
             "menu",
             "allergens",
             "hours",
@@ -869,6 +907,12 @@ class RestaurantCallTools(CallTools):
             return text
         if self.conversation.intent == "repeat" and self._restaurant_last_response:
             selection = self._restaurant_last_response
+            if selection[0] == "faq":
+                answers = {
+                    entry["id"]: entry["answer_" + self.language]
+                    for entry in self.restaurant_faq
+                }
+                return " ".join(answers[identifier] for identifier in selection[1])
             if selection[0] == "question":
                 return copybook[selection[1]]
             # Remember identifiers only, then render from current trusted facts.
