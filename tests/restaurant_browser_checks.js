@@ -7,6 +7,16 @@ async page => {
   });
   await page.setViewportSize({width:1440,height:1000});
   await page.goto('http://127.0.0.1:8766/', {waitUntil:'networkidle'});
+  assert.equal(await page.locator('aside.sidebar').count(),1,'restaurant adaptation removed the dashboard sidebar');
+  assert.equal(await page.locator('.sidebar nav a').count(),4,'dashboard navigation is missing');
+  for (const href of await page.locator('.sidebar nav a').evaluateAll(links=>links.map(link=>link.getAttribute('href')))) {
+    assert(await page.locator(href).isVisible(),`navigation target ${href} is missing`);
+  }
+  const sidebarBox=await page.locator('.sidebar').boundingBox();
+  const mainBox=await page.locator('main').boundingBox();
+  assert(sidebarBox.x+sidebarBox.width<=mainBox.x,'desktop sidebar overlaps the workspace');
+  assert.equal(await page.locator('.sidebar').evaluate(element=>getComputedStyle(element).position),'fixed');
+  assert(await page.locator('.topbar').isVisible(),'dashboard topbar is missing');
   assert.deepEqual(await page.locator('a.demo-website-link').evaluateAll(links=>links.map(link=>link.href)),[
     'https://meretuule.arleserver.cfd/', 'https://meretuule.arleserver.cfd/'
   ]);
@@ -54,6 +64,20 @@ async page => {
     await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
     assert((await page.locator('#demo-messages').textContent()).includes(language.greeting));
     assert.equal(requests.at(-1).body.language,language.code);
+    const hoursQuestions = {
+      et: ['Mis kellani te lahti olete?', 'Aga nädalavahetusel?', 'Esmaspäevast neljapäevani'],
+      en: ['What are your opening hours?', 'And on weekends?', 'Monday through Thursday'],
+      ru: ['До скольки вы работаете?', 'А в выходные?', 'С понедельника по четверг'],
+    }[language.code];
+    for (const question of hoursQuestions.slice(0, 2)) {
+      await page.locator('#demo-text').fill(question);
+      await page.locator('#demo-send').click();
+      await page.waitForFunction(()=>!state.turnBusy);
+      const answer = await page.locator('#demo-messages .message').last().textContent();
+      if (question === hoursQuestions[0]) assert(answer.includes(hoursQuestions[2]));
+      else assert(answer.includes('23') && answer.includes('20') && !answer.includes('21'));
+      assert.equal(await page.evaluate(()=>state.recap), null);
+    }
     await page.locator('#demo-text').fill(language.menu);
     await page.locator('#demo-send').click();
     await page.waitForFunction(()=>!state.turnBusy);
@@ -167,6 +191,11 @@ async page => {
   await page.screenshot({path:'output/playwright/restaurant-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile horizontal overflow');
+  assert(await page.locator('.sidebar nav').isVisible(),'mobile dashboard navigation is missing');
+  assert.equal(await page.locator('.sidebar').evaluate(element=>getComputedStyle(element).position),'static','mobile sidebar covers the controls');
+  await page.locator('.sidebar nav a[href="#demo-section"]').click();
+  assert.equal(new URL(page.url()).hash,'#demo-section');
+  assert(await page.locator('#demo-start').isVisible(),'mobile navigation does not reach voice controls');
   await page.screenshot({path:'output/playwright/restaurant-mobile.png',fullPage:true});
   await page.setViewportSize({width:320,height:844});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'320px horizontal overflow');
@@ -181,6 +210,22 @@ async page => {
   assert.equal(await page.locator('#bookings .booking-row').count(),0);
   assert.equal(await page.locator('#demo-messages .message').count(),0);
   assert(await page.locator('#reservation-confirm').isDisabled());
+  // Both hosts share one application; only the operator hostname gets the shell.
+  await page.setViewportSize({width:801,height:844});
+  await page.locator('#demo-language').selectOption('ru');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'801px Russian dashboard overflow');
+  await page.setViewportSize({width:390,height:844});
+  const fixtureOrigin=new URL(page.url()).origin;
+  await page.route('https://meretuule.arleserver.cfd/**',async route=>{
+    const url=new URL(route.request().url());
+    const response=await route.fetch({url:fixtureOrigin+url.pathname+url.search});
+    await route.fulfill({response});
+  });
+  await page.goto('https://meretuule.arleserver.cfd/',{waitUntil:'networkidle'});
+  assert(await page.locator('.sidebar').isHidden(),'operator restoration changed the public restaurant demo');
+  assert(await page.locator('.site-header > .brand').isVisible(),'public restaurant header was removed');
+  assert.equal(await page.locator('html').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(245, 249, 246)','public restaurant palette changed');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'public mobile horizontal overflow');
   assert.deepEqual(errors,[]);
-  return {languages:3,confirmed:3,cancelled:3,voiceReservation:true,estonianAsrConfirmation:true,bookingVisibleAfterReload:true,bookingPageReset:true,recapReceipt:true,microphoneWav:true,logoutIsolation:true,desktop:true,mobile:true,pageErrors:errors.length};
+  return {languages:3,confirmed:3,cancelled:3,voiceReservation:true,estonianAsrConfirmation:true,bookingVisibleAfterReload:true,bookingPageReset:true,recapReceipt:true,microphoneWav:true,logoutIsolation:true,desktop:true,mobile:true,publicDemoUnchanged:true,pageErrors:errors.length};
 }

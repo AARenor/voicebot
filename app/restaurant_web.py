@@ -10,6 +10,7 @@ from .booking_web import _body, _fields, _remember_booking, _result
 from .dashboard.api import _require_operator
 from .hackathon import operator_scope, read_session_language
 from .languages import CONSENT
+from .restaurant_answers import format_schedule
 
 CANCEL = {"et": "Jah, tühista.", "en": "Yes, cancel.", "ru": "Да, отмените."}
 
@@ -24,6 +25,14 @@ def add_restaurant_routes(app, sessions):
             "business_type": "restaurant",
             "restaurant": data,
             "supported_languages": ["et", "en", "ru"],
+            "opening_hours_summary": {
+                language: format_schedule(data, language) + "."
+                for language in ("et", "en", "ru")
+            },
+            "kitchen_hours_summary": {
+                language: format_schedule(data, language, kitchen=True) + "."
+                for language in ("et", "en", "ru")
+            },
             "table_booking_ready": app.state.capabilities["slot_booking_ready"],
             "booking_access": "operator_demo",
             "allergy_safety_verified": False,

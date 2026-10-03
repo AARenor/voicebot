@@ -208,7 +208,9 @@ class DateResolution:
     remaining_text: str
 
 
-def resolve_restaurant_date(text: str, now: datetime) -> DateResolution:
+def resolve_restaurant_date(
+    text: str, now: datetime, *, include_weekdays: bool = True
+) -> DateResolution:
     """Resolve one date, masking its words before time and party extraction.
 
     A missing year means the next occurrence of that calendar date. Explicit
@@ -289,9 +291,10 @@ def resolve_restaurant_date(text: str, now: datetime) -> DateResolution:
             record(start, end, value, error or invalid)
     for match in RELATIVE.finditer(text):
         record(*match.span(), now.date() + timedelta(days=RELATIVE_FORMS[match[0]]))
-    for match in WEEKDAY.finditer(text):
-        offset = (WEEKDAYS[match["base"]] - now.weekday()) % 7 or 7
-        record(*match.span(), now.date() + timedelta(days=offset))
+    if include_weekdays:
+        for match in WEEKDAY.finditer(text):
+            offset = (WEEKDAYS[match["base"]] - now.weekday()) % 7 or 7
+            record(*match.span(), now.date() + timedelta(days=offset))
     for match in MONTHS.finditer(text):
         if not any(
             match.start() < right and match.end() > left for left, right in spans

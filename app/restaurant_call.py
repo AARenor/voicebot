@@ -7,19 +7,27 @@ import json
 import re
 import time
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Any
 
 from .languages import CONSENT, spoken_date, spoken_time
-from .restaurant_data import DAYS, restaurant_demo_profile
+from .restaurant_data import restaurant_demo_profile
 from .restaurant_dates import ESTONIAN_COUNTS, resolve_restaurant_date
+from .restaurant_answers import (
+    GUIDANCE,
+    INFORMATION_TOPICS,
+    RestaurantQuestion,
+    format_schedule,
+    match_question,
+    natural_list,
+)
 from .telephone import CallTools, UNKNOWN_MUTATION_ERRORS
 from .turn import REPEAT_PROMPT, STT_UNAVAILABLE, TURN_UNAVAILABLE
 
 COPY: dict[str, dict[str, str]] = {
     "et": {
-        "greeting": "Tere! Olen restorani AI-abiline. Siin saad proovida lauabroneeringut; päris lauda demo ei broneeri. Kuidas saan aidata?",
+        "greeting": "Tere! Olen restorani AI-abiline. Päris lauda demo ei broneeri. Kuidas saan aidata?",
         "date": "Mis kuupäevaks soovid lauda?",
         "date_invalid": "Seda kuupäeva kalendris ei ole. Mis päeva ja kuud mõtled?",
         "date_ambiguous": "Millist kuupäeva mõtled? Ütle üks päev ja kuu.",
@@ -36,14 +44,14 @@ COPY: dict[str, dict[str, str]] = {
         "domain": "Aitan restorani lauabroneeringute, menüü ja lahtiolekuaegadega. Milles saan aidata?",
         "price": "Mul pole praegu menüühindu. Täpse hinna saad restorani töötajalt.",
         "failed": "Broneering ei õnnestunud. Kontrolli kuupäeva ja kellaaega või proovi hiljem uuesti.",
-        "menu": "Demomenüüs on: {items}. {notice}",
-        "hours": "Restorani demo lahtiolekuajad: {hours}. Laua saadavust kontrollin eraldi.",
+        "menu": "Menüüs on {items}.",
+        "hours": "{hours}.",
         "closed": "suletud",
-        "alternatives": "Soovitud ajal lauda ei ole. Sama kuupäeva võimalikud ajad: {times}. Milline sobib?",
-        "recap": "Testbroneering: {name}, {date} kell {time} Eesti aja järgi, {party} külalist. Laud {duration} minutiks, nimele {guest}. Sobib? Võid öelda „{consent}”",
+        "alternatives": "Sel ajal lauda pole. Samal päeval sobiks {times}. Milline aeg sobib?",
+        "recap": "Testbroneering: {name}, {date} kell {time} Eesti aja järgi, {party} külalist. Laud {duration} minutiks, nimele {guest}. Sobib? Võid öelda „{consent}”"
     },
     "en": {
-        "greeting": "Hello! I'm the restaurant's AI assistant. You can try a table reservation here; this demo won't reserve a real table. How can I help?",
+        "greeting": "Hello! This is an AI restaurant demo. No real table is booked here. How can I help?",
         "date": "What date would you like a table?",
         "date_invalid": "That date isn't in the calendar. What day and month do you mean?",
         "date_ambiguous": "Which date do you mean? Please give one day and month.",
@@ -60,14 +68,14 @@ COPY: dict[str, dict[str, str]] = {
         "domain": "I can help with restaurant table reservations, the menu and opening hours. How can I help?",
         "price": "I don't have the menu prices right now. The restaurant team can help with those.",
         "failed": "I couldn't book the table. Check the date and time, or try again later.",
-        "menu": "The demo menu includes: {items}. {notice}",
-        "hours": "The restaurant demo opening hours are: {hours}. Table availability is checked separately.",
+        "menu": "The menu includes {items}.",
+        "hours": "{hours}.",
         "closed": "closed",
-        "alternatives": "There is no table at the requested time. Possible times on the same date are: {times}. Which would you prefer?",
-        "recap": 'Your test reservation: {name}, {date} at {time}, Tallinn local time, for {party} guests. The table is for {duration} minutes, under {guest}. Shall I confirm it? You can say "{consent}"',
+        "alternatives": "That time isn't available. On the same day, we have {times}. Which works for you?",
+        "recap": "Your test reservation: {name}, {date} at {time}, Tallinn local time, for {party} guests. The table is for {duration} minutes, under {guest}. Shall I confirm it? You can say \"{consent}\""
     },
     "ru": {
-        "greeting": "Здравствуйте! Я ИИ-помощник ресторана. Здесь можно попробовать забронировать столик; демонстрация не бронирует настоящий столик. Чем могу помочь?",
+        "greeting": "Здравствуйте! Я ИИ-помощник деморесторана. Настоящий столик здесь не бронируется. Чем помочь?",
         "date": "На какую дату нужен столик?",
         "date_invalid": "Такой даты нет в календаре. Какой день и месяц вы имеете в виду?",
         "date_ambiguous": "Какую дату вы имеете в виду? Назовите один день и месяц.",
@@ -84,13 +92,14 @@ COPY: dict[str, dict[str, str]] = {
         "domain": "Я помогу с бронированием столика, меню и часами работы ресторана. Чем могу помочь?",
         "price": "Сейчас у меня нет цен меню. Точную цену подскажет сотрудник ресторана.",
         "failed": "Не удалось забронировать столик. Проверьте дату и время или попробуйте позже.",
-        "menu": "В демонстрационном меню: {items}. {notice}",
-        "hours": "Часы работы демонстрационного ресторана: {hours}. Наличие столика проверяется отдельно.",
+        "menu": "В меню {items}.",
+        "hours": "{hours}.",
         "closed": "закрыто",
         "alternatives": "На запрошенное время столика нет. Возможное время на ту же дату: {times}. Что вам подходит?",
-        "recap": "Тестовая бронь: {name}, {date} в {time}, по времени Таллина, на {party} гостей. Столик на {duration} минут, на имя {guest}. Всё верно? Можно сказать «{consent}»",
-    },
+        "recap": "Тестовая бронь: {name}, {date} в {time}, по времени Таллина, на {party} гостей. Столик на {duration} минут, на имя {guest}. Всё верно? Можно сказать «{consent}»"
+    }
 }
+
 
 DATE_MONTHS = {
     "et": (
@@ -224,7 +233,7 @@ INFORMATION_TOOL = _schema(
     {
         "topic": {
             "type": "string",
-            "enum": ["menu", "hours", "allergens", "policies", "location"],
+            "enum": list(INFORMATION_TOPICS),
         }
     },
     ("topic",),
@@ -346,6 +355,7 @@ class RestaurantCallTools(CallTools):
         self._restaurant_dish = None
         self._restaurant_diet = None
         self._restaurant_last_response = None
+        self._restaurant_question = None
 
     def conversation_tools(self):
         public = {
@@ -417,6 +427,9 @@ class RestaurantCallTools(CallTools):
         return False
 
     def observe_user_text(self, text, **kwargs):
+        previous_question = self._restaurant_question
+        previous_language = self.language
+        previous_dish, previous_diet = self._restaurant_dish, self._restaurant_diet
         super().observe_user_text(text, **kwargs)
         if kwargs.get("is_final", True) is not True:
             return
@@ -429,6 +442,7 @@ class RestaurantCallTools(CallTools):
         self._restaurant_focus = None
         self._restaurant_dish = None
         self._restaurant_diet = None
+        self._restaurant_question = None
         text = " ".join(text.casefold().split()) if isinstance(text, str) else ""
         if self.mutation_uncertain or self.unsupported_language:
             return
@@ -451,43 +465,29 @@ class RestaurantCallTools(CallTools):
             self._restaurant_diet = "vegan"
         elif re.search(r"vegetarian|taimetoit|вегетар", text):
             self._restaurant_diet = "vegetarian"
-        if re.search(
-            r"allerg|allergia|allergeen|аллерг|глютен|gluten|peanut|pähkl|орех", text
-        ):
-            self._restaurant_focus = "allergens"
-        elif (
-            re.search(
-                r"\b(menu|menüü|меню|vegan|vegetarian|taimetoit|веган|вегетар)\w*", text
-            )
-            or self._restaurant_dish
-        ):
-            self._restaurant_focus = "menu"
-        elif re.search(r"kitchen|köök|köögi|кухн", text):
-            self._restaurant_focus = "kitchen"
-        elif re.search(
-            r"\b(hours|open|opening|close|lahtiolek|avatud|sulge|tööaeg|откры|закры|работа)\w*",
+        self._restaurant_question = match_question(
             text,
-        ):
-            self._restaurant_focus = "hours"
-        elif re.search(r"\b(price|cost|hind|hinnad|maksab|цен|стоим)\w*", text):
-            self._restaurant_focus = "price"
-        elif re.search(
-            r"\b(staff|human|transfer|callback|personali|teenindaja|персонал|сотрудник|оператор|перевед)\w*",
-            text,
-        ) or (
-            re.search(r"\binimese\w*\b", text)
-            and re.search(r"\b(?:rääk|ühend|suun|kõnel|vestel)\w*\b", text)
-        ):
-            self._restaurant_focus = "staff"
+            previous=previous_question if previous_language == self.language else None,
+            has_dish=self._restaurant_dish is not None,
+            has_diet=self._restaurant_diet is not None,
+        )
+        if self._restaurant_question:
+            self._restaurant_focus = self._restaurant_question.topics[0]
+            if (
+                previous_language == self.language and previous_question
+                and any(topic in {"menu", "allergens"} for topic in previous_question.topics)
+                and any(topic in {"menu", "allergens"} for topic in self._restaurant_question.topics)
+                and re.search(r"\b(?:aga|see|and|it|а|это|он|она)\b", text)
+            ):
+                if self._restaurant_dish is None:
+                    self._restaurant_dish = previous_dish
+                if self._restaurant_diet is None:
+                    self._restaurant_diet = previous_diet
         elif re.search(
             r"\b(hotel|room|spa|massage|hotelli|tuba|spaa|massaaž|отел|номер|массаж|спа)\w*",
             text,
         ):
             self._restaurant_focus = "domain"
-        elif re.search(
-            r"\b(order|delivery|takeaway|tellim|kojuvedu|достав|заказ)\w*", text
-        ):
-            self._restaurant_focus = "staff"
         if (
             not self._restaurant_focus
             and not self.pending
@@ -511,7 +511,7 @@ class RestaurantCallTools(CallTools):
         if self.conversation.intent:
             return None
         if self._restaurant_focus:
-            return self.information_reply(self._restaurant_focus)
+            return self.question_reply()
         inquiry = self._restaurant_inquiry
         if inquiry is not None:
             if inquiry.get("date_issue"):
@@ -525,10 +525,25 @@ class RestaurantCallTools(CallTools):
                     return COPY[self.language][key]
         return None
 
+    def question_reply(self):
+        if self._restaurant_question and self._restaurant_question.date_issue:
+            return COPY[self.language][self._restaurant_question.date_issue]
+        topics = (
+            self._restaurant_question.topics
+            if self._restaurant_question
+            else (self._restaurant_focus,)
+        )
+        return " ".join(self.information_reply(topic) for topic in topics)
+
     def information_reply(self, topic):
         copybook = COPY[self.language]
         if topic in ("staff", "domain", "price"):
             return copybook[topic]
+        if topic in GUIDANCE[self.language]:
+            return GUIDANCE[self.language][topic].format(
+                duration=self.restaurant["reservation_duration_minutes"],
+                maximum=self.restaurant["maximum_party_size"],
+            )
         if topic == "policies":
             return self.restaurant["policies"][self.language]
         if topic == "allergens":
@@ -576,42 +591,40 @@ class RestaurantCallTools(CallTools):
                 ]
             if not menu:
                 return copybook["staff"]
-            items = ", ".join(item["name"][self.language] for item in menu[:8])
-            return copybook["menu"].format(
-                items=items, notice=self.restaurant["allergy_notice"][self.language]
-            )
+            items = natural_list([item["name"][self.language] for item in menu[:8]], self.language)
+            return copybook["menu"].format(items=items)
         if topic in ("hours", "kitchen"):
-            values = []
-            for index, day in enumerate(DAYS):
-                hours = self.restaurant["opening_hours"][day]
-                end = (
-                    (
-                        datetime.strptime(hours["end"], "%H:%M")
-                        - timedelta(
-                            minutes=self.restaurant["kitchen_closes_minutes_before"]
-                        )
-                    ).strftime("%H:%M")
-                    if hours and topic == "kitchen"
-                    else hours["end"] if hours else None
-                )
-                values.append(
-                    DAY_LABELS[self.language][index]
-                    + ": "
-                    + (f"{hours['start']}–{end}" if hours else copybook["closed"])
-                )
+            question = self._restaurant_question
+            if question and question.date_issue:
+                return copybook[question.date_issue]
+            requested_date = question.date if question else None
+            if requested_date and requested_date in self.restaurant["closures"]:
+                return {
+                    "et": "Sel päeval oleme suletud: ",
+                    "en": "We're closed that day: ",
+                    "ru": "В этот день мы закрыты: ",
+                }[self.language] + self.restaurant["closures"][requested_date][self.language] + "."
+            schedule = format_schedule(
+                self.restaurant, self.language,
+                days=question.days if question else None,
+                kitchen=topic == "kitchen",
+            )
             if topic == "kitchen":
                 prefix = {
-                    "et": "Demo köögi lahtiolekuajad: ",
-                    "en": "The demo kitchen hours are: ",
-                    "ru": "Часы работы демонстрационной кухни: ",
+                    "et": "Köök: ",
+                    "en": "The kitchen: ",
+                    "ru": "Кухня: ",
                 }[self.language]
-                return prefix + "; ".join(values) + "."
-            exceptions = "; ".join(
-                day + ": " + reason[self.language]
-                for day, reason in list(self.restaurant["closures"].items())[:8]
-            )
-            return copybook["hours"].format(hours="; ".join(values)) + (
-                " " + exceptions if exceptions else ""
+                reply = prefix + schedule + "."
+            else:
+                reply = copybook["hours"].format(hours=schedule)
+            return reply + (
+                " " + {
+                    "et": "Erandpäevadel võivad ajad erineda. Mis kuupäeva silmas pead?",
+                    "en": "Special dates may have different hours. Which date do you mean?",
+                    "ru": "В отдельные даты часы могут отличаться. Какую дату вы имеете в виду?",
+                }[self.language]
+                if self.restaurant["closures"] and requested_date is None else ""
             )
         return copybook["domain"]
 
@@ -799,17 +812,10 @@ class RestaurantCallTools(CallTools):
     def guard_reply(self, text, results):
         reply = self._restaurant_guard_reply(text, results)
         self.conversation.remember_reply(reply, self.language)
-        if self._restaurant_focus in {
-            "menu",
-            "allergens",
-            "hours",
-            "kitchen",
-            "policies",
-            "location",
-        } and reply == self.information_reply(self._restaurant_focus):
+        if self._restaurant_focus in INFORMATION_TOPICS and reply == self.question_reply():
             self._restaurant_last_response = (
                 "information",
-                self._restaurant_focus,
+                self._restaurant_question or RestaurantQuestion((self._restaurant_focus,)),
                 self._restaurant_dish,
                 self._restaurant_diet,
             )
@@ -883,7 +889,7 @@ class RestaurantCallTools(CallTools):
             if isinstance(row.get("restaurant_information"), str):
                 approved = {
                     self.information_reply(topic)
-                    for topic in ("menu", "hours", "allergens", "policies", "location")
+                    for topic in INFORMATION_TOPICS
                 }
                 if row["restaurant_information"] in approved:
                     return row["restaurant_information"]
@@ -905,7 +911,9 @@ class RestaurantCallTools(CallTools):
                 return copybook[selection[1]]
             # Remember identifiers only, then render from current trusted facts.
             self._restaurant_dish, self._restaurant_diet = selection[2:]
-            return self.information_reply(selection[1])
+            self._restaurant_question = selection[1]
+            self._restaurant_focus = self._restaurant_question.topics[0]
+            return self.question_reply()
         if self.conversation.intent == "identity":
             return self.greeting
         if self.conversation.intent == "human":
