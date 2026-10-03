@@ -140,6 +140,7 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
             shutdown=Mock(),
         )
         env = {
+            "VOICEBOT_BUSINESS_TYPE": "hotel_spa",
             "EASY_BASE_URL": "https://fixture.invalid",
             "EASY_API_KEY": "fixture",
             "EASY_STATE_DB": str(tmp_path / "easy-booking.db"),

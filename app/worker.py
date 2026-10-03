@@ -38,6 +38,7 @@ from .telephone import (
     sdk_tools,
     validate_environment,
 )
+from .call_factory import make_call_tools
 
 
 class PrivateLogs(logging.Filter):
@@ -709,28 +710,46 @@ async def entrypoint(ctx: JobContext):
         config = VoiceConfig.from_env()
         speech_config = SpeechConfig.from_env()
         delivery = SpeechDelivery.from_env()
-        adapter = EasyAppointmentsAdapter(
-            os.environ["EASY_BASE_URL"],
-            os.environ["EASY_API_KEY"],
-            auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-            api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
-            state_db=os.environ["EASY_STATE_DB"],
-            allow_writes=True,
-        )
-        stay = None
-        if (
-            os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
-            == "1"
-        ):
-            stay = DemoStayAdapter(
-                os.environ.get("STAY_STATE_DB")
-                or os.path.join(
-                    os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db"
-                )
+        from .business import business_type, restaurant_database, restaurant_dispatcher
+
+        if business_type() == "restaurant":
+            from .booking.restaurant import RestaurantAdapter
+            from .restaurant_data import load_restaurant_data
+
+            restaurant_data = load_restaurant_data()
+            adapter = RestaurantAdapter(
+                restaurant_database(), data=restaurant_data, allow_writes=True
             )
-        state = CallTools(
-            Dispatcher(slot=adapter, stay=stay), language=speech_config.initial_language
-        )
+            state = make_call_tools(
+                restaurant_dispatcher(adapter, restaurant_data),
+                language=speech_config.initial_language,
+            )
+        else:
+            state = None
+        if state is None:
+            adapter = EasyAppointmentsAdapter(
+                os.environ["EASY_BASE_URL"],
+                os.environ["EASY_API_KEY"],
+                auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+                api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+                state_db=os.environ["EASY_STATE_DB"],
+                allow_writes=True,
+            )
+            stay = None
+            if (
+                os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
+                == "1"
+            ):
+                stay = DemoStayAdapter(
+                    os.environ.get("STAY_STATE_DB")
+                    or os.path.join(
+                        os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db"
+                    )
+                )
+            state = CallTools(
+                Dispatcher(slot=adapter, stay=stay),
+                language=speech_config.initial_language,
+            )
         callslog.history_safe(
             call_history.start, state.call_id, "telephone", state.language
         )

@@ -1,5 +1,22 @@
 # Deploy to Coolify → robot.arleserver.cfd
 
+## Restaurant release — current default
+
+The current product is restaurant reception in ET/EN/RU. Use
+`VOICEBOT_BUSINESS_TYPE=restaurant`, `RESTAURANT_DEMO_WRITES=1` for explicitly
+fictional reservations, `RESTAURANT_STATE_DB=/data/restaurant-booking.db` and
+`CALLS_DB=/data/calls.db`. Mount the existing persistent `/data` volume in both
+web and native worker containers. EasyAppointments credentials are optional in
+restaurant mode. An absent restaurant write flag inherits the prior authorized
+`EASY_DEMO_WRITES` setting; an explicit `0` disables table writes.
+
+The root page serves restaurant voice and table controls. `/hotel` returns 410
+in restaurant mode; existing ingress routes for the earlier guest website need
+separate operator review. See [restaurant configuration, deployment and
+rollback](docs/operations/restaurants.md). The older hotel/spa settings below
+are rollback and historical deployment context. Voice provider settings and
+the separate media worker deployment still apply to the restaurant pipeline.
+
 Dashboard + API in one container. Coolify terminates TLS and proxies to
 port 8000. No secrets are baked into the image (see `.dockerignore`).
 

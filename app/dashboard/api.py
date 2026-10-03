@@ -32,7 +32,7 @@ try:
         status: str
 
     class BookingPage(BaseModel):
-        source: Literal["easyappointments"]
+        source: Literal["easyappointments", "restaurant"]
         data_mode: Literal["synthetic"]
         fetched_at: str
         date: str

@@ -68,54 +68,69 @@ def build_stack() -> dict:
             languages={lang: speech.voice_for(lang) for lang in ("et", "en", "ru")},
             delivery=SpeechDelivery.from_env(),
         )
-    # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
-    if os.environ.get("APALEO_CLIENT_ID") and os.environ.get("APALEO_CLIENT_SECRET"):
-        stack["stay"] = ApaleoAdapter(
-            os.environ["APALEO_CLIENT_ID"], os.environ["APALEO_CLIENT_SECRET"]
-        )
-    elif all(
-        os.environ.get(k)
-        for k in (
-            "MEWS_CLIENT_TOKEN",
-            "MEWS_ACCESS_TOKEN",
-            "MEWS_CLIENT",
-            "MEWS_API_BASE_URL",
-        )
-    ):
-        stack["stay"] = MewsAdapter(
-            os.environ["MEWS_CLIENT_TOKEN"],
-            os.environ["MEWS_ACCESS_TOKEN"],
-            os.environ["MEWS_CLIENT"],
-            os.environ["MEWS_API_BASE_URL"],
-        )
-    elif os.environ.get("CLOUDBEDS_API_KEY"):
-        stack["stay"] = CloudbedsAdapter(os.environ["CLOUDBEDS_API_KEY"])
-    if os.environ.get("EASY_BASE_URL") and os.environ.get("EASY_API_KEY"):
-        read_options = {
-            "auth_scheme": os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-            "api_prefix": os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
-        }
-        stack["booking_reader"] = EasyAppointmentsAdapter(
-            os.environ["EASY_BASE_URL"],
-            os.environ["EASY_API_KEY"],
-            **read_options,
-        )
-        # Sole-writer demo gate: credentials alone never advertise booking
-        # tools. Explicit opt-in plus a persistent journal are required
-        # (upstream 1.6.0 creation does not reject overlaps).
-        if os.environ.get("EASY_DEMO_WRITES") == "1":
-            try:
-                stack["slot"] = EasyAppointmentsAdapter(
-                    os.environ["EASY_BASE_URL"],
-                    os.environ["EASY_API_KEY"],
-                    auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-                    api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
-                    state_db=os.environ.get("EASY_STATE_DB", "/data/easy-booking.db"),
-                    allow_writes=True,
-                )
-            except Exception:
-                # Journal unwritable: stay unwired, never half-operational.
-                stack["slot"] = None
+    from .business import (
+        business_type,
+        restaurant_database,
+        restaurant_dispatcher,
+        restaurant_writes_enabled,
+    )
+
+    stack["business_type"] = business_type()
+    if stack["business_type"] == "hotel_spa":
+        # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
+        if os.environ.get("APALEO_CLIENT_ID") and os.environ.get(
+            "APALEO_CLIENT_SECRET"
+        ):
+            stack["stay"] = ApaleoAdapter(
+                os.environ["APALEO_CLIENT_ID"], os.environ["APALEO_CLIENT_SECRET"]
+            )
+        elif all(
+            os.environ.get(k)
+            for k in (
+                "MEWS_CLIENT_TOKEN",
+                "MEWS_ACCESS_TOKEN",
+                "MEWS_CLIENT",
+                "MEWS_API_BASE_URL",
+            )
+        ):
+            stack["stay"] = MewsAdapter(
+                os.environ["MEWS_CLIENT_TOKEN"],
+                os.environ["MEWS_ACCESS_TOKEN"],
+                os.environ["MEWS_CLIENT"],
+                os.environ["MEWS_API_BASE_URL"],
+            )
+        elif os.environ.get("CLOUDBEDS_API_KEY"):
+            stack["stay"] = CloudbedsAdapter(os.environ["CLOUDBEDS_API_KEY"])
+        if os.environ.get("EASY_BASE_URL") and os.environ.get("EASY_API_KEY"):
+            read_options = {
+                "auth_scheme": os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+                "api_prefix": os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+            }
+            stack["booking_reader"] = EasyAppointmentsAdapter(
+                os.environ["EASY_BASE_URL"],
+                os.environ["EASY_API_KEY"],
+                **read_options,
+            )
+            # Sole-writer demo gate: credentials alone never advertise booking
+            # tools. Explicit opt-in plus a persistent journal are required
+            # (upstream 1.6.0 creation does not reject overlaps).
+            if os.environ.get("EASY_DEMO_WRITES") == "1":
+                try:
+                    stack["slot"] = EasyAppointmentsAdapter(
+                        os.environ["EASY_BASE_URL"],
+                        os.environ["EASY_API_KEY"],
+                        auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
+                        api_prefix=os.environ.get(
+                            "EASY_API_PREFIX", "/index.php/api/v1"
+                        ),
+                        state_db=os.environ.get(
+                            "EASY_STATE_DB", "/data/easy-booking.db"
+                        ),
+                        allow_writes=True,
+                    )
+                except Exception:
+                    # Journal unwritable: stay unwired, never half-operational.
+                    stack["slot"] = None
     if all(
         os.environ.get(k)
         for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
@@ -126,31 +141,32 @@ def build_stack() -> dict:
             "url": os.environ["LIVEKIT_URL"],
             "api_key": os.environ["LIVEKIT_API_KEY"],
         }
-    if stack["slot"] is None and os.environ.get("ZENOTI_API_KEY"):
-        # Independent fallback: media plane (LiveKit) and spa PMS are
-        # orthogonal — Zenoti must survive LiveKit being configured.
-        from .booking.zenoti import ZenotiAdapter
+    if stack["business_type"] == "hotel_spa":
+        if stack["slot"] is None and os.environ.get("ZENOTI_API_KEY"):
+            # Independent fallback: media plane (LiveKit) and spa PMS are
+            # orthogonal — Zenoti must survive LiveKit being configured.
+            from .booking.zenoti import ZenotiAdapter
 
-        stack["slot"] = ZenotiAdapter(os.environ["ZENOTI_API_KEY"])
-    if (
-        stack["stay"] is None
-        and os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
-        == "1"
-    ):
-        from .booking.demo_stay import DemoStayAdapter
+            stack["slot"] = ZenotiAdapter(os.environ["ZENOTI_API_KEY"])
+        if (
+            stack["stay"] is None
+            and os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
+            == "1"
+        ):
+            from .booking.demo_stay import DemoStayAdapter
 
-        # Keep room inventory beside the existing persistent booking journal.
-        # This is explicitly fictional inventory, never a live hotel PMS.
-        state_dir = os.path.dirname(
-            os.environ.get("EASY_STATE_DB", "/data/easy-booking.db")
-        )
-        try:
-            stack["stay"] = DemoStayAdapter(
-                os.environ.get("STAY_STATE_DB")
-                or os.path.join(state_dir, "stay-booking.db")
+            # Keep room inventory beside the existing persistent booking journal.
+            # This is explicitly fictional inventory, never a live hotel PMS.
+            state_dir = os.path.dirname(
+                os.environ.get("EASY_STATE_DB", "/data/easy-booking.db")
             )
-        except (OSError, ValueError, sqlite3.Error):
-            stack["stay"] = None
+            try:
+                stack["stay"] = DemoStayAdapter(
+                    os.environ.get("STAY_STATE_DB")
+                    or os.path.join(state_dir, "stay-booking.db")
+                )
+            except (OSError, ValueError, sqlite3.Error):
+                stack["stay"] = None
     from .booking.tools import Dispatcher
 
     # The HTTP demo uses the approved fictional profile through CallTools.
@@ -159,6 +175,21 @@ def build_stack() -> dict:
         stay=stack["stay"],
         slot=stack["slot"],
     )
+    if stack["business_type"] == "restaurant":
+        from .booking.restaurant import RestaurantAdapter
+        from .restaurant_data import load_restaurant_data
+
+        data = load_restaurant_data()
+        adapter = RestaurantAdapter(
+            restaurant_database(), data=data, allow_writes=restaurant_writes_enabled()
+        )
+        stack.update(
+            stay=None,
+            slot=adapter if adapter.operational else None,
+            booking_reader=adapter,
+            restaurant_data=data,
+            dispatcher=restaurant_dispatcher(adapter, data),
+        )
     stack["demo"] = stack["stt"] is None
     return stack
 
@@ -234,7 +265,13 @@ def create_app():
             "/api/rooms",
             "/api/stays",
         ) or request.url.path.startswith(
-            ("/api/demo/", "/api/holds/", "/api/booking/", "/api/call-history")
+            (
+                "/api/demo/",
+                "/api/holds/",
+                "/api/booking/",
+                "/api/call-history",
+                "/api/restaurant/",
+            )
         )
         try:
             response = await call_next(request)
@@ -265,7 +302,9 @@ def create_app():
         "slot_booking_ready": "search_slots" in advertised,
         "booking_read_ready": stack["booking_reader"] is not None,
         "booking_view_source": (
-            "easyappointments" if stack["booking_reader"] is not None else None
+            stack.get("business_type", "hotel_spa")
+            if stack.get("business_type") == "restaurant"
+            else "easyappointments" if stack["booking_reader"] is not None else None
         ),
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
@@ -299,6 +338,7 @@ def create_app():
         speech = SpeechConfig.from_env()
         delivery = SpeechDelivery.from_env()
         return {
+            "business_type": stack.get("business_type", "hotel_spa"),
             "wired": {
                 name: stack[name] is not None
                 for name in (
@@ -422,9 +462,9 @@ def create_app():
                     "languages": ["et", "en", "ru"],
                     "configured": stack["tts"] is not None,
                     "available": stack["tts"] is not None,
-                    "disabled_reason": None
-                    if stack["tts"] is not None
-                    else "not_configured",
+                    "disabled_reason": (
+                        None if stack["tts"] is not None else "not_configured"
+                    ),
                     "streaming": voice_metadata(stack["tts"], "et")["streaming"],
                 }
             ]
@@ -470,13 +510,13 @@ def create_app():
         if key is not None:
             session = sessions.acquire(key, operator_scope(authorization))
         else:
-            from .telephone import CallTools
+            from .call_factory import make_call_tools
 
             # Check an explicit standalone profile before constructing call state.
             selected = choose_speaker(stack, body.get("voice", "azure"))
             session = DemoSession(
                 operator_scope(authorization),
-                CallTools(stack["dispatcher"]),
+                make_call_tools(stack["dispatcher"]),
                 time.monotonic() + SESSION_TTL,
                 turn_count=1,
                 voice_id=body.get("voice", "azure"),
@@ -631,18 +671,38 @@ def create_app():
         return sessions.end(session_id, operator_scope(authorization))
 
     if dashboard_api.router is not None:
-        app.include_router(dashboard_api.router)
+        if stack.get("business_type") == "restaurant":
+            from fastapi import APIRouter
+
+            history_router = APIRouter()
+            history_router.routes = [
+                route
+                for route in dashboard_api.router.routes
+                if route.path.startswith(
+                    ("/api/calls", "/api/call-history", "/api/metrics")
+                )
+            ]
+            app.include_router(history_router)
+        else:
+            app.include_router(dashboard_api.router)
 
     from fastapi.responses import FileResponse, Response
 
     from .booking_web import add_booking_routes
 
-    add_booking_routes(app, sessions)
+    if stack.get("business_type") == "restaurant":
+        from .restaurant_web import add_restaurant_routes
+
+        add_restaurant_routes(app, sessions)
+    else:
+        add_booking_routes(app, sessions)
     hotel_dir = os.path.join(os.path.dirname(__file__), "hotel", "static")
 
     @app.get("/hotel", include_in_schema=False)
     @app.get("/hotel/", include_in_schema=False)
     def hotel_page(request: Request):
+        if stack.get("business_type") == "restaurant":
+            return Response(status_code=410, headers={"Cache-Control": "no-store"})
         if (request.url.hostname or "").lower().rstrip(".") == "robot.arleserver.cfd":
             return Response(
                 status_code=410,
@@ -669,6 +729,14 @@ def create_app():
         )
 
     static_dir = os.path.join(os.path.dirname(__file__), "dashboard", "static")
+    if stack.get("business_type") == "restaurant":
+        # Keep local fonts available without any third-party browser requests.
+        app.mount(
+            "/fonts",
+            StaticFiles(directory=os.path.join(static_dir, "fonts")),
+            name="fonts",
+        )
+        static_dir = os.path.join(os.path.dirname(__file__), "restaurant", "static")
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
     return app
 

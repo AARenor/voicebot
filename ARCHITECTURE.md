@@ -1,6 +1,6 @@
-# English and Estonian hotel and spa voicebot — architecture
+# Estonian, English and Russian restaurant voicebot — architecture
 
-Status: **v1.2 fictional hackathon demo; Twilio-first activation, 2026-10-02**.
+Status: **Restaurant-first fictional demo, 2026-10-03.** See [current restaurant architecture and operating rules](docs/operations/restaurants.md). Later hotel/spa sections are retained as historical architecture and rollback context.
 
 This document separates what is running from what is planned. A component is
 not “ready” because credentials exist or a container starts; it is ready only
@@ -11,9 +11,11 @@ Historical vendor/model research from the earlier draft is summarized in
 
 ## 1. Goal and non-negotiable invariants
 
-The product is an inbound English/Estonian telephone receptionist for hotels
-and spas. It must answer routine questions, check live availability, complete
-safe bookings, and transfer exceptional cases to a human with context.
+The product is an Estonian/English/Russian restaurant receptionist. It answers
+approved menu and opening-hour questions and manages owned table reservations.
+Current availability comes from fictional SQLite inventory. Real restaurant
+booking integration and human call transfer remain unimplemented; exceptional
+requests receive explicit staff guidance.
 
 Non-negotiable invariants:
 

@@ -6,7 +6,7 @@ from app.server import create_app, build_stack
 
 
 def test_calls_require_operator_and_never_cache():
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator", "VOICEBOT_BUSINESS_TYPE": "hotel_spa"}, clear=True):
         with TestClient(create_app()) as client:
             for headers, expected in (
                 ({}, 403),
@@ -51,7 +51,7 @@ def test_http_turn_does_not_persist_transcript():
         "tool_results": [],
         "fallback_used": False,
     }
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator", "VOICEBOT_BUSINESS_TYPE": "hotel_spa"}, clear=True):
         with TestClient(create_app()) as client:
             client.app.state.stack.update(llm_primary=object(), tts=object())
             with (

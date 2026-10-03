@@ -74,3 +74,11 @@ docker exec -i livekit-worker-1 python - < deploy/telephony/booking_probe.py
 Public telephone calling still requires the DIDWW number and public SIP/RTP
 route. See [telephone runbook](../../deploy/telephony/README.md) and
 [configured backend dataset](../../deploy/easyappointments/README.md).
+# Restaurant demo
+
+`restaurant-demo.json` is the current validated fictional venue knowledge and
+table capacity configuration. Restaurant mode is the default; ET/EN/RU menu,
+hours, policies and allergy wording must all be present. See the
+[restaurant operations guide](../../docs/operations/restaurants.md).
+Earlier hotel/spa files are retained for explicit rollback and historical
+fixtures. They are not the restaurant's advertised knowledge.

@@ -18,7 +18,7 @@ def test_voice_selector_is_native_labeled_and_keeps_language_default() -> None:
         def handle_starttag(self, tag, attrs):
             tags.append((tag, dict(attrs)))
 
-    Parser().feed((STATIC / "index.html").read_text())
+    Parser().feed((STATIC / "index.html").read_text(encoding="utf-8"))
     assert any(
         tag == "label" and attrs.get("for") == "demo-voice" for tag, attrs in tags
     )
@@ -28,7 +28,7 @@ def test_voice_selector_is_native_labeled_and_keeps_language_default() -> None:
         if tag == "select" and attrs.get("id") == "demo-voice"
     )
     assert voice.get("name") and voice.get("aria-describedby")
-    assert 'value="auto"' in (STATIC / "index.html").read_text()
+    assert 'value="auto"' in (STATIC / "index.html").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

@@ -258,6 +258,7 @@ def test_fatal_initialization_failure_closes_allocated_adapter_and_owned_room():
                     "AZURE_SPEECH_KEY": "fixture",
                     "AZURE_REGION": "fixture",
                     "EASY_STATE_DB": "unused-fixture",
+                    "VOICEBOT_BUSINESS_TYPE": "hotel_spa",
                 },
                 clear=True,
             ),

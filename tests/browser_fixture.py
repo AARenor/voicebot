@@ -120,7 +120,7 @@ def create_app():
             return httpx.Response(204)
         raise AssertionError("unknown fictional provider operation")
 
-    with patch.dict(os.environ, {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict(os.environ, {"OPERATOR_TOKEN": "fixture-operator", "VOICEBOT_BUSINESS_TYPE": "hotel_spa"}, clear=True):
         app = server_app()
     os.environ["OPERATOR_TOKEN"] = "fixture-operator"
     os.environ["PUBLIC_PHONE_NUMBER"] = "+12025550109"

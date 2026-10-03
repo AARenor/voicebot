@@ -469,6 +469,9 @@ PREPARE_STAY_TOOL = {
 
 def validate_environment(env=None):
     env = os.environ if env is None else env
+    from .business import business_type, restaurant_database, restaurant_writes_enabled
+
+    restaurant = business_type(env) == "restaurant"
     required = (
         "LIVEKIT_URL",
         "LIVEKIT_API_KEY",
@@ -476,17 +479,18 @@ def validate_environment(env=None):
         "GROQ_API_KEY",
         "AZURE_SPEECH_KEY",
         "AZURE_REGION",
-        "EASY_BASE_URL",
-        "EASY_API_KEY",
-        "EASY_STATE_DB",
     )
+    if not restaurant:
+        required += ("EASY_BASE_URL", "EASY_API_KEY", "EASY_STATE_DB")
     if any(not env.get(k, "").strip() for k in required):
         raise ValueError("telephone configuration incomplete")
-    if env.get("VOICEBOT_TELEPHONE_DEMO") != "1" or env.get("EASY_DEMO_WRITES") != "1":
+    writes = restaurant_writes_enabled(env) if restaurant else env.get("EASY_DEMO_WRITES") == "1"
+    if env.get("VOICEBOT_TELEPHONE_DEMO") != "1" or not writes:
         raise ValueError("telephone synthetic-demo opt-in required")
     if not env["LIVEKIT_URL"].startswith(("ws://", "wss://", "http://", "https://")):
         raise ValueError("invalid media URL")
-    if not os.path.isabs(env["EASY_STATE_DB"]):
+    state_path = restaurant_database(env) if restaurant else env["EASY_STATE_DB"]
+    if not os.path.isabs(state_path):
         raise ValueError("absolute persistent journal path required")
 
 
@@ -1034,7 +1038,7 @@ class CallTools:
                     return {"name": name, "arguments": {}}
         return {"content": self.guard_reply(MISSING_FACTS[self.language], self.results)}
 
-    def inquiry_reply(self):
+    def inquiry_reply(self) -> str | None:
         """Trusted clarification only, without a provider call or booking action."""
         if (
             self.language != "et"

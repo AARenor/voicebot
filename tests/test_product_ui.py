@@ -35,7 +35,7 @@ def test_dashboard_assets_use_content_versioned_urls() -> None:
             if url:
                 urls.append(url)
 
-    with patch.dict("os.environ", {}, clear=True), TestClient(create_app()) as client:
+    with patch.dict("os.environ", {"VOICEBOT_BUSINESS_TYPE": "hotel_spa"}, clear=True), TestClient(create_app()) as client:
         page = client.get("/")
         assert page.status_code == 200
         Parser().feed(page.text)
