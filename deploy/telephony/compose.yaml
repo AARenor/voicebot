@@ -32,7 +32,10 @@ services:
     build:
       context: ../..
       dockerfile: deploy/telephony/Dockerfile
-    image: voicebot-telephone:local
+    image: ${VOICEBOT_MEDIA_IMAGE:-voicebot-telephone:local}
+    labels:
+      voicebot.release: ${VOICEBOT_RELEASE_SHA:-manual}
+      voicebot.web-source: ${VOICEBOT_WEB_SOURCE:-manual}
     environment:
       LIVEKIT_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
@@ -69,7 +72,7 @@ services:
     networks: [coolify]
     depends_on: [livekit]
     init: true
-    stop_grace_period: 120s
+    stop_grace_period: 1000s
     restart: unless-stopped
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/', timeout=3)"]

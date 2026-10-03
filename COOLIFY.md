@@ -116,8 +116,15 @@ running that revision. A successful creation ping is not deployment proof;
 HTTP 200 alone is also insufficient because rejected signatures return a failed
 result with HTTP 200. After deployment, verify health plus the existing `/data`
 mount and journal counts (see Persistent Storage requirements above).
-This hook deploys only the web/API application;
-the separately deployed telephone and booking services remain unchanged.
+The hook deploys the web/API application. On the existing Arle host,
+`voicebot-release-sync.timer` then synchronizes the native worker and Twilio
+bridge to the same healthy published `master` revision. It checks every minute,
+waits while voice rooms are active, preserves the shared journal and existing
+bridge credentials, and never restarts the booking or media infrastructure.
+See the [telephone release pipeline](deploy/telephony/README.md#automatic-release-synchronization).
+Only pushed/merged `master` changes deploy; uncommitted work and other branches
+remain outside production. A `[skip cd]` documentation push does not create a
+new web release, so synchronization waits for the next ordinary deployment.
 
 ## 4. Verify
 

@@ -10,6 +10,7 @@ import pytest
 
 from app.booking.easyappointments import EasyAppointmentsAdapter
 from app.booking.tools import Dispatcher
+from app.booking_faq import MISSING_FACTS
 from app.telephone import CallTools, FALLBACK, GREETING
 from tests.test_product_demo import (
     AUTH,
@@ -83,6 +84,9 @@ def test_http_approved_faq_uses_canonical_answer_without_model_paraphrase(
     session = start(client)
     state = client.app.state.demo_sessions.sessions[session].tools
     expected = state.demo["faq"][faq_index]["answer_et"]
+    if faq_index == 1:
+        # Never substitute the saved duration when no live catalogue is available.
+        expected = MISSING_FACTS["et"]
 
     response = send(client, session, question)
     assert response.status_code == 200

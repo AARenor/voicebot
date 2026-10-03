@@ -206,7 +206,10 @@ def test_safe_speech_normalized_before_tts_and_response_matches_audio(client, re
     response = send(client, start(client), "Kui palju spaahooldus maksab?")
     assert response.status_code == 200
     result = response.json()
-    assert result["reply"] == "Ma ei saa praegu hinda kinnitada."
+    from app.booking_faq import load_faq
+
+    assert result["reply"] == next(entry["answer_et"] for entry in load_faq() if entry["id"] == "booking-033")
+    assert not client.app.state.stack["llm_primary"].messages
     assert client.app.state.stack["tts"].spoken[-1] == result["reply"]
     assert base64.b64decode(result["audio_b64"]).decode() == result["reply"]
 

@@ -684,7 +684,8 @@ def on_provider_error(failed, event, *, state=None):
 
 server = AgentServer(
     num_idle_processes=2,
-    drain_timeout=30,
+    # Cover setup, the bounded ten-minute call and independent resource cleanup.
+    drain_timeout=900,
     session_end_timeout=10,
     shutdown_process_timeout=40,
     setup_fnc=prewarm,

@@ -2,7 +2,7 @@
 # Never run `compose config` without -q: interpolation contains credentials.
 services:
   twilio-bridge:
-    image: voicebot-telephone:local
+    image: ${VOICEBOT_MEDIA_IMAGE:-voicebot-telephone:local}
     command: [python, -m, app.twilio_bridge]
     environment:
       # Empty fresh credentials let the service run but routes fail closed 503.
@@ -14,6 +14,8 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?private media credentials required}
       VOICEBOT_AGENT_NAME: ${VOICEBOT_AGENT_NAME:-voicebot}
     labels:
+      voicebot.release: ${VOICEBOT_RELEASE_SHA:-manual}
+      voicebot.web-source: ${VOICEBOT_WEB_SOURCE:-manual}
       traefik.enable: "true"
       traefik.docker.network: coolify
       traefik.http.routers.voicebot-twilio.rule: Host(`robot.arleserver.cfd`) && PathPrefix(`/api/twilio/`)
@@ -34,7 +36,7 @@ services:
     networks: [coolify]
     init: true
     restart: unless-stopped
-    stop_grace_period: 40s
+    stop_grace_period: 720s
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3)"]
       interval: 15s

@@ -36,6 +36,17 @@ from .conversation import (
     approved_dialogue,
     spa_hours_focus,
 )
+from .booking_faq import (
+    CLARIFY as FAQ_CLARIFY,
+    MISSING_FACTS,
+    NO_BOOKING,
+    action_claim,
+    booking_input,
+    match_question,
+    normalize as normalize_question,
+    question_language,
+    render_catalogue,
+)
 from .russian import localize
 from .languages import (
     AFFIRMATIONS_EN,
@@ -596,6 +607,11 @@ class CallTools:
         self.booking_receipts = []
         self._booking_inquiry = None
         self._spa_hours_inquiry = False
+        self.faq_entries = ()
+        self._faq_unmatched = False
+        self._faq_booking_kind = None
+        self._legacy_faq_answer = None
+        self._booking_request = False
 
     def say(self, text, **values):
         translated = localize(text, self.language)
@@ -808,6 +824,8 @@ class CallTools:
             if language is not None and language in LANGUAGES
             else select_language(text, detected_language, self.language)
         )
+        if language is None and detected_language is None:
+            selected = question_language(text, selected)
         # A saved guest name is a selection, not a request to change language.
         named_fixture = " ".join(text.casefold().strip(" .!?").split()) in {
             *self.demo["guests"],
@@ -830,6 +848,23 @@ class CallTools:
         self.turn_mutation = None
         self.cancel_approval = None
         self._spa_hours_inquiry = False
+        self.faq_entries = (
+            match_question(text, selected) if not self.unsupported_language else ()
+        )
+        if self.faq_entries and all(entry["id"] in {"booking-025", "booking-026"} for entry in self.faq_entries):
+            self.conversation.focus = "hours"
+        self._faq_unmatched = bool(text.strip() and not self.faq_entries and self.conversation.intent is None)
+        self._legacy_faq_answer = next((
+            entry.get("answer_" + selected) for entry in self.demo["faq"]
+            if normalize_question(text) == normalize_question(entry.get("question_" + selected, ""))
+        ), None) if text.strip() and not self.faq_entries and not self.unsupported_language else None
+        self._booking_request = booking_input(text) or named_fixture
+        self._faq_booking_kind = None
+        if len(self.faq_entries) == 1 and self.faq_entries[0]["id"] == "booking-002":
+            stay = bool(re.search(r"\b(?:toa\w*|tuba\w*|room\w*|номер\w*)\b", text, re.I))
+            spa = bool(re.search(r"\b(?:spa\w*|спа\w*)\b", text, re.I))
+            if stay != spa:
+                self._faq_booking_kind = "stay" if stay else "slot"
         if self.mutation_uncertain:
             self._booking_inquiry = None
             self.invalidate_recap()
@@ -923,6 +958,57 @@ class CallTools:
             and self._booking_inquiry
             else None
         )
+
+    def faq_reply(self, results=None):
+        """Render this turn's question from reviewed text or fresh backend facts."""
+        replies = []
+        results = self.results if results is None else results
+        for entry in self.faq_entries:
+            route = entry["route"]
+            if route in {"static", "clarify"}:
+                reply = entry["answer_" + self.language]
+                if entry["id"] == "booking-002" and self._faq_booking_kind:
+                    key = "arrival" if self._faq_booking_kind == "stay" else "date"
+                    reply = QUESTIONS[self.language][key][0]
+            elif route == "status":
+                if self.last_booking in self.bookings:
+                    status = "cancelled" if self.last_booking in self.cancelled_bookings else "confirmed"
+                    reply = ENGLISH[status] if self.language == "en" else self.say(MUTATION_REPLIES[status])
+                else:
+                    reply = NO_BOOKING[self.language]
+            else:
+                reply = next((
+                    speech for result in reversed(results)
+                    if (speech := render_catalogue((entry,), result, self.language))
+                ), None)
+                if reply is None:
+                    return None
+            if reply not in replies:
+                replies.append(reply)
+        return " ".join(replies) if replies else None
+
+    def faq_response(self, *, allow_actions=True):
+        """The shared native/HTTP shortcut cannot write or infer availability."""
+        if (
+            not self.faq_entries or self.unsupported_language or self.clarification
+            or self.pending or self.cancel_approval or self.turn_mutation
+            or self.mutation_uncertain or self.outcome == "write_outcome_unknown"
+        ):
+            return None
+        reply = self.faq_reply()
+        if reply is not None:
+            return {"content": self.guard_reply(reply, self.results)}
+        for route, name, key in (
+            ("stay_catalogue", "get_stay_catalogue", "room_types"),
+            ("slot_catalogue", "get_slot_catalogue", "services"),
+        ):
+            if any(entry["route"] == route for entry in self.faq_entries):
+                # Even a malformed/error result counts as attempted: never loop
+                # a provider request or replace it with the saved FAQ snapshot.
+                attempted = any(key in result or result.get("error") or result.get("ok") is False for result in self.results)
+                if not attempted and name in self.names and allow_actions:
+                    return {"name": name, "arguments": {}}
+        return {"content": self.guard_reply(MISSING_FACTS[self.language], self.results)}
 
     def inquiry_reply(self):
         """Trusted clarification only, without a provider call or booking action."""
@@ -1110,6 +1196,13 @@ class CallTools:
         if not isinstance(text, str):
             self.invalidate_recap()
             return self.fallback
+        if self._legacy_faq_answer and not self.pending and not self.turn_mutation:
+            return safe_speech(self._legacy_faq_answer, results, self.language)
+        if self.faq_entries and not self.pending and not self.turn_mutation:
+            # An LLM's unrelated greeting, static FAQ or invented claim cannot
+            # replace the answer to a confidently recognized current question.
+            canonical = self.faq_reply(results) or MISSING_FACTS[self.language]
+            return safe_speech(canonical, results, self.language)
         reply = safe_speech(text, results, self.language)
         if reply != text:
             self.invalidate_recap()
@@ -1129,6 +1222,12 @@ class CallTools:
         clarification = self.inquiry_reply() if not results else None
         if clarification and _is_spa_clarification(text):
             return clarification
+        if text in {REPEAT_PROMPT[self.language], STT_UNAVAILABLE[self.language], TURN_UNAVAILABLE[self.language], self.fallback}:
+            return text
+        if self._faq_unmatched and not self._booking_request and not self.spa_hours_inquiry:
+            if action_claim(text):
+                return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
+            return FAQ_CLARIFY[self.language]
         static = (
             ENGLISH_STATIC
             if english
@@ -1160,6 +1259,10 @@ class CallTools:
             )
             if canonical:
                 return safe_speech(canonical, results, self.language)
+        if self._faq_unmatched and not results and not self.pending and not self._booking_request:
+            if action_claim(text):
+                return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
+            return FAQ_CLARIFY[self.language]
         return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
 
     @staticmethod

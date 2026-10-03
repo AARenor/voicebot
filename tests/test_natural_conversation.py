@@ -182,8 +182,8 @@ def test_authenticated_social_turns_need_no_model_or_booking_write(
     [
         ("et", "Milliseid spaateenuseid pakute?", "services"),
         ("en", "Which spa treatments do you offer?", "services"),
-        ("et", "Millised on tööajad?", "hours"),
-        ("en", "What are the opening hours?", "hours"),
+        ("et", "Mis on spaa lahtiolekuajad?", "hours"),
+        ("en", "What are the spa opening hours?", "hours"),
     ],
 )
 def test_catalogue_answers_the_requested_question_without_reading_everything(
