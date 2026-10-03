@@ -211,7 +211,9 @@ def create_app():
             "/api/reset",
             "/api/rooms",
             "/api/stays",
-        ) or request.url.path.startswith(("/api/demo/", "/api/holds/", "/api/booking/"))
+        ) or request.url.path.startswith(
+            ("/api/demo/", "/api/holds/", "/api/booking/", "/api/call-history")
+        )
         try:
             response = await call_next(request)
         except Exception:
@@ -240,9 +242,9 @@ def create_app():
         "stay_booking_ready": "search_availability" in advertised,
         "slot_booking_ready": "search_slots" in advertised,
         "booking_read_ready": stack["booking_reader"] is not None,
-        "booking_view_source": "easyappointments"
-        if stack["booking_reader"] is not None
-        else None,
+        "booking_view_source": (
+            "easyappointments" if stack["booking_reader"] is not None else None
+        ),
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
         "serving_demo_data": True,
@@ -382,7 +384,6 @@ def create_app():
         """
         import time
 
-        from . import callslog
         from .hackathon import (
             SESSION_TTL,
             DemoSession,
@@ -391,6 +392,7 @@ def create_app():
             run_demo_turn,
             validate_input,
         )
+        from . import callslog, call_history
 
         dashboard_api._require_operator(authorization)
         body = await read_turn_body(request)
@@ -409,11 +411,18 @@ def create_app():
                 turn_count=1,
             )
         try:
+            if key is None:
+                callslog.history_safe(
+                    call_history.start, session.tools.call_id, "browser", language
+                )
             response = await run_demo_turn(session, stack, audio, text, language)
         finally:
             if key is not None:
                 sessions.release(session)
+            else:
+                callslog.history_safe(call_history.end, session.tools.call_id)
         response["session_id"] = key
+        response["call_id"] = session.tools.call_id
         try:
             callslog.log_call(
                 callslog.get_default(),

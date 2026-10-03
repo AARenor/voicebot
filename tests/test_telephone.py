@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -127,7 +128,7 @@ ENV.update(
     EASY_DEMO_WRITES="1",
     EASY_BASE_URL="http://localhost",
     EASY_API_KEY="fixture",
-    EASY_STATE_DB="/data/journal.db",
+    EASY_STATE_DB=str(Path("/data/journal.db").resolve()),
 )
 
 
@@ -393,9 +394,9 @@ def test_consent_before_preparation_or_interim_transcript_is_not_approval():
     async def run():
         dispatcher = Slots()
         state = CallTools(dispatcher)
-        assert callable(getattr(state, "observe_user_text", None)), (
-            "trusted transcript observation is missing"
-        )
+        assert callable(
+            getattr(state, "observe_user_text", None)
+        ), "trusted transcript observation is missing"
         state.observe_user_text(CONSENT)
         assert (await prepared(state)).get("ok")
         state.observe_user_text(CONSENT, is_final=False)
@@ -667,9 +668,9 @@ def test_supplied_call_scope_is_validated(call_id):
 
 def test_openai_tool_wrappers_are_copies_of_native_schemas():
     state = CallTools(Slots())
-    assert callable(getattr(state, "available_tools", None)), (
-        "HTTP tool wrapper is missing"
-    )
+    assert callable(
+        getattr(state, "available_tools", None)
+    ), "HTTP tool wrapper is missing"
     tools = state.available_tools()
     assert tools == [
         {"type": "function", "function": schema} for schema in state.schemas
@@ -848,8 +849,9 @@ def test_unknown_write_blocks_retries_and_new_guests_until_operator_readback():
 
 def test_backend_recap_timezone_is_not_a_currency_word():
     text = (
-        "Fiktiivne testbroneering: Live consultation, Demo Provider, 2026-11-02 10:30, ajavöönd Europe/Tallinn, külaline Demo Esimene. "
-        + CONSENT
+        "Fiktiivne testbroneering: Live consultation, Demo Provider, "
+        "2026-11-02 10:30, ajavöönd Europe/Tallinn, külaline Demo "
+        "Esimene. " + CONSENT
     )
     assert safe_speech(text, []) == text
     assert (

@@ -17,7 +17,7 @@ from .errors import (
     RetryableProviderError,
     raise_for_provider,
 )
-from .voice_config import (
+from .voice_config import (  # noqa: F401 - public compatibility re-exports
     CHAT_MODEL as CHAT_MODEL,
     STT_LANGUAGE,
     STT_MODEL as STT_MODEL,
@@ -60,16 +60,26 @@ class GroqClient:
         return response
 
     def transcribe(
-        self, audio: bytes, filename: str = "chunk.wav", model: str | None = None
+        self,
+        audio: bytes,
+        filename: str = "chunk.wav",
+        model: str | None = None,
+        *,
+        language: str = STT_LANGUAGE,
     ) -> str:
-        """Transcribe one VAD chunk. Returns plain text."""
+        """Transcribe one chunk with an explicit language hint.
+
+        Short Estonian utterances need the hint just as telephone turns do.
+        Do not provide expected consent or booking text as a decoding prompt.
+        """
+        language = language if language in ("et", "en", "ru") else "et"
         response = self._post(
             "/openai/v1/audio/transcriptions",
             "groq.transcribe",
             files={"file": (filename, audio, "audio/wav")},
             data={
                 "model": model or self.config.stt_model,
-                "language": STT_LANGUAGE,
+                "language": language,
                 "response_format": "json",
                 "temperature": "0",
             },

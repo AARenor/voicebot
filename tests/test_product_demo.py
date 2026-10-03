@@ -475,8 +475,9 @@ def test_audio_transcript_is_server_observed_before_model_confirmation(
     assert send(client, session, "Soovin testbroneeringut").status_code == 200
 
     class Stt:
-        def transcribe(self, audio):
+        def transcribe(self, audio, *, language):
             assert audio == b"RIFF-fixture"
+            assert language == "et"
             return CONSENT
 
     client.app.state.stack["stt"] = Stt()

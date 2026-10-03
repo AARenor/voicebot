@@ -461,7 +461,7 @@ class TestValidation(unittest.TestCase):
 
 
 class TestTurnHardening(unittest.TestCase):
-    def test_stt_failure_asks_repeat(self):
+    def test_stt_failure_explains_service_unavailable(self):
         def handler(request):
             return httpx.Response(500, text="down")
 
@@ -470,7 +470,8 @@ class TestTurnHardening(unittest.TestCase):
         result = run(
             turn.run_turn(b"RIFF", stt, llm, azure_tts(), Dispatcher(stay=FakeStay()))
         )
-        self.assertIn("korrake", result["reply"])
+        self.assertEqual(result["reply"], turn.STT_UNAVAILABLE["et"])
+        self.assertEqual(result["input_status"], "stt_unavailable")
         self.assertTrue(result["fallback_used"])
         self.assertEqual(llm.calls, 0)
 
@@ -611,7 +612,7 @@ class TestGateFormats(unittest.TestCase):
         result = self._turn("Tuba maksab 240.00 EUR kokku.")
         self.assertIn("240.00 EUR", result["reply"])
 
-    def test_stt_400_asks_repeat(self):
+    def test_stt_400_reports_service_failure(self):
         def handler(request):
             return httpx.Response(400, text="bad request")
 
@@ -620,7 +621,7 @@ class TestGateFormats(unittest.TestCase):
         result = run(
             turn.run_turn(b"RIFF", stt, llm, azure_tts(), Dispatcher(stay=FakeStay()))
         )
-        self.assertIn("korrake", result["reply"])
+        self.assertEqual(result["reply"], turn.STT_UNAVAILABLE["et"])
         self.assertEqual(llm.calls, 0)
 
     def test_top_k_clamped_and_ingest_validated(self):

@@ -281,7 +281,12 @@ def test_signed_probe_default_only_validates_webhook_and_never_opens_rtc(capsys)
         assert request.headers["X-Twilio-Signature"] == sign(VOICE_URL, fields)
         return httpx.Response(
             200,
-            text=f'<Response><Connect><Stream url="{MEDIA_URL}"><Parameter name="call_binding" value="synthetic_binding_never_printed"/></Stream></Connect><Hangup/></Response>',
+            text=(
+                f'<Response><Connect><Stream url="{MEDIA_URL}">'
+                '<Parameter name="call_binding" '
+                'value="synthetic_binding_never_printed"/>'
+                "</Stream></Connect><Hangup/></Response>"
+            ),
             headers={"Cache-Control": "no-store"},
         )
 

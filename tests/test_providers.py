@@ -61,6 +61,30 @@ class TestGroq(unittest.TestCase):
 
         self.assertEqual(self.client(handler).transcribe(b"RIFF"), "Tere!")
 
+    def test_transcribe_sends_explicit_language_and_zero_temperature(self):
+        for language, expected in (
+            ("et", "et"),
+            ("en", "en"),
+            ("ru", "ru"),
+            ("xx", "et"),
+        ):
+            with self.subTest(language=language):
+
+                def handler(request):
+                    body = request.content.decode()
+                    self.assertIn('name="language"\r\n\r\n' + expected, body)
+                    self.assertIn('name="temperature"\r\n\r\n0', body)
+                    self.assertNotIn('name="prompt"', body)
+                    return httpx.Response(200, json={"text": "Tere!"})
+
+                client = self.client(handler)
+                try:
+                    self.assertEqual(
+                        client.transcribe(b"RIFF", language=language), "Tere!"
+                    )
+                finally:
+                    client.close()
+
     def test_chat_with_tools(self):
         def handler(request):
             return httpx.Response(

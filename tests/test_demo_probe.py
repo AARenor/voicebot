@@ -13,9 +13,9 @@ import pytest
 
 pytest.importorskip("livekit.agents")
 
-from app.booking.easyappointments import EasyAppointmentsAdapter
-from app.telephone import CallTools
-from tests.test_telephone import ENV
+from app.booking.easyappointments import EasyAppointmentsAdapter  # noqa: E402
+from app.telephone import CallTools  # noqa: E402
+from tests.test_telephone import ENV  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]

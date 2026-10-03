@@ -163,7 +163,15 @@ def _working_hours(record):
             return None
     if not isinstance(plan, dict):
         return None
-    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    days = (
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    )
     hours = {}
     try:
         for day in days:
@@ -176,8 +184,14 @@ def _working_hours(record):
             if not isinstance(value, dict):
                 return None
             start, end = value["start"], value["end"]
-            if any(not isinstance(v, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
-                   for v in (start, end)) or end <= start:
+            if (
+                any(
+                    not isinstance(v, str)
+                    or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
+                    for v in (start, end)
+                )
+                or end <= start
+            ):
                 return None
             breaks = value.get("breaks", [])
             if not isinstance(breaks, list) or len(breaks) > 6:
@@ -185,13 +199,21 @@ def _working_hours(record):
             clean_breaks = []
             for pause in breaks:
                 pause_start, pause_end = pause["start"], pause["end"]
-                if any(not isinstance(v, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
-                       for v in (pause_start, pause_end)) or not start <= pause_start < pause_end <= end:
+                if (
+                    any(
+                        not isinstance(v, str)
+                        or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
+                        for v in (pause_start, pause_end)
+                    )
+                    or not start <= pause_start < pause_end <= end
+                ):
                     return None
                 clean_breaks.append({"start": pause_start, "end": pause_end})
             clean_breaks.sort(key=lambda pause: (pause["start"], pause["end"]))
-            if any(previous["end"] > following["start"]
-                   for previous, following in zip(clean_breaks, clean_breaks[1:])):
+            if any(
+                previous["end"] > following["start"]
+                for previous, following in zip(clean_breaks, clean_breaks[1:])
+            ):
                 return None
             hours[day] = {"start": start, "end": end, "breaks": clean_breaks}
     except (KeyError, TypeError):
