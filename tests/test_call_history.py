@@ -238,6 +238,10 @@ def test_canonical_response_keeps_session_history_and_private_call_metadata(
     client, db, user_text, input_kind
 ):
     started = client.post("/api/demo/session", headers=AUTH).json()
+    from app.telephone import GREETING
+
+    client.app.state.stack["tts"].synthesize.assert_called_once_with(GREETING)
+    client.app.state.stack["tts"].synthesize.reset_mock()
     session = client.app.state.demo_sessions.sessions[started["session_id"]]
     expected = (
         "Tere! Kuidas saan aidata?"

@@ -36,6 +36,7 @@ class DemoSession:
     busy: bool = False
     turn_count: int = 0
     expiry: object = None
+    recap_delivery: dict | None = None
 
 
 def operator_scope(authorization):
@@ -176,9 +177,15 @@ def validate_input(body, stack):
         "text",
         "language",
         "session_id",
+        "recap_delivery_id",
     }:
         raise HTTPException(400, "turn_arguments_invalid")
     audio_b64, text = body.get("audio_b64", ""), body.get("text", "")
+    receipt = body.get("recap_delivery_id")
+    if receipt is not None and (
+        not isinstance(receipt, str) or not re.fullmatch(r"[a-f0-9]{32}", receipt)
+    ):
+        raise HTTPException(400, "recap_delivery_invalid")
     if not isinstance(audio_b64, str) or len(audio_b64) > 700_000:
         raise HTTPException(413, "audio_b64_too_large")
     if not isinstance(text, str) or len(text) > 500:
@@ -440,7 +447,9 @@ class _SafeSpeaker:
             self.latency_ms += (time.perf_counter() - started) * 1000
 
 
-async def run_demo_turn(session, stack, audio, text, language):
+async def run_demo_turn(
+    session, stack, audio, text, language, *, recap_delivery_id=None
+):
     from .turn import MAX_HISTORY_TURNS, recognize_audio, run_turn
 
     started = time.perf_counter()
@@ -453,6 +462,15 @@ async def run_demo_turn(session, stack, audio, text, language):
     if not isinstance(text, str) or len(text) > 500:
         session.tools.observe_user_text("", is_final=True)
         raise HTTPException(413, "transcript_too_large")
+    # A trusted operator-client asserts playback or explicit reading, not TTS.
+    # One-use and bound to this exact preparation, not merely a reusable hold.
+    receipt, session.recap_delivery = session.recap_delivery, None
+    if (
+        receipt
+        and receipt["id"] == recap_delivery_id
+        and receipt["pending"] is session.tools.pending
+    ):
+        session.tools.mark_recap_delivered(receipt["pending"]["hold_id"])
     # The server observes the final transcript before any LLM-generated tool call.
     session.tools.observe_user_text(text, is_final=True)
     callslog.history_safe(
@@ -491,7 +509,9 @@ async def run_demo_turn(session, stack, audio, text, language):
         "unknown_outcome",
         "tools_failed",
     ):
-        session.tools.mark_recap_delivered(speaker.recap_id)
+        pending = session.tools.pending
+        if pending and pending["hold_id"] == speaker.recap_id:
+            session.recap_delivery = {"id": uuid.uuid4().hex, "pending": pending}
     # run_turn's last-resort catch may discard its local tool list after a
     # failed model follow-up. Native execution truth still owns the outcome.
     result["tool_results"] = [{"result": value} for value in tools.results]
@@ -514,7 +534,11 @@ async def run_demo_turn(session, stack, audio, text, language):
     if stt_failed:
         warnings.append({"stage": "stt", "code": "transcription_unavailable"})
     if primary.failed:
-        failure = secondary.failure if secondary is not None and secondary.failed else primary.failure
+        failure = (
+            secondary.failure
+            if secondary is not None and secondary.failed
+            else primary.failure
+        )
         warnings.append(
             {
                 "stage": "llm",
@@ -553,4 +577,7 @@ async def run_demo_turn(session, stack, audio, text, language):
         "booking_changes": tools.changes,
         "warnings": warnings,
         "timings_ms": timings,
+        "recap_delivery_id": session.recap_delivery["id"]
+        if session.recap_delivery
+        else None,
     }

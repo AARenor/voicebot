@@ -49,7 +49,10 @@ def test_failure_audio_is_microphone_and_source_closes_on_every_path(failure):
     asyncio.run(run())
 
 
-def test_cached_apology_matches_completed_sdk_history_and_actual_pcm():
+@pytest.mark.parametrize(
+    "kind", ["tts_error", "empty_audio", "confirmed", "unknown", "partial"]
+)
+def test_cached_apology_history_matches_actual_audio(kind):
     from livekit.agents import AgentSession, tts
     from livekit.agents.voice import io
     from app.booking.tools import Dispatcher
@@ -91,10 +94,16 @@ def test_cached_apology_matches_completed_sdk_history_and_actual_pcm():
 
     async def run():
         async def fail(*args):
-            raise RuntimeError("fixture TTS failure")
-            yield
+            if kind == "partial":
+                yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
+            if kind != "empty_audio":
+                raise RuntimeError("fixture TTS failure")
 
         agent = w.TelephoneAgent(CallTools(Dispatcher()))
+        if kind == "confirmed":
+            agent.state.turn_mutation = "confirmed"
+        elif kind == "unknown":
+            agent.state._unknown_mutation()
         session = AgentSession(
             tts=UnusedTTS(), turn_handling={"turn_detection": "manual"}
         )
@@ -109,6 +118,8 @@ def test_cached_apology_matches_completed_sdk_history_and_actual_pcm():
                 expected = b"".join(
                     [bytes(frame.data) async for frame in w.fallback_audio()]
                 )
+                if kind == "partial":
+                    expected = b"\x10\x01" * 480 + expected
                 assert b"".join(sink.pcm) == expected
                 await asyncio.sleep(0)
                 assistant = [
@@ -120,6 +131,11 @@ def test_cached_apology_matches_completed_sdk_history_and_actual_pcm():
                 assert assistant[0].text_content == FALLBACK
                 assert agent.chat_ctx.items[-1].text_content == FALLBACK
                 assert session.history.items[-1].text_content == FALLBACK
+                assert [
+                    item.text_content
+                    for item in session.history.items
+                    if getattr(item, "role", None) == "assistant"
+                ] == [FALLBACK]
             finally:
                 await session.aclose()
 
@@ -164,9 +180,9 @@ def test_unpublished_original_microphone_does_not_hang_up_before_fallback():
         call = b.LiveKitCall(security().Config.from_env(ENV), Sender())
         call.stream = ended_stream()
         await call._output()
-        assert (
-            not call.ended.is_set()
-        ), "track retirement was treated as participant hangup"
+        assert not call.ended.is_set(), (
+            "track retirement was treated as participant hangup"
+        )
 
     asyncio.run(run())
 
@@ -392,9 +408,9 @@ def test_terminal_fallback_rejects_retired_mic_controls_and_close_cancels_predec
             call._on_data(packet())
             if scenario == "close_pending":
                 await call.close()
-                assert (
-                    predecessor.done()
-                ), "older control task survived owned call cleanup"
+                assert predecessor.done(), (
+                    "older control task survived owned call cleanup"
+                )
             else:
                 release.set()
                 await call.interruption

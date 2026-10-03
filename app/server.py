@@ -415,7 +415,14 @@ def create_app():
                 callslog.history_safe(
                     call_history.start, session.tools.call_id, "browser", language
                 )
-            response = await run_demo_turn(session, stack, audio, text, language)
+            response = await run_demo_turn(
+                session,
+                stack,
+                audio,
+                text,
+                language,
+                recap_delivery_id=body.get("recap_delivery_id"),
+            )
         finally:
             if key is not None:
                 sessions.release(session)
@@ -437,15 +444,27 @@ def create_app():
 
     @app.post("/api/demo/session")
     async def start_demo_session(authorization: str | None = Header(default=None)):
+        import base64
         from fastapi import HTTPException
 
         from .hackathon import operator_scope
+        from .turn import _speak
 
         dashboard_api._require_operator(authorization)
         stack = app.state.stack
         if stack["llm_primary"] is None or stack["tts"] is None:
             raise HTTPException(503, "voice_stack_not_configured")
-        return sessions.create(stack["dispatcher"], operator_scope(authorization))
+        data = sessions.create(stack["dispatcher"], operator_scope(authorization))
+        try:
+            audio = await asyncio.wait_for(_speak(stack["tts"], data["greeting"]), 25)
+        except TimeoutError:
+            audio = b""
+        data.update(
+            audio_b64=base64.b64encode(audio).decode(),
+            audio_type="audio/mpeg",
+            tts_failed=not bool(audio),
+        )
+        return data
 
     @app.delete("/api/demo/session/{session_id}")
     def end_demo_session(

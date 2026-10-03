@@ -67,6 +67,11 @@ MUTATION_REPLIES = {
     "existing": "See testbroneering on juba kinnitatud. Uut broneeringut ei loodud.",
     "already_cancelled": "See testbroneering on juba tühistatud.",
 }
+RECOVERABLE_REPLIES = {
+    "slot_unavailable": "Soovitud aeg ei ole saadaval. Palun vali teine kuupäev või kellaaeg.",
+    "past_datetime": "See kuupäev ja kellaaeg on juba möödunud. Palun vali tulevane aeg.",
+    "consent_required": "Testbroneering ei ole kinnitatud. Enne kinnitamist tuleb uus kokkuvõte ette lugeda. Palun ütle soovitud kuupäev ja kellaaeg.",
+}
 STATIC_REPLIES = {
     *REPEAT_PROMPT.values(),
     *STT_UNAVAILABLE.values(),
@@ -76,6 +81,7 @@ STATIC_REPLIES = {
     ASK_DATE_TIME,
     ASK_DATE,
     ASK_TIME,
+    "Palun ütle soovitud kuupäev ja kellaaeg.",
     UNVERIFIED_REPLY,
     UNKNOWN_REPLY,
     "Tere!",
@@ -519,10 +525,27 @@ class CallTools:
                 f"külaline {fields['guest_name']}. Näidishind kokku {fields['quoted_total']} {fields['currency']}. "
                 f"Makseid ei koguta. Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”"
             )
+        start = datetime.fromisoformat(fields["start"])
+        if start.tzinfo is not None:
+            start = start.astimezone(ZoneInfo(DEMO_TIMEZONE))
+        month = (
+            "jaanuaril",
+            "veebruaril",
+            "märtsil",
+            "aprillil",
+            "mail",
+            "juunil",
+            "juulil",
+            "augustil",
+            "septembril",
+            "oktoobril",
+            "novembril",
+            "detsembril",
+        )[start.month - 1]
         return (
             f"Fiktiivne testbroneering: {fields['service_name']}, "
-            f"{fields['provider_name']}, {fields['start']}, "
-            f"ajavöönd {fields['timezone']}, külaline {fields['guest_name']}. "
+            f"{fields['provider_name']}, {start.day}. {month} {start.year} kell {start:%H:%M}, "
+            f"Eesti aja järgi, külaline {fields['guest_name']}. "
             f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”"
         )
 
@@ -560,6 +583,12 @@ class CallTools:
             return MUTATION_REPLIES[self.turn_mutation] + " Muu päring ebaõnnestus."
         if errors:
             self.invalidate_recap()
+            if isinstance(errors[0], str) and all(
+                error == errors[0] for error in errors
+            ):
+                return RECOVERABLE_REPLIES.get(
+                    errors[0], "Toiming ei õnnestunud; edu ei ole kinnitatud."
+                )
             return "Toiming ei õnnestunud; edu ei ole kinnitatud."
         if not isinstance(text, str):
             self.invalidate_recap()

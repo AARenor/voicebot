@@ -2,6 +2,7 @@ import asyncio
 import pytest
 
 pytest.importorskip("livekit.agents")
+from livekit import rtc
 from unittest.mock import patch
 
 from app.telephone import CallTools
@@ -30,11 +31,11 @@ def test_speech_is_fully_checked_before_synthesis(phrase):
         async def fake_default(agent, text, settings):
             async for part in text:
                 seen.append(part)
-            yield "frame"
+            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
         agent = TelephoneAgent(CallTools(Dispatcher()))
         with patch("livekit.agents.Agent.default.tts_node", fake_default):
-            assert [frame async for frame in agent.tts_node(text(), None)] == ["frame"]
+            assert len([frame async for frame in agent.tts_node(text(), None)]) == 1
         assert seen == ["Ma ei saa praegu hinda kinnitada."]
 
     asyncio.run(run())

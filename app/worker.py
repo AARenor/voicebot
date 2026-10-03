@@ -13,7 +13,8 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 from livekit import api, rtc
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli, llm
+from livekit.agents.types import TimedString, USERDATA_TIMED_TRANSCRIPT
 from livekit.plugins import azure, groq, silero
 
 from .booking.easyappointments import EasyAppointmentsAdapter
@@ -22,6 +23,7 @@ from .booking.tools import Dispatcher
 from . import callslog, call_history
 from .providers.voice_config import STT_LANGUAGE, VoiceConfig
 from .telephone import (
+    ASK_DATE_TIME,
     CallTools,
     FALLBACK,
     GREETING,
@@ -43,16 +45,33 @@ def protect_logs():
         handler.addFilter(PrivateLogs())
 
 
+class _SpokenText(TimedString):
+    """Private per-generation audio decision, never model/provider text."""
+
+
 class TelephoneAgent(Agent):
     def __init__(self, state):
         super().__init__(
             instructions=state.conversation_instructions,
             tools=sdk_tools(state, conversation=True),
+            use_tts_aligned_transcript=True,
         )
         self.state = state
-        self._generated_recap = None
-        self._fallback_reply = None
-        self._fallback_speech = None
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        responded = False
+        async for chunk in Agent.default.llm_node(
+            self, chat_ctx, tools, model_settings
+        ):
+            if isinstance(chunk, str):
+                responded |= bool(chunk.strip())
+            elif isinstance(chunk, llm.ChatChunk):
+                responded |= chunk.has_response()
+            yield chunk
+        if not responded:
+            # Successful empty/length exhaustion never enters SDK speech nodes.
+            # Seed the existing guard; never retry tools or execute partial JSON.
+            yield ASK_DATE_TIME
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         # SDK aggregates STT fragments here, before generating any tool call.
@@ -72,12 +91,21 @@ class TelephoneAgent(Agent):
     async def checked_reply(self, text):
         # No partial sentence or invented price is spoken before validation.
         parts = []
+        spoken = None
         async for chunk in text:
+            if isinstance(chunk, _SpokenText):
+                spoken = str(chunk)
+            if spoken is not None:
+                continue
             parts.append(chunk)
             if sum(map(len, parts)) > 3000:
                 parts = [FALLBACK]
                 self.state.invalidate_recap()
                 break
+        if spoken is not None:
+            # Timed PCM metadata belongs to this generation. A later booking
+            # state or cached apology must not relabel the original speech.
+            return spoken
         canonical = (
             self.state.render_recap()
             if self.state.pending and not self.state.pending["delivery"]
@@ -92,20 +120,6 @@ class TelephoneAgent(Agent):
     def on_conversation_item_added(self, event):
         if getattr(event.item, "role", None) != "assistant":
             return
-        failed_reply, self._fallback_reply = self._fallback_reply, None
-        failed_speech, self._fallback_speech = self._fallback_speech, None
-        if failed_reply is not None and (
-            (failed_speech is not None and failed_speech is self._current_speech())
-            or (
-                failed_speech is None
-                and getattr(event.item, "text_content", None) == failed_reply
-            )
-        ):
-            # The SDK stores this same message in agent/session history before
-            # emitting the event. Cached apology PCM must have matching history.
-            event.item.content = (
-                [] if getattr(event.item, "interrupted", False) else [FALLBACK]
-            )
         if self.state.history_enabled:
             outcome = (
                 "fallback"
@@ -115,21 +129,20 @@ class TelephoneAgent(Agent):
             callslog.history_safe(
                 call_history.record_result, self.state.call_id, outcome
             )
-        generated, self._generated_recap = self._generated_recap, None
         if getattr(event.item, "interrupted", False):
-            self.state.invalidate_recap()
             logging.getLogger("voicebot.telephone").info("speech_interrupted")
             if self.state.history_enabled:
                 callslog.history_safe(
                     call_history.activity, self.state.call_id, "interrupted"
                 )
-        elif generated and self.state.pending is generated[0]:
-            if getattr(event.item, "text_content", None) == generated[1]:
-                self.state.mark_recap_delivered(generated[0]["hold_id"])
-            else:
-                self.state.invalidate_recap()
 
     def _current_speech(self):
+        # A background node may belong to a different handle than the session's
+        # foreground speech. This narrow accessor is pinned/tested with SDK 1.8.4.
+        from livekit.agents.voice.agent_activity import _SpeechHandleContextVar
+
+        if speech := _SpeechHandleContextVar.get(None):
+            return speech
         try:
             return self.session.current_speech
         except RuntimeError:
@@ -137,11 +150,8 @@ class TelephoneAgent(Agent):
             return None
 
     async def tts_node(self, text, model_settings):
-        self._generated_recap = None
-        self._fallback_reply = None
-        self._fallback_speech = None
         complete = False
-        reply = None
+        pending = None
         speech = self._current_speech()
         try:
             reply = await self.checked_reply(text)
@@ -153,33 +163,61 @@ class TelephoneAgent(Agent):
 
             frames = False
             async for frame in Agent.default.tts_node(self, checked(), model_settings):
+                if not frames:
+                    frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
                 frames = True
                 yield frame
+            if not frames:
+                raise RuntimeError("speech produced no audio")
             complete = frames
             if (
                 complete
                 and pending
                 and self.state.pending is pending
                 and reply == canonical
+                and speech is not None
             ):
-                self._generated_recap = (pending, reply)
+                # SDK 1.8.4 emits the session event before attaching generated
+                # items, but after attaching say() items. Use the originating
+                # handle's item callback, independent of that event ordering.
+                def delivered(item):
+                    if getattr(item, "role", None) != "assistant":
+                        return
+                    speech._remove_item_added_callback(delivered)
+                    if self.state.pending is not pending:
+                        return
+                    if (
+                        getattr(item, "interrupted", False)
+                        or item.text_content != reply
+                    ):
+                        self.state.invalidate_recap()
+                    else:
+                        self.state.mark_recap_delivered(pending["hold_id"])
+
+                speech._add_item_added_callback(delivered)
+                speech.add_done_callback(
+                    lambda done: done._remove_item_added_callback(delivered)
+                )
         except Exception as error:
-            self.state.invalidate_recap()
+            if pending is None or self.state.pending is pending:
+                self.state.invalidate_recap()
             if self.state.outcome != "write_outcome_unknown":
                 self.state.outcome = "provider_error"
             log_failure("tts_fallback", error)
-            self._fallback_reply = reply or FALLBACK
-            self._fallback_speech = speech
             if self.state.history_enabled:
                 callslog.history_safe(
                     call_history.provider_error, self.state.call_id, "tts_error"
                 )
+            first_cached = True
             async for frame in fallback_audio():
+                if first_cached:
+                    frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(FALLBACK)]
+                    first_cached = False
                 yield frame
         finally:
             if not complete:
-                self._generated_recap = None
-                self.state.invalidate_recap()
+                if pending is None or self.state.pending is pending:
+                    self.state.invalidate_recap()
 
 
 def log_failure(stage, error):

@@ -65,11 +65,22 @@ def start(client):
 
 
 def send(client, session_id, text, **extra):
-    return client.post(
+    # These scripted positive text flows explicitly read the preceding recap.
+    # Negative/foreign/stale delivery tests deliberately use raw requests.
+    receipts = getattr(client, "_read_recaps", {})
+    receipt = receipts.pop(session_id, None)
+    payload = {"session_id": session_id, "text": text, **extra}
+    if receipt:
+        payload.setdefault("recap_delivery_id", receipt)
+    response = client.post(
         "/api/turn",
-        json={"session_id": session_id, "text": text, **extra},
+        json=payload,
         headers=AUTH,
     )
+    if response.status_code == 200 and response.json().get("recap_delivery_id"):
+        receipts[session_id] = response.json()["recap_delivery_id"]
+    client._read_recaps = receipts
+    return response
 
 
 def test_session_auth_before_construction_and_private_errors(client, monkeypatch):
@@ -210,13 +221,17 @@ def test_tts_failure_has_text_warning_and_no_secret_or_raw_exception(client):
     assert response.status_code == 200
     assert response.json()["tts_failed"] is True
     assert response.json()["audio_b64"] == ""
-    assert {"stage": "tts", "code": "reply_audio_unavailable"} in response.json()["warnings"]
+    assert {"stage": "tts", "code": "reply_audio_unavailable"} in response.json()[
+        "warnings"
+    ]
     assert set(response.json()["timings_ms"]) == {"stt", "llm", "tools", "tts", "total"}
     assert all(value >= 0 for value in response.json()["timings_ms"].values())
     assert "PRIVATE" not in response.text
 
 
-def test_transcription_failure_reports_the_failed_stage_without_provider_details(client):
+def test_transcription_failure_reports_the_failed_stage_without_provider_details(
+    client,
+):
     class FailingStt:
         def transcribe(self, audio):
             raise RuntimeError("PRIVATE transcription credential")
@@ -224,38 +239,55 @@ def test_transcription_failure_reports_the_failed_stage_without_provider_details
     client.app.state.stack["stt"] = FailingStt()
     response = client.post(
         "/api/turn",
-        json={"session_id": start(client), "audio_b64": base64.b64encode(b"fixture audio").decode()},
+        json={
+            "session_id": start(client),
+            "audio_b64": base64.b64encode(b"fixture audio").decode(),
+        },
         headers=AUTH,
     )
     assert response.status_code == 200
     assert response.json()["fallback_used"] is True
-    assert {"stage": "stt", "code": "transcription_unavailable"} in response.json()["warnings"]
+    assert {"stage": "stt", "code": "transcription_unavailable"} in response.json()[
+        "warnings"
+    ]
     assert response.json()["timings_ms"]["stt"] >= 0
     assert "PRIVATE" not in response.text
 
 
 def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client):
-    client.app.state.stack["llm_primary"] = SimpleLlm(error=RuntimeError("PRIVATE model error"))
+    client.app.state.stack["llm_primary"] = SimpleLlm(
+        error=RuntimeError("PRIVATE model error")
+    )
     response = send(client, start(client), "Soovin spaahooldust.")
     assert response.status_code == 200
-    assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()["warnings"]
+    assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()[
+        "warnings"
+    ]
     assert response.json()["reply"]
     assert response.json()["audio_b64"]
     assert "PRIVATE" not in response.text
 
 
-@pytest.mark.parametrize("reason,status", [
-    ("rate_limited", 429), ("provider_unavailable", 503),
-    ("request_rejected", 400), ("transport_error", None),
-    ("completion_incomplete", 200), ("invalid_response", 200),
-])
+@pytest.mark.parametrize(
+    "reason,status",
+    [
+        ("rate_limited", 429),
+        ("provider_unavailable", 503),
+        ("request_rejected", 400),
+        ("transport_error", None),
+        ("completion_incomplete", 200),
+        ("invalid_response", 200),
+    ],
+)
 def test_model_failure_reports_only_closed_provider_diagnostics(client, reason, status):
     error = ProviderError("PRIVATE provider body", reason=reason, status_code=status)
     client.app.state.stack["llm_primary"] = SimpleLlm(error=error)
     response = send(client, start(client), "Soovin spaahooldust.")
     warning = response.json()["warnings"][0]
     assert warning == {
-        "stage": "llm", "code": "reply_provider_unavailable", "cause": reason,
+        "stage": "llm",
+        "code": "reply_provider_unavailable",
+        "cause": reason,
         **({"http_status": status} if status is not None else {}),
     }
     assert "PRIVATE" not in response.text
@@ -278,17 +310,23 @@ def test_model_followup_failure_preserves_cause_after_successful_tool(client):
     class FollowupFailure:
         def chat(self, messages, tools=None):
             if messages[-1]["role"] == "tool":
-                raise ProviderError("PRIVATE followup body", reason="request_rejected", status_code=400)
+                raise ProviderError(
+                    "PRIVATE followup body", reason="request_rejected", status_code=400
+                )
             return call("get_demo_profile", {})
 
     client.app.state.stack["llm_primary"] = FollowupFailure()
     response = send(client, start(client), "Palun kontrolli demoprofiili.")
     data = response.json()
     assert data["tools_used"] == 1
-    assert data["warnings"] == [{
-        "stage": "llm", "code": "reply_provider_unavailable",
-        "cause": "request_rejected", "http_status": 400,
-    }]
+    assert data["warnings"] == [
+        {
+            "stage": "llm",
+            "code": "reply_provider_unavailable",
+            "cause": "request_rejected",
+            "http_status": 400,
+        }
+    ]
     assert data["fallback_used"] is True
     assert data["booking_changes"] == []
     assert "PRIVATE" not in response.text
@@ -406,15 +444,17 @@ def test_owned_multiturn_prepare_confirm_read_cancel_and_fixture_alias(
     prepare = send(client, session, "Soovin testbroneeringut")
     assert prepare.status_code == 200
     assert not records and not writes
+    state = client.app.state.demo_sessions.sessions[session].tools
+    assert state.pending["recap"]["start"].startswith(day)
+    assert prepare.json()["reply"] == state.render_recap()
     for recap in (
         "Live consultation",
         "Demo Provider",
-        day,
         "10:00",
         "Demo Esimene",
         CONSENT_TEXT,
     ):
-        assert recap in prepare.json()["reply"], "recap was not actually delivered"
+        assert recap in prepare.json()["reply"], "canonical recap was not supplied"
     confirmed = send(client, session, CONSENT)
     assert confirmed.status_code == 200
     assert confirmed.json()["outcome"] == "tools_ok"
@@ -525,7 +565,8 @@ def test_audio_transcript_is_server_observed_before_model_confirmation(
     day, records, _ = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200
 
     class Stt:
         def transcribe(self, audio, *, language):
@@ -539,6 +580,7 @@ def test_audio_transcript_is_server_observed_before_model_confirmation(
         json={
             "session_id": session,
             "audio_b64": base64.b64encode(b"RIFF-fixture").decode(),
+            "recap_delivery_id": prepared.json()["recap_delivery_id"],
         },
         headers=AUTH,
     )

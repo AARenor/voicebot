@@ -83,7 +83,9 @@ def test_native_historical_cancel_replay_cannot_replace_new_confirmation():
 @pytest.mark.parametrize(
     "condition", ["approved", "declined", "expired", "uncertain", "cancel"]
 )
-def test_http_current_owned_ids_survive_prose_only_history(condition):
+def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
+    condition,
+):
     async def run():
         backend = LiveSlots()
         state = CallTools(Dispatcher(slot=backend))
@@ -144,16 +146,34 @@ def test_http_current_owned_ids_survive_prose_only_history(condition):
             if condition == "declined"
             else CONSENT_TEXT
         )
-        result = await run_demo_turn(session, stack, b"", text, "et")
+        result = await run_demo_turn(
+            session,
+            stack,
+            b"",
+            text,
+            "et",
+            recap_delivery_id=recap["recap_delivery_id"],
+        )
         if condition == "approved":
-            assert contexts[0]["pending"]["hold_id"] == "backend-hold"
-            assert contexts[0]["pending"]["delivery"] is True
+            assert not contexts, "trusted consent unnecessarily requested the model"
             assert result["booking_ids"] == ["42"]
             assert result["booking_changes"][0]["action"] == "confirmed"
+            assert (
+                next(args for name, args in backend.calls if name == "confirm")[
+                    "hold_id"
+                ]
+                == "backend-hold"
+            )
+        elif condition in {"uncertain", "cancel"}:
+            assert not contexts, (
+                "trusted terminal state unnecessarily requested the model"
+            )
+            assert state.pending is None
+            if condition == "uncertain":
+                assert state.mutation_uncertain and result["booking_changes"] == []
         else:
             assert contexts[0]["pending"] is None
         if condition == "cancel":
-            assert contexts[0]["last_booking"] == "42"
             assert result["reply"] == "Testbroneering on tühistatud."
         assert sum(name == "confirm" for name, _ in backend.calls) == (
             condition == "approved"
@@ -166,12 +186,14 @@ def test_http_current_owned_ids_survive_prose_only_history(condition):
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-def test_completed_write_is_not_hidden_by_later_read_error(cancel):
+def test_completed_write_truth_survives_read_failure_and_skips_model_followup(cancel):
     class Sequence:
         def __init__(self, *answers):
             self.answers = iter(answers)
+            self.calls = 0
 
         def chat(self, messages, tools=None):
+            self.calls += 1
             return next(self.answers)
 
     async def run():
@@ -183,20 +205,23 @@ def test_completed_write_is_not_hidden_by_later_read_error(cancel):
         stack["llm_primary"] = Sequence(
             call("plan_demo_booking", REQUEST), {"content": "Tere!"}
         )
-        assert (
-            "Fiktiivne testbroneering:"
-            in (
-                await run_demo_turn(
-                    session, stack, b"", "Soovin testbroneeringut", "et"
-                )
-            )["reply"]
+        recap = await run_demo_turn(
+            session, stack, b"", "Soovin testbroneeringut", "et"
         )
+        assert "Fiktiivne testbroneering:" in recap["reply"]
         stack["llm_primary"] = Sequence(
             call("confirm_slot_booking", {"hold_id": "backend-hold"}),
             call("get_demo_profile", {"extra": True}),
             {"content": "Tere!"},
         )
-        result = await run_demo_turn(session, stack, b"", CONSENT_TEXT, "et")
+        result = await run_demo_turn(
+            session,
+            stack,
+            b"",
+            CONSENT_TEXT,
+            "et",
+            recap_delivery_id=recap["recap_delivery_id"],
+        )
         if cancel:
             stack["llm_primary"] = Sequence(
                 call("cancel_slot_booking", {"booking_id": "42"}),
@@ -210,13 +235,25 @@ def test_completed_write_is_not_hidden_by_later_read_error(cancel):
             else "Testbroneering on kinnitatud."
         )
         assert result["reply"].startswith(prefix)
-        assert "päring ebaõnnestus" in result["reply"]
-        assert result["outcome"] == "tools_failed"  # secondary failure is not hidden
+        assert result["outcome"] == "tools_ok"
+        assert stack["llm_primary"].calls == 0, (
+            "a canonical terminal action reached the provider"
+        )
         assert result["booking_changes"][0]["action"] == (
             "cancelled" if cancel else "confirmed"
         )
         assert result["reply"] == stack["tts"].spoken[-1]
         assert sum(name == "confirm" for name, _ in backend.calls) == 1
+        # Explicitly exercise the later-read boundary; the HTTP shortcut now
+        # deliberately avoids the redundant model call that used to cause it.
+        state = session.tools
+        error = await state.dispatch("get_demo_profile", {"extra": True})
+        assert error == {"error": "invalid_arguments"}
+        assert (
+            state.guard_reply("Vigane mudelivastus", [error])
+            == prefix + " Muu päring ebaõnnestus."
+        )
+        assert state.turn_mutation == ("cancelled" if cancel else "confirmed")
 
     asyncio.run(run())
 

@@ -74,7 +74,9 @@ def test_direct_spa_booking_requires_displayed_recap_and_explicit_button(
         {"session_id": session, "kind": "slot", "slot_id": slot["slotId"]},
     )
     assert prepared.status_code == 200, prepared.text
-    assert day in prepared.json()["recap_text"]
+    tools = client.app.state.demo_sessions.sessions[session].tools
+    assert tools.pending["recap"]["start"].startswith(day)
+    assert prepared.json()["recap_text"] == tools.render_recap()
     assert "Demo Esimene" in prepared.json()["recap_text"]
     assert not writes
     hold = prepared.json()["hold_id"]

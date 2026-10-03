@@ -44,10 +44,11 @@ def test_canonical_delivery_is_owned_exact_and_required_before_final_consent():
             "canonical recap is missing"
         )
         text = state.render_recap(ready["hold_id"])
+        assert state.pending["recap"]["start"].startswith(DAY)
+        assert "Eesti aja järgi" in text
         for field in (
             "Backend consultation",
             "Backend therapist",
-            DAY,
             "10:30",
             "Demo Esimene",
             CONSENT_TEXT,
@@ -158,6 +159,8 @@ def test_guard_allows_only_live_confirmed_or_actual_cancelled_status_and_keeps_p
 def test_native_tts_forces_canonical_recap_but_does_not_mark_until_completed_item():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit import rtc
+    from livekit.agents.voice.speech_handle import SpeechHandle
 
     async def run():
         state = CallTools(Dispatcher(slot=LiveSlots()))
@@ -165,6 +168,7 @@ def test_native_tts_forces_canonical_recap_but_does_not_mark_until_completed_ite
         agent = TelephoneAgent(state)
         canonical = state.render_recap()
         seen = []
+        speech = SpeechHandle.create()
 
         async def text():
             yield "Tere!"
@@ -172,10 +176,13 @@ def test_native_tts_forces_canonical_recap_but_does_not_mark_until_completed_ite
         async def synthesize(agent, text, settings):
             async for part in text:
                 seen.append(part)
-            yield "frame"
+            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
-        with patch("livekit.agents.Agent.default.tts_node", synthesize):
-            assert [frame async for frame in agent.tts_node(text(), None)] == ["frame"]
+        with (
+            patch("livekit.agents.Agent.default.tts_node", synthesize),
+            patch.object(agent, "_current_speech", return_value=speech),
+        ):
+            assert len([frame async for frame in agent.tts_node(text(), None)]) == 1
         assert "Backend consultation" in seen[0], (
             "optional model prose was spoken instead of recap"
         )
@@ -190,13 +197,11 @@ def test_native_tts_forces_canonical_recap_but_does_not_mark_until_completed_ite
             )
         )
         assert state.pending["delivery"] is False
-        agent.on_conversation_item_added(
-            SimpleNamespace(
-                item=SimpleNamespace(
-                    role="assistant", interrupted=False, text_content=seen[0]
-                )
-            )
+        item = SimpleNamespace(
+            role="assistant", interrupted=False, text_content=seen[0]
         )
+        speech._item_added([item])
+        agent.on_conversation_item_added(SimpleNamespace(item=item))
         assert state.pending["delivery"] is True
         assert state.pending["approved"] is False
         state.observe_user_text(CONSENT)
@@ -245,6 +250,8 @@ def test_native_tts_failure_even_with_completed_item_does_not_authorize_booking(
 def test_interrupted_or_mismatching_completed_item_cannot_mark_delivery(interrupted):
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit import rtc
+    from livekit.agents.voice.speech_handle import SpeechHandle
 
     async def run():
         state = CallTools(Dispatcher(slot=LiveSlots()))
@@ -253,6 +260,7 @@ def test_interrupted_or_mismatching_completed_item_cannot_mark_delivery(interrup
             "canonical recap is missing"
         )
         agent = TelephoneAgent(state)
+        speech = SpeechHandle.create()
         canonical = state.render_recap()
 
         async def text():
@@ -261,19 +269,20 @@ def test_interrupted_or_mismatching_completed_item_cannot_mark_delivery(interrup
         async def synthesize(agent, text, settings):
             async for _ in text:
                 pass
-            yield "frame"
+            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
-        with patch("livekit.agents.Agent.default.tts_node", synthesize):
-            assert [f async for f in agent.tts_node(text(), None)] == ["frame"]
-        agent.on_conversation_item_added(
-            SimpleNamespace(
-                item=SimpleNamespace(
-                    role="assistant",
-                    interrupted=interrupted,
-                    text_content=canonical if interrupted else "Tere!",
-                )
-            )
+        with (
+            patch("livekit.agents.Agent.default.tts_node", synthesize),
+            patch.object(agent, "_current_speech", return_value=speech),
+        ):
+            assert len([f async for f in agent.tts_node(text(), None)]) == 1
+        item = SimpleNamespace(
+            role="assistant",
+            interrupted=interrupted,
+            text_content=canonical if interrupted else "Tere!",
         )
+        speech._item_added([item])
+        agent.on_conversation_item_added(SimpleNamespace(item=item))
         state.observe_user_text(CONSENT)
         assert (
             await state.dispatch("confirm_slot_booking", {"hold_id": "backend-hold"})
@@ -285,6 +294,7 @@ def test_interrupted_or_mismatching_completed_item_cannot_mark_delivery(interrup
 def test_old_completed_recap_cannot_mark_a_new_preparation_of_same_hold():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit import rtc
 
     async def run():
         state = CallTools(Dispatcher(slot=LiveSlots()))
@@ -301,7 +311,7 @@ def test_old_completed_recap_cannot_mark_a_new_preparation_of_same_hold():
         async def synthesize(agent, text, settings):
             async for _ in text:
                 pass
-            yield "frame"
+            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
             assert [f async for f in agent.tts_node(text(), None)]
@@ -361,12 +371,14 @@ def test_price_blocked_recap_and_expired_delivery_cannot_authorize_booking():
 def test_partial_synthesis_never_marks_delivery_on_a_completed_item():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit import rtc
 
     async def run():
         state = CallTools(Dispatcher(slot=LiveSlots()))
         await raw_prepared(state)
         agent = TelephoneAgent(state)
         canonical = state.render_recap()
+        first = rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
         async def text():
             yield "Tere!"
@@ -374,12 +386,12 @@ def test_partial_synthesis_never_marks_delivery_on_a_completed_item():
         async def incomplete(agent, text, settings):
             async for _ in text:
                 pass
-            yield "first-frame"
-            yield "second-frame"
+            yield first
+            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
         with patch("livekit.agents.Agent.default.tts_node", incomplete):
             audio = agent.tts_node(text(), None)
-            assert await anext(audio) == "first-frame"
+            assert await anext(audio) is first
             await audio.aclose()
         agent.on_conversation_item_added(
             SimpleNamespace(

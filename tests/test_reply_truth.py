@@ -177,9 +177,10 @@ def test_http_faq_invalidates_a_pending_booking_instead_of_confirming_it(
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    prepared = send(client, session, "Soovin testbroneeringut")
+    assert prepared.status_code == 200 and prepared.json()["recap_delivery_id"]
     state = client.app.state.demo_sessions.sessions[session].tools
-    assert state.pending and state.pending["delivery"]
+    assert state.pending and not state.pending["delivery"]
     client.app.state.stack["llm_primary"] = SimpleLlm(
         "Sinu testbroneering on edukalt loodud."
     )
@@ -219,6 +220,7 @@ def test_http_old_booking_does_not_license_a_zero_tool_new_booking_claim(
 def test_native_reply_and_transcription_share_zero_tool_truth_guard():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit import rtc
 
     async def run():
         agent = TelephoneAgent(CallTools(Slots()))
@@ -232,16 +234,15 @@ def test_native_reply_and_transcription_share_zero_tool_truth_guard():
             UNVERIFIED
         ]
         spoken = []
+        frame = rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
 
         async def synthesize(agent, stream, settings):
             async for part in stream:
                 spoken.append(part)
-            yield "fixture-frame"
+            yield frame
 
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
-            assert [frame async for frame in agent.tts_node(text(), None)] == [
-                "fixture-frame"
-            ]
+            assert [f async for f in agent.tts_node(text(), None)] == [frame]
         assert spoken == [UNVERIFIED]
 
     asyncio.run(run())
