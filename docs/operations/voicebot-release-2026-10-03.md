@@ -22,11 +22,28 @@ verification remain pending.
 
 ## Existing host
 
+The multilingual booking FAQ update adds `data/demo/booking-faq.json` and shared
+server routing for 50 questions in all three languages. Web code deploys from
+GitHub as before. Hosts using the current
+[release synchronizer](../../deploy/telephony/README.md#automatic-release-synchronization)
+update the native services after the matching web release is healthy and calls
+are idle. Otherwise, use the manual rebuild/restart commands below. Verify the
+running revision before checking phone behaviour. No new provider, dependency or
+environment variable is required. Check alternate question wording, multiple
+questions, fresh catalogue facts, unknown-policy disclosure and clarification of
+unsupported subquestions.
+Confirm that FAQs and mixed question/confirmation sentences never authorize writes.
+
 Use the existing `/home/arle/voicebot` checkout. Inspect its branch and worktree
 before updating; preserve any local work. Update `master` with a fast-forward
 only. Identify the current trusted web container as `VOICEBOT_WEB_CONTAINER`.
 Keep the existing named `/data` storage and both booking database paths;
 the worker and web application must use the same volume.
+The deployment manager now copies the web application's effective room and call
+history database paths, including custom filenames under `/data`, and its exact
+room-write setting. Caller shell overrides cannot select another database or
+enable room writes that the web source disabled. Validation rejects paths outside
+the shared mount and nonpersistent call logs before running Compose.
 
 ```bash
 cd /home/arle/voicebot
@@ -43,10 +60,12 @@ python3 deploy/telephony/manage.py up --twilio --source-container "$VOICEBOT_WEB
 `manage.py` reuses trusted container configuration in memory. Do not copy
 credentials into Git, shell arguments, logs or expanded Compose output.
 
-Set the web application's `PUBLIC_PHONE_NUMBER` in Coolify to its existing
-assigned inbound E.164 number, then redeploy. The public hotel currently has
-no configured number. Fictional test numbers in the repository are not its
-assigned contact number.
+The public property endpoint and hotel page checked at
+`2026-10-03T10:43Z` now expose the configured contact `+17574278729`, including
+its `tel:` link. Preserve the existing `PUBLIC_PHONE_NUMBER` during deployment.
+Its presence on the page does not establish carrier assignment or a working
+incoming conversation; verify the configured route and actual call below.
+Fictional test numbers in the repository are not its assigned contact number.
 
 ## Verify the deployed telephone pipeline
 

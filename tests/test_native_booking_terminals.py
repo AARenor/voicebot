@@ -50,6 +50,16 @@ class PlanningStream(llm.LLMStream):
         self._event_ch.send_nowait(tool_chunk(self._llm.name, self._llm.arguments))
 
 
+class UnusedModel(llm.LLM):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def chat(self, **kwargs):
+        self.calls += 1
+        raise AssertionError("hours must not call the model")
+
+
 class UnusedTTS(tts.TTS):
     def __init__(self):
         super().__init__(
@@ -98,6 +108,72 @@ async def native_turn(session, agent, text):
     handle = session.generate_reply(user_input=await finalized(agent, text))
     await asyncio.wait_for(handle, 4)
     assert handle.exception() is None
+
+
+@pytest.mark.parametrize("question,failed", [
+    (
+        "Mis kell spaateenindaja töötab ja millal on tema lõunapaus? "
+        "Palun kontrolli tööplaani.",
+        False,
+    ),
+    ("Palun näita spaa tööaegu, tahaks teada.", False),
+    ("Palun näita spaa tööaegu, tahaks teada.", True),
+])
+def test_sdk_hours_execute_catalogue_and_finish_without_model(question, failed):
+    async def run():
+        backend = LiveSlots()
+        backend.catalogue["providers"][0]["working_hours"] = {
+            "monday": {
+                "start": "09:00", "end": "17:00",
+                "breaks": [{"start": "12:00", "end": "13:00"}],
+            },
+            "sunday": None,
+        }
+        if failed:
+            async def failed_catalogue():
+                backend.calls.append(("catalogue", {}))
+                raise RuntimeError("PRIVATE backend exception")
+            backend.get_slot_catalogue = failed_catalogue
+
+        state = CallTools(Dispatcher(slot=backend))
+        model = UnusedModel()
+        agent = TelephoneAgent(state)
+        session = AgentSession(llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"})
+        session.output.audio = Playback()
+        session.on("conversation_item_added", agent.on_conversation_item_added)
+        executed, spoken = [], []
+        session.on("function_tools_executed", lambda event: executed.extend(event.function_calls))
+
+        async def tts_boundary(agent, text, settings):
+            spoken.extend([part async for part in text])
+            yield rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+
+        with patch("livekit.agents.Agent.default.tts_node", tts_boundary):
+            await session.start(agent=agent, record=False)
+            try:
+                await native_turn(session, agent, question)
+                assert model.calls == 0
+                assert [call.name for call in executed] == ["get_slot_catalogue"]
+                assert json.loads(executed[0].arguments) == {}
+                assert backend.calls == [("catalogue", {})]
+                assert not state.bookings and state.pending is None
+                assert not state.booking_inquiry and state.turn_mutation is None
+                canonical = state.guard_reply("", state.results)
+                assert agent.chat_ctx.items[-1].text_content == canonical
+                assert spoken == [normalize_estonian_speech(canonical)]
+                if failed:
+                    assert state.results == [{"error": "booking_unavailable"}]
+                    assert canonical == "Toiming ei õnnestunud; edu ei ole kinnitatud."
+                    assert "PRIVATE" not in str(agent.chat_ctx.items)
+                else:
+                    assert "Backend therapist" in canonical
+                    assert "09:00–17:00" in canonical and "12:00–13:00" in canonical
+                    assert "paus" in canonical and "suletud" in canonical
+                    assert "9 kuni kell 17" in spoken[0] and "12 kuni kell 13" in spoken[0]
+            finally:
+                await session.aclose()
+
+    asyncio.run(run())
 
 
 def test_native_speech_normalizes_hours_after_guard_without_replacing_history():

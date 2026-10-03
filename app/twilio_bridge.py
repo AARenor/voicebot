@@ -40,6 +40,7 @@ from .twilio_security import (
 )
 
 CALL_TIMEOUT = 600
+DRAIN_TIMEOUT = CALL_TIMEOUT + 60
 FIRST_AUDIO_TIMEOUT = 45
 HANDSHAKE_TIMEOUT = 5
 SETUP_TIMEOUT = 15
@@ -59,11 +60,21 @@ class BridgeLogs(logging.Filter):
 
 
 def log_bridge_failure(stage, error):
-    if stage not in {"handshake", "native_setup", "media_stream", "first_audio", "output"}:
+    if stage not in {
+        "handshake",
+        "native_setup",
+        "media_stream",
+        "first_audio",
+        "output",
+    }:
         stage = "media_stream"
     code = "timeout" if isinstance(error, TimeoutError) else "error"
     if isinstance(error, BridgeError) and error.code in {
-        "media_invalid", "media_limit", "message_invalid", "output_invalid", "output_limit",
+        "media_invalid",
+        "media_limit",
+        "message_invalid",
+        "output_invalid",
+        "output_limit",
     }:
         code = error.code
     logging.getLogger("voicebot.twilio").warning(
@@ -677,15 +688,27 @@ def private_error(error):
 
 def create_app():
     async def shutdown(app):
-        tasks = list(app[STATE].running)
-        for task in tasks:
-            task.cancel()
+        state = app[STATE]
+        state.draining = True
+        tasks = list(state.running)
         if tasks:
-            await bounded_close(lambda: asyncio.gather(*tasks, return_exceptions=True))
+            _, pending = await asyncio.wait(tasks, timeout=DRAIN_TIMEOUT)
+            if pending:
+                for task in pending:
+                    task.cancel()
+                await bounded_close(
+                    lambda: asyncio.gather(*pending, return_exceptions=True)
+                )
+                raise RuntimeError("bridge_drain_timeout")
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app = web.Application(client_max_size=MAX_FORM_BYTES)
     app[STATE] = SimpleNamespace(
-        config=Config.from_env(), bindings=Bindings(), sockets=0, running=set()
+        config=Config.from_env(),
+        bindings=Bindings(),
+        sockets=0,
+        running=set(),
+        draining=False,
     )
     app.on_shutdown.append(shutdown)
     routes = web.RouteTableDef()
@@ -710,7 +733,10 @@ def create_app():
     @routes.post("/api/twilio/voice")
     async def voice(request):
         try:
-            config = app[STATE].config
+            state = app[STATE]
+            if state.draining:
+                raise BridgeError("bridge_draining", 503)
+            config = state.config
             if config is None:
                 raise BridgeError("bridge_not_configured", 503)
             signature = signature_header(request.headers)
@@ -720,7 +746,9 @@ def create_app():
             if not valid_signature(config, VOICE_URL, fields, signature):
                 raise BridgeError()
             call = authorized_call(config, fields)
-            return twiml(app[STATE].bindings.reserve(call))
+            if state.draining:
+                raise BridgeError("bridge_draining", 503)
+            return twiml(state.bindings.reserve(call))
         except BridgeError as error:
             return private_error(error)
         except Exception:
@@ -732,6 +760,8 @@ def create_app():
         state = app[STATE]
         config = state.config
         try:
+            if state.draining:
+                raise BridgeError("bridge_draining", 503)
             if config is None:
                 raise BridgeError("bridge_not_configured", 503)
             if request.query_string or not valid_media_signature(
@@ -869,7 +899,7 @@ def main():
         port=8082,
         print=None,
         access_log=None,
-        shutdown_timeout=35,
+        shutdown_timeout=DRAIN_TIMEOUT + 20,
         handler_cancellation=True,
     )
 
