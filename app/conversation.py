@@ -260,8 +260,46 @@ def intent_for(text: str) -> str | None:
     )
 
 
+def spa_hours_focus(text: object) -> bool:
+    """Recognize a bounded spa schedule question without authorizing a booking."""
+    if not isinstance(text, str) or not text.strip() or len(text) > 2000:
+        return False
+    value = normalize(text)
+    if re.search(
+        r"\b(?:broneer\w*|brooneer\w*|bruneer\w*|kinnita\w*|tühist\w*|book\w*|reserv\w*|"
+        r"confirm\w*|cancel\w*|hotell\w*|hotel\w*|toa\w*|tuba\w*|tube\w*|"
+        r"room\w*|stay\w*|majut\w*)\b", value,
+    ):
+        return False
+    if not re.search(
+        r"\b(?:spaa?\w*|teenindaja\w*|teenusepakkuja\w*|terapeut\w*|"
+        r"massöör\w*|therapist\w*|provider\w*)\b", value,
+    ):
+        return False
+    if not re.search(
+        r"\b(?:mis|millal|kas|palun|näita|ütle|kontrolli|what|when|can|could|"
+        r"please|show|tell|check)\b", value,
+    ):
+        return False
+    if re.search(
+        r"\b(?:tööa\w*|tööplaan\w*|töögraafik\w*|graafik\w*|teenindusa\w*|"
+        r"lõunapaus\w*|puhkepaus\w*|paus\w*|opening hours|working hours|"
+        r"work plan|schedule\w*|timetable\w*|break\w*|lunch)\b", value,
+    ):
+        return True
+    return bool(
+        re.search(r"\b(?:kell|millal|when|what time|hours)\b", value)
+        and re.search(
+            r"\b(?:tööt\w*|alustab|lõpetab|avatud|lahti|work\w*|start\w*|"
+            r"finish\w*|open\w*|close\w*)\b", value,
+        )
+    )
+
+
 def read_focus(text: str) -> str | None:
     value = normalize(text)
+    if spa_hours_focus(text):
+        return "hours"
     if re.search(r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b", value):
         return "hours"
     if re.search(

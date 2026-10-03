@@ -29,7 +29,9 @@ from .turn import (
     enforce_price_gate,
 )
 from . import callslog
-from .conversation import Conversation, QUESTIONS, STYLE_INSTRUCTIONS, approved_dialogue
+from .conversation import (
+    Conversation, QUESTIONS, STYLE_INSTRUCTIONS, approved_dialogue, spa_hours_focus,
+)
 from .russian import localize
 from .languages import (
     AFFIRMATIONS_EN,
@@ -512,6 +514,7 @@ class CallTools:
         self.booking_details = {}
         self.booking_receipts = []
         self._booking_inquiry = None
+        self._spa_hours_inquiry = False
 
     def say(self, text, **values):
         translated = localize(text, self.language)
@@ -736,13 +739,15 @@ class CallTools:
         self._turn_serial += 1
         self.turn_mutation = None
         self.cancel_approval = None
+        self._spa_hours_inquiry = False
         if self.mutation_uncertain:
             self._booking_inquiry = None
             self.invalidate_recap()
             return
+        self._spa_hours_inquiry = not self.unsupported_language and spa_hours_focus(text)
         self._booking_inquiry = (
             _spa_inquiry_fields(text, self._booking_inquiry)
-            if selected == "et" and not self.unsupported_language
+            if selected == "et" and not self.unsupported_language and not self._spa_hours_inquiry
             else None
         )
         normalized = (
@@ -787,6 +792,16 @@ class CallTools:
                 "booking_id": self.last_booking,
                 "expires_at": now + CONSENT_TIMEOUT_SECONDS,
             }
+
+    @property
+    def spa_hours_inquiry(self):
+        """A current working-plan request, never availability or write consent."""
+        return bool(
+            self._spa_hours_inquiry and "get_slot_catalogue" in self.names
+            and not self.unsupported_language and not self.clarification
+            and not self.pending and not self.cancel_approval and not self.turn_mutation
+            and not self.mutation_uncertain and self.outcome != "write_outcome_unknown"
+        )
 
     @property
     def booking_inquiry(self):

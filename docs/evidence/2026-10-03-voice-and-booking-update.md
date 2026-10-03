@@ -167,8 +167,31 @@ preparation has not been delivered or approved before the explicit reading
 assertion; internal requested dates remain ISO while spa recaps use natural
 Estonian dates. The integrated core suite passed 910 tests (45 skipped,
 36 subtests), and 141 focused native playback, terminal, silence and English
-tests passed. The complete media suite is rerun separately before the final
-live verification record.
+tests passed. After preserving the later natural telephone changes at
+`67d0d2c`, the complete pinned media suite passed 1188 tests (5 skipped,
+36 subtests) on `0df3d72`.
+
+Protected production checks on `0df3d72` now return
+`Mis kellaajaks soovid testbroneeringut?` for both the user's exact
+`Tere, tahaks homme bruneerida spaad?` and its corrected spelling, with zero
+model calls, no warnings and audio returned in 416 and 261 ms respectively.
+The current one-use recap delivery protocol also passed live spa and room
+preparation, explicit reading acknowledgement, confirmation, independent
+booking read and cancellation. All test-owned bookings were cancelled and
+sessions deleted. This was HTTP and decoded generated audio, not physical
+microphone or playback verification.
+
+The same production check exposed an additional hours question failure:
+`Mis kell spaateenindaja töötab ja millal on tema lõunapaus? Palun kontrolli
+tööplaani.` It now selects an actual catalogue read and its canonical database
+hours/breaks reply without model-generated prose. A recognized hours request
+does not become a booking inquiry merely because it includes `tahaks teada`;
+explicit booking spellings remain excluded. Backend failures, unknown writes
+and owned recap priorities are preserved. The focused HTTP, hours, native
+terminal and speech suite passed 93 tests. HTTP regressions verify both typed
+and mocked recognized input through the actual Azure SSML client boundary,
+including `9 kuni kell 17` and `12 kuni kell 13`. Ruff and the whitespace diff
+check passed. The new hours path still requires post-deployment live verification.
 
 ## Remaining release gaps
 
