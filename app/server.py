@@ -398,7 +398,8 @@ def create_app():
     ) -> dict:
         """Fictional HTTP turn. Optional session_id owns multi-turn state.
 
-        Auth before providers; only text/audio, language and session_id pass.
+        Auth before providers; only text/audio, ET/EN/RU/auto language, session_id and a
+        next-input canonical recap delivery receipt pass.
         Without a session the call is isolated and cannot reuse another hold.
         Never retries a mutation automatically, never accepts browser history.
         """
@@ -452,6 +453,10 @@ def create_app():
             else:
                 callslog.history_safe(call_history.end, session.tools.call_id)
         response["session_id"] = key
+        if key is None:
+            # Isolated turns have no reusable state to acknowledge next time.
+            response["recap_delivery_id"] = None
+            response["recap_expires_in_s"] = None
         response["call_id"] = session.tools.call_id
         try:
             callslog.log_call(

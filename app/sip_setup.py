@@ -17,6 +17,11 @@ def specifications(env=None):
         )
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", env["SIP_NUMBER"]):
         raise ValueError("E.164 number required")
+    agent_name = env.get("VOICEBOT_AGENT_NAME", "voicebot")
+    if not isinstance(agent_name, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,48}", agent_name
+    ):
+        raise ValueError("valid worker name required")
     networks = [
         ipaddress.ip_network(s.strip(), strict=True)
         for s in env["SIP_ALLOWED_CIDRS"].split(",")
@@ -40,7 +45,7 @@ def specifications(env=None):
             )
         ),
         room_config=api.RoomConfiguration(
-            agents=[api.RoomAgentDispatch(agent_name="voicebot")]
+            agents=[api.RoomAgentDispatch(agent_name=agent_name)]
         ),
     )
     trunk.ringing_timeout.FromSeconds(30)

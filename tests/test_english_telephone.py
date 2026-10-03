@@ -434,7 +434,13 @@ def test_authenticated_http_english_booking_uses_same_policy(client, tmp_path):
         "Fictional test booking" in recap["reply"]
         and "Yes, I confirm." in recap["reply"]
     )
-    result = send(client, session, CONSENT["en"], language="en").json()
+    result = send(
+        client,
+        session,
+        CONSENT["en"],
+        language="en",
+        recap_delivery_id=recap["recap_delivery_id"],
+    ).json()
     assert result["reply"] == ENGLISH["confirmed"] and result["booking_ids"] == ["42"]
     cancelled = send(
         client, session, "Please cancel this test booking.", language="en"

@@ -16,7 +16,7 @@ async (page) => {
     const reply = body => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)});
     if (path === '/api/turn') {
       requests.push(route.request().postDataJSON());
-      return reply({text_heard:'Tere!',reply:'Tere! Kuidas saan aidata?',audio_b64,audio_type:'audio/wav',outcome:replyOutcome,recap_delivery_id:replyReceipt,expires_in_s:590,booking_changes:[]});
+      return reply({text_heard:'Tere!',reply:'Tere! Kuidas saan aidata?',audio_b64,audio_type:'audio/wav',outcome:replyOutcome,recap_delivery_id:replyReceipt,recap_expires_in_s:60,expires_in_s:590,booking_changes:[]});
     }
     if (path === '/api/demo/session') return reply({session_id:'fixture-session',greeting:'Tere!',audio_b64,audio_type:'audio/wav',expires_in_s:600});
     if (path === '/api/calls') return reply({calls:[]});
@@ -114,7 +114,7 @@ async (page) => {
   await page.locator('#demo-end').click();await page.waitForFunction(()=>!state.sessionId);
   await page.locator('#logout').click();await page.evaluate(()=>window.lateEnd?.());
   assert(await page.evaluate(()=>!state.mic && !state.audioUrl),'logout leaked media');
-  assert(await page.evaluate(()=>!state.recapDeliveryId && !state.awaitingRecapId),'late event revived signed-out recap');
+  assert(await page.evaluate(()=>!state.recapDeliveryId && !state.recap),'late event revived signed-out recap');
   await page.evaluate(()=>window.fixtureContext.close());
   assert(errors.length === 0,'uncaught browser error');
   if (failures.length) throw new Error(failures.join('; '));

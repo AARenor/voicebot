@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, mic:null, micStarting:false, micEpoch:0, recapDeliveryId:null, awaitingRecapId:null, demoLanguage:"auto", replyLanguage:"et", demoModels:null};
+const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, recap:null, recapDeliveryId:null, mic:null, micStarting:false, micEpoch:0, demoLanguage:"auto", replyLanguage:"et", demoModels:null};
 const bookingUi = {kind:"slot", sessionId:null, busy:false, uncertain:false, holdId:null, acknowledged:false, selected:null, confirmed:null, services:[], providers:[], roomTypes:[], roomPresetApplied:false, stays:[], staysFetched:false, staysBusy:false, epoch:0};
 const DEMO_COPY = {
   et: {
@@ -11,7 +11,8 @@ const DEMO_COPY = {
     placeholder:"Näiteks: soovin homme massaaži", micLevel:"Mikrofoni helitase", speakNaturally:"Räägi loomulikult.",
     micHelp:"Ühenda esmalt operaatori tunnusega. Häälvestluse nupp alustab vestluse ja küsib mikrofoni luba. Kõnepaus saadab heli automaatselt; teine vajutus saadab kohe. Üks salvestis kestab kuni 15 sekundit.",
     recapRead:"Olen kokkuvõtte läbi lugenud", guidanceTitle:"Kuidas demovestlus töötab?",
-    guidance:"Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.",
+    recapHelp:"Kuula broneeringu kokkuvõte algusest lõpuni või loe see vestlusest läbi ja kinnita lugemine. See ei loo broneeringut; kinnitamiseks saada seejärel eraldi sõnum.",
+    guidance:"Abiline kasutab selle vestluse fiktiivset külalist. Kuula kokkuvõte algusest lõpuni või kinnita eraldi selle lugemine. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.",
     examplesLabel:"Vestluse alustamise näited", transcriptLabel:"Selle lehe demovestlus", audioLabel:"Demoabilise vastus",
     examples:{hours:["Lahtiolekuajad","Millal spaa avatud on?"], spa:["Spaa aeg","Soovin broneerida spaakonsultatsiooni."], room:["Hotellituba","Soovin leida vaba hotellitoa."]},
     signIn:"Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.", ready:"Alusta demovestlust või vajuta „Alusta häälvestlust”. Vestlus aegub 10 minutiga.",
@@ -35,7 +36,8 @@ const DEMO_COPY = {
     placeholder:"For example: I'd like a massage tomorrow", micLevel:"Microphone level", speakNaturally:"Speak naturally.",
     micHelp:"Connect with your operator token first. The voice button starts a conversation and asks for microphone permission. A pause sends your audio automatically; press again to send immediately. Each recording lasts up to 15 seconds.",
     recapRead:"I have read the recap", guidanceTitle:"How does the demo work?",
-    guidance:"The assistant uses a fictional guest for this conversation. After hearing the recap, say: “Yes, I confirm.” To cancel, say: “Please cancel this test booking.” Do not enter real contact details. Recordings are not kept in your browser. This is a fictional web voice demo, not a telephone call or a real hotel service.",
+    recapHelp:"Listen to the booking recap from beginning to end, or read it in the conversation and acknowledge reading. This does not create a booking; send a separate message afterwards to confirm.",
+    guidance:"The assistant uses a fictional guest for this conversation. Listen to the whole recap or acknowledge reading it separately. Then say: “Yes, I confirm.” To cancel, say: “Please cancel this test booking.” Do not enter real contact details. Recordings are not kept in your browser. This is a fictional web voice demo, not a telephone call or a real hotel service.",
     examplesLabel:"Conversation examples", transcriptLabel:"This page's demo conversation", audioLabel:"Demo assistant's reply",
     examples:{hours:["Opening hours","What are the spa opening hours?"], spa:["Spa appointment","I would like to book a spa consultation."], room:["Hotel room","I would like to find an available hotel room."]},
     signIn:"To start, enter your operator token and press “Ühenda” (Connect).", ready:"Start a demo conversation or press “Start voice conversation”. The session lasts 10 minutes.",
@@ -83,13 +85,13 @@ function changeDemoLanguage() {
   status("demo-status", state.connected ? demoCopy().ready : demoCopy().signIn);
   controls();
 }
-function recapPlayedMessage() {
+function recapPlayedMessage(heard) {
   const words={et:"Jah, kinnitan.", en:"Yes, I confirm.", ru:"Да, подтверждаю."}[state.replyLanguage] || "Jah, kinnitan.";
-  return state.demoLanguage === "en" ? `Recap delivered. To confirm, say “${words}” or type it. Make a new request to change the proposal.` : `Kokkuvõte esitatud. Kinnitamiseks ütle „${words}” või kirjuta see. Muudatuseks tee uus soov.`;
+  return state.demoLanguage === "en" ? `Recap ${heard?"heard in full":"read"}. No booking has been created. To confirm, send a separate “${words}” message. Make a new request to change the proposal.` : `Kokkuvõte on ${heard?"kuulatud":"läbi loetud"}. Broneeringut veel ei loodud. Kinnitamiseks saada eraldi „${words}”`;
 }
 function demoError(error) {
   if (state.demoLanguage !== "en") return error.message;
-  const known={voice_stack_not_configured:"The voice demo is not configured on the server.", demo_sessions_full:"All demo conversations are busy. Please try again shortly.", demo_session_language_invalid:"Choose a supported conversation language.", stt_not_configured:"Speech recognition is not configured. Please type a message."};
+  const known={recap_delivery_expired_or_unknown:"The booking recap has changed or expired. Request a new recap and listen to it in full or acknowledge reading before giving new consent.", voice_stack_not_configured:"The voice demo is not configured on the server.", demo_sessions_full:"All demo conversations are busy. Please try again shortly.", demo_session_language_invalid:"Choose a supported conversation language.", stt_not_configured:"Speech recognition is not configured. Please type a message."};
   return known[error.code] || ({401:"The operator token is missing or invalid. Connect again.",403:"The operator token is missing or invalid. Connect again.",404:demoCopy().expired,410:demoCopy().expired,409:"The conversation is processing the previous message. Wait for its reply.",413:"The message or recording is too long. Try a shorter sample.",400:"Check the message or language selection."})[error.status] || "The request failed or timed out. Check the booking system before repeating a confirmation or cancellation.";
 }
 // Retire the old sessionStorage stopgap; never persist a new credential.
@@ -134,40 +136,78 @@ function presentation() {
   $("new-booking-section").setAttribute("aria-busy", String(bookingUi.busy));
   $("mic-feedback").hidden=!state.mic;
 }
-function stopAudio() {
-  $("demo-audio").onended = $("demo-audio").onerror = null;
+function clearRecap() {
+  clearTimeout(state.recap?.timer);
+  state.recap=null; state.recapDeliveryId=null;
+  $("demo-recap-actions").hidden=true;
+}
+function currentRecap(recap) {
+  return !!recap && state.recap===recap && state.connected && recap.generation===state.generation && recap.sessionId===state.sessionId && Date.now()<recap.expiresAt && $("demo-messages").contains(recap.message);
+}
+function acknowledgeRecap(recap, heard=false) {
+  if(!currentRecap(recap) || state.turnBusy || recap.acknowledged) return;
+  recap.acknowledged=true; state.recapDeliveryId=recap.id;
+  $("demo-recap-actions").hidden=true;
+  status("demo-status", recapPlayedMessage(heard));
+}
+function renderRecap(data, message) {
+  if(typeof data.recap_delivery_id!=="string" || !/^[a-f0-9]{32}$/.test(data.recap_delivery_id) || !Number.isFinite(data.recap_expires_in_s) || data.recap_expires_in_s<=0 || typeof data.reply!=="string" || !data.reply.trim() || ["fallback","tools_failed","unknown_outcome"].includes(data.outcome)) return null;
+  const recap={id:data.recap_delivery_id,sessionId:state.sessionId,generation:state.generation,expiresAt:Date.now()+data.recap_expires_in_s*1000,message,acknowledged:false,interrupted:false,audioUrl:null};
+  state.recap=recap;
+  recap.timer=setTimeout(()=>{if(state.recap===recap)clearRecap();},data.recap_expires_in_s*1000);
+  $("demo-recap-actions").hidden=false;
+  return recap;
+}
+function fullPlayback(audio) {
+  // An ended event also follows seeking; only contiguous played ranges deliver a recap.
+  if(!audio.ended || !Number.isFinite(audio.duration) || audio.duration<=0 || !audio.played.length) return false;
+  let through=0;
+  for(let i=0;i<audio.played.length;i++) {
+    if(audio.played.start(i)>through+.001) return false;
+    through=Math.max(through,audio.played.end(i));
+  }
+  return through>=audio.duration-.001;
+}
+function stopAudio(preserveDelivered=false) {
+  // Starting capture may retain a completed/read receipt, never a partial recap.
+  if(!preserveDelivered || !state.recapDeliveryId || !currentRecap(state.recap)) clearRecap();
+  $("demo-audio").onended=null; $("demo-audio").onpause=null; $("demo-audio").onerror=null;
   $("demo-audio").pause(); $("demo-audio").removeAttribute("src"); $("demo-audio").load(); $("demo-audio").hidden = true;
   if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   state.audioUrl = null;
-  state.recapDeliveryId = state.awaitingRecapId = null;
-  $("demo-recap-read").hidden = true;
 }
-function playReply(data) {
-  state.awaitingRecapId = /^[a-f0-9]{32}$/.test(data.recap_delivery_id || "") ? data.recap_delivery_id : null;
-  $("demo-recap-read").hidden = !state.awaitingRecapId;
-  controls();
+function playReply(data, recap=null) {
   if (!data.audio_b64) return;
   const generation=state.generation, session=state.sessionId, audio=$("demo-audio");
   const resultStatus=$("demo-status").textContent, resultError=["unknown_outcome","tools_failed","tts_failed"].includes(data.outcome);
-  const current=()=>generation===state.generation && session===state.sessionId && state.connected;
+  let url=null;
+  const current=()=>generation===state.generation && session===state.sessionId && state.connected && url===state.audioUrl && audio.currentSrc===url;
   try {
     const bytes=Uint8Array.from(atob(data.audio_b64), c=>c.charCodeAt(0));
     state.audioUrl=URL.createObjectURL(new Blob([bytes], {type:data.audio_type === "audio/wav" ? "audio/wav" : "audio/mpeg"}));
-    const url=state.audioUrl, receipt=state.awaitingRecapId;
+    url=state.audioUrl;
+    if(recap) recap.audioUrl=url;
     audio.src=url; audio.hidden=false;
     audio.onended=()=>{
-      if (!current() || url!==state.audioUrl) return;
-      if (receipt) { state.recapDeliveryId=receipt; $("demo-recap-read").hidden=true; }
-      status("demo-status", resultStatus + " " + (receipt ? recapPlayedMessage() : demoCopy().replyPlayed), resultError ? "error" : "");
+      if (!current() || !audio.ended) return;
+      if(recap) {
+        if(currentRecap(recap) && !recap.interrupted && fullPlayback(audio)) acknowledgeRecap(recap,true);
+      } else status("demo-status", resultStatus + " " + demoCopy().replyPlayed, resultError ? "error" : "");
     };
+    audio.onpause=()=>{if(current() && currentRecap(recap) && !audio.ended && !recap.acknowledged)recap.interrupted=true;};
     audio.onerror=()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().audioError, "error");
+      if (!current()) return;
+      if(currentRecap(recap)) recap.interrupted=true;
+      status("demo-status", resultStatus + " " + demoCopy().audioError, "error");
     };
     audio.play().catch(()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().autoplay, "error");
+      if (generation===state.generation && session===state.sessionId && state.connected && url===state.audioUrl && !recap?.acknowledged) status("demo-status", resultStatus + " " + demoCopy().autoplay, "error");
     });
   } catch (_) {
-    if (current()) status("demo-status", resultStatus + " " + demoCopy().audioInvalid, "error");
+    if (generation===state.generation && session===state.sessionId && state.connected) {
+      if(currentRecap(recap)) recap.interrupted=true;
+      status("demo-status", resultStatus + " " + demoCopy().audioInvalid, "error");
+    }
   }
 }
 function stopMic() {
@@ -194,9 +234,9 @@ function controls() {
   for (const id of ["demo-text", "demo-send"]) $(id).disabled = !state.sessionId || state.turnBusy || state.micStarting;
   $("demo-mic").disabled = connecting || state.turnBusy || state.micStarting;
   if (!state.mic) $("demo-mic").textContent = state.sessionId ? demoCopy().micReady : demoCopy().micStart;
+  $("demo-recap-read").disabled=!currentRecap(state.recap) || state.turnBusy || state.recap.acknowledged;
   $("demo-history").hidden=!state.callId;
   $("demo-history").disabled=!state.connected;
-  $("demo-recap-read").disabled = !state.awaitingRecapId || state.turnBusy;
   $("booking-prev").disabled = !state.connected || state.readBusy || state.page <= 1;
   $("booking-next").disabled = !state.connected || state.readBusy || !state.hasMore || state.page >= 100;
   bookingControls();
@@ -238,7 +278,7 @@ async function api(path, opts={}) {
     if (isPrivate && generation !== state.generation) throw new DOMException("Signed out", "AbortError");
     if (!response.ok) {
       const problem=(await response.json().catch(()=>null)) || {};
-      const explanations={booking_recap_expired_or_unknown:"Pakkumine aegus. Otsi saadavust uuesti ja vaata uus kokkuvõte üle.",booking_not_owned_or_cancellation_unavailable:"Seda broneeringut ei saa selles seansis tühistada. Kontrolli broneeringut operaatori taustsüsteemist.",explicit_consent_required:"Kinnitamiseks või tühistamiseks on vaja sinu selget nõusolekut.",booking_date_invalid:"Kuupäev ei sobi. Vali lubatud vahemikus tulevane kuupäev.",stay_booking_not_configured:"Tubade broneerimise taustsüsteem pole seadistatud.",voice_stack_not_configured:"Kõneproovi mudel või kõnesüntees pole serveris seadistatud.",mutation_outcome_unknown:"Broneerimise tulemus on ebaselge. Ära korda kinnitamist; kontrolli broneeringute ülevaadet.",write_outcome_unknown:"Broneerimise tulemus on ebaselge. Ära korda kinnitamist; kontrolli broneeringute ülevaadet.",cancel_outcome_unknown:"Tühistamise tulemus on ebaselge. Ära korda tühistamist; kontrolli broneeringute ülevaadet."};
+      const explanations={recap_delivery_expired_or_unknown:"Broneeringu kokkuvõte muutus või aegus. Küsi uut kokkuvõtet ja kuula see lõpuni või kinnita selle lugemine enne uut nõusolekut.",booking_recap_expired_or_unknown:"Pakkumine aegus. Otsi saadavust uuesti ja vaata uus kokkuvõte üle.",booking_not_owned_or_cancellation_unavailable:"Seda broneeringut ei saa selles seansis tühistada. Kontrolli broneeringut operaatori taustsüsteemist.",explicit_consent_required:"Kinnitamiseks või tühistamiseks on vaja sinu selget nõusolekut.",booking_date_invalid:"Kuupäev ei sobi. Vali lubatud vahemikus tulevane kuupäev.",stay_booking_not_configured:"Tubade broneerimise taustsüsteem pole seadistatud.",voice_stack_not_configured:"Kõneproovi mudel või kõnesüntees pole serveris seadistatud.",mutation_outcome_unknown:"Broneerimise tulemus on ebaselge. Ära korda kinnitamist; kontrolli broneeringute ülevaadet.",write_outcome_unknown:"Broneerimise tulemus on ebaselge. Ära korda kinnitamist; kontrolli broneeringute ülevaadet.",cancel_outcome_unknown:"Tühistamise tulemus on ebaselge. Ära korda tühistamist; kontrolli broneeringute ülevaadet."};
       const message=explanations[problem.detail || problem.error] || (response.status === 403 || response.status === 401 ? "Tunnus puudub või on vale. Ühenda uuesti." : response.status === 410 ? "Vestlus aegus. Alusta uut vestlust; ära korda ebaselget broneerimist." : response.status === 409 ? (path.startsWith("/api/booking/")?"Pakkumine muutus, aegus või toiming ei ole selles seansis võimalik. Kontrolli valikut ja otsi saadavust uuesti.":"Vestlus töötleb eelmist sõnumit. Oota vastus ära.") : response.status === 413 ? "Sõnum või helisalvestis on liiga pikk. Tee lühem proov." : response.status === 400 ? "Kontrolli kuupäeva või sõnumi vormingut." : "Teenus ei ole praegu saadaval. Kontrolli seadistust või proovi hiljem uuesti.");
       const error = new Error(message);
       error.status = response.status;
@@ -375,6 +415,7 @@ function addMessage(label, text) {
   item.setAttribute("lang", state.replyLanguage);
   author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item);
   $("demo-messages").scrollTop=$("demo-messages").scrollHeight;
+  return item;
 }
 function requireDemoConnection() {
   if (state.connected) return true;
@@ -395,7 +436,7 @@ async function startDemo() {
     $("demo-messages").replaceChildren();
     addMessage(demoCopy().assistant, data.greeting);
     status("demo-status", data.tts_failed ? demoCopy().greetingFailed : demoCopy().started, data.tts_failed ? "error" : "");
-    stopAudio(); playReply(data); await loadHistory();
+    stopAudio(); playReply(data); void loadHistory();
   }
   catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", demoError(error), "error"); }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
@@ -403,13 +444,13 @@ async function startDemo() {
 async function sendTurn(input) {
   if (!state.sessionId || state.turnBusy || state.micStarting || !state.connected) return;
   const generation=state.generation;
-  const receipt=state.recapDeliveryId;
+  const recapDeliveryId=currentRecap(state.recap) ? state.recapDeliveryId : null;
   state.turnBusy=true; controls(); stopAudio(); status("demo-status", demoCopy().responding);
   try {
-    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, ...input, language:state.demoLanguage, ...(receipt ? {recap_delivery_id:receipt} : {})})});
+    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, ...input, language:state.demoLanguage, ...(recapDeliveryId ? {recap_delivery_id:recapDeliveryId} : {})})});
     if(generation!==state.generation || !state.connected) return;
     if (["et","en","ru"].includes(data.language)) state.replyLanguage=data.language;
-    addMessage(demoCopy().you, data.text_heard || (data.input_status === "stt_unavailable" ? demoCopy().heardFailed : demoCopy().heardNothing)); addMessage(demoCopy().assistant, data.reply);
+    addMessage(demoCopy().you, data.text_heard || (data.input_status === "stt_unavailable" ? demoCopy().heardFailed : demoCopy().heardNothing)); const message=addMessage(demoCopy().assistant, data.reply);
     renderTurnDiagnostics(data);
     $("demo-text").value="";
     const completedWrite=(data.booking_changes || []).some(change=>["confirmed","cancelled"].includes(change.action));
@@ -419,11 +460,12 @@ async function sendTurn(input) {
     status("demo-status", result + (data.tts_failed ? " " + copy.textFallback : "") + expiry, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
     if (data.input_status === "stt_unavailable") status("demo-status", copy.sttFailed,"error");
     else if (data.input_status === "no_speech") status("demo-status", copy.noSpeech,"stale");
-    playReply(data);
+    const recap=renderRecap(data,message);
+    playReply(data,recap);
     const change=(data.booking_changes || []).find(item=>["confirmed","cancelled"].includes(item.action) && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && (/^[1-9]\d*$/.test(item.id) || (item.kind==="stay" && /^stay_[a-f0-9]{32}$/.test(item.id))));
-    if(change) { $("booking-date").value=change.date; await changeView(1,change.action==="confirmed" && change.kind!=="stay" ? change.id : null); }
-    else await Promise.allSettled([loadBookings(true),loadStays()]);
-    await loadCalls();
+    if(change) { $("booking-date").value=change.date; void changeView(1,change.action==="confirmed" && change.kind!=="stay" ? change.id : null); }
+    else void Promise.allSettled([loadBookings(true),loadStays()]);
+    void loadCalls();
   } catch(error) {
     if(error.name!=="AbortError" && state.connected) { status("demo-status", demoError(error) + " " + demoCopy().noRetry, "error"); if(error.status===410 || error.status===404) state.sessionId=null; }
   } finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
@@ -432,7 +474,7 @@ async function endDemo() {
   if(!state.sessionId || state.turnBusy) return;
   stopMic(); stopAudio(); state.micStarting=false;
   const id=state.sessionId, generation=state.generation; state.turnBusy=true; controls();
-  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", demoCopy().ended); await loadHistory(); }
+  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", demoCopy().ended); void loadHistory(); }
   catch(error) {
     if(error.name!=="AbortError" && generation===state.generation && state.connected) {
       if(error.status===410 || error.status===404) {
@@ -480,7 +522,8 @@ async function toggleMic() {
   if(generation!==state.generation || micEpoch!==state.micEpoch || !state.connected || !state.sessionId || state.turnBusy || state.micStarting || document.hidden) return;
   const session=state.sessionId;
   let stream=null, context=null;
-  state.micStarting=true; controls(); $("demo-audio").pause(); status("demo-status", demoCopy().micPermission);
+  stopAudio(true);
+  state.micStarting=true; controls(); status("demo-status", demoCopy().micPermission);
   try {
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     if(generation!==state.generation || session!==state.sessionId || micEpoch!==state.micEpoch || state.mic || state.turnBusy || document.hidden) { stream.getTracks().forEach(track=>track.stop()); return; }
@@ -531,12 +574,8 @@ $("demo-start").addEventListener("click",startDemo); $("demo-end").addEventListe
 $("demo-language").addEventListener("change",changeDemoLanguage);
 $("demo-form").addEventListener("submit", event=>{event.preventDefault(); const text=$("demo-text").value.trim(); if(text) { stopMic(); sendTurn({text}); }});
 $("demo-mic").addEventListener("click",toggleMic);
+$("demo-recap-read").addEventListener("click",()=>{const recap=state.recap;if(currentRecap(recap) && !state.turnBusy) { $("demo-audio").pause(); acknowledgeRecap(recap); controls(); $("demo-text").focus(); }});
 $("demo-history").addEventListener("click",async()=>{const id=state.callId; if(!state.connected || !id)return; location.hash="calls-section"; await loadHistory(); if(state.connected) await selectHistory(id);});
-$("demo-recap-read").addEventListener("click",()=>{
-  if(!state.awaitingRecapId || state.turnBusy) return;
-  state.recapDeliveryId=state.awaitingRecapId; $("demo-recap-read").hidden=true;
-  status("demo-status", recapPlayedMessage());
-});
 window.addEventListener?.("pagehide",()=>logout());
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMic(); else poll();});
 // Navigation stays useful without scripts; reflect the current anchor when available.
@@ -585,6 +624,7 @@ function bookingControls() {
   const locked=!state.connected || bookingUi.busy;
   for(const id of ["new-service","new-provider","new-slot-date","new-checkin","new-checkout","new-adults","new-children","new-room-type","booking-kind-slot","booking-kind-stay","booking-decline","booking-cancel-request","booking-cancel-decline"]) $(id).disabled=locked;
   $("booking-search").disabled=locked || bookingUi.uncertain;
+  $("booking-recap-read").disabled=locked || bookingUi.uncertain || !bookingUi.holdId || bookingUi.acknowledged;
   $("booking-confirm").disabled=locked || bookingUi.uncertain || !bookingUi.holdId || !bookingUi.acknowledged;
   $("booking-cancel").disabled=locked || bookingUi.uncertain || !bookingUi.confirmed;
   for(const button of document.querySelectorAll?.(".offer-button") || []) button.disabled=locked || bookingUi.uncertain;
@@ -680,15 +720,21 @@ async function prepareBooking(offer) {
     if(generation!==state.generation || epoch!==bookingUi.epoch || !state.connected) return;
     if(!data.hold_id || !data.recap_text) throw new Error("Broneeringu kokkuvõte puudub. Kinnitamist ei avatud.");
     bookingUi.holdId=data.hold_id; $("booking-recap-text").textContent=data.recap_text; $("booking-recap").hidden=false;
-    if(window.requestAnimationFrame) await new Promise(resolve=>window.requestAnimationFrame(()=>window.requestAnimationFrame(resolve)));
-    if(generation!==state.generation || epoch!==bookingUi.epoch || !state.connected) return;
-    // Confirm is opened only after the canonical recap has entered the DOM.
-    const acknowledgment=await api("/api/booking/recap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:bookingUi.sessionId,hold_id:data.hold_id})});
-    if(generation!==state.generation || epoch!==bookingUi.epoch || !state.connected) return;
-    bookingUi.acknowledged=acknowledgment.acknowledged===true;
-    status("new-booking-status",bookingUi.acknowledged?"Loe kokkuvõte läbi. Kinnitamiseks vajuta „Jah, kinnitan broneeringu”.":"Kokkuvõtet ei saanud kinnitamiseks avada. Broneeringut ei loodud.",bookingUi.acknowledged?"":"error");
+    status("new-booking-status","Loe kokkuvõte läbi ja kinnita eraldi selle lugemine. Broneeringut veel ei loodud.");
   } catch(error) { if(error.name!=="AbortError" && generation===state.generation && state.connected) status("new-booking-status",error.message,"error"); }
   finally { if(generation===state.generation) { bookingUi.busy=false; controls(); } }
+}
+async function acknowledgeBookingRecap() {
+  if(!state.connected || bookingUi.busy || bookingUi.uncertain || !bookingUi.holdId || bookingUi.acknowledged || $("booking-recap").hidden || !$("booking-recap-text").textContent.trim()) return;
+  const generation=state.generation, epoch=bookingUi.epoch, holdId=bookingUi.holdId;
+  bookingUi.busy=true; controls();
+  try {
+    const data=await api("/api/booking/recap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:bookingUi.sessionId,hold_id:holdId})});
+    if(generation!==state.generation || epoch!==bookingUi.epoch || holdId!==bookingUi.holdId || !state.connected) return;
+    bookingUi.acknowledged=data.acknowledged===true;
+    status("new-booking-status",bookingUi.acknowledged?"Kokkuvõte on läbi loetud. Broneeringu loomiseks vajuta eraldi „Jah, kinnitan broneeringu”.":"Lugemise kinnitust ei saadud. Broneeringut ei loodud.",bookingUi.acknowledged?"":"error");
+  } catch(error) { if(error.name!=="AbortError" && generation===state.generation && epoch===bookingUi.epoch && state.connected)status("new-booking-status",error.message,"error"); }
+  finally { if(generation===state.generation) { bookingUi.busy=false; controls(); if(epoch===bookingUi.epoch && bookingUi.acknowledged) $("booking-confirm").focus(); } }
 }
 async function mutateBooking(action) {
   if(!state.connected || bookingUi.busy || bookingUi.uncertain || (action==="confirm" && (!bookingUi.holdId || !bookingUi.acknowledged)) || (action==="cancel" && !bookingUi.confirmed)) return;
@@ -709,13 +755,13 @@ async function mutateBooking(action) {
       $("booking-recap").hidden=true; $("booking-offers").replaceChildren(); $("booking-receipt").hidden=false; $("booking-cancel-request").hidden=false;
       $("booking-receipt-title").textContent="Testbroneering on kinnitatud"; $("booking-receipt-text").textContent="Taustsüsteemi viide: "+id;
       const day=kind==="stay"?(receipt.checkin || bookingUi.selected?.checkin):(receipt.date || bookingUi.selected?.date);
-      if(/^\d{4}-\d{2}-\d{2}$/.test(day || "")) { $("booking-date").value=day; await changeView(1,kind==="slot"?id:null); }
-      else await Promise.allSettled([loadBookings(true),loadStays()]);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(day || "")) { $("booking-date").value=day; void changeView(1,kind==="slot"?id:null); }
+      else void Promise.allSettled([loadBookings(true),loadStays()]);
       status("new-booking-status","Kinnitus tuli taustsüsteemist. Broneering on ülevaates kontrollitav.");
     } else {
       bookingUi.confirmed=null; $("booking-cancel-request").hidden=true; $("booking-cancel-actions").hidden=true;
       $("booking-receipt-title").textContent="Testbroneering on tühistatud"; status("new-booking-status","Taustsüsteem kinnitas tühistamise.");
-      await Promise.allSettled([loadBookings(true),loadStays()]);
+      void Promise.allSettled([loadBookings(true),loadStays()]);
     }
   } catch(error) {
     if(error.name!=="AbortError" && generation===state.generation && state.connected) {
@@ -730,6 +776,7 @@ $("booking-kind-stay").addEventListener("click",()=>chooseBookingKind("stay"));
 $("new-service").addEventListener("change",()=>{clearBookingSelection();updateProviders();});
 for(const id of ["new-provider","new-slot-date","new-checkin","new-checkout","new-adults","new-children","new-room-type"]) $(id).addEventListener("change",clearBookingSelection);
 $("booking-confirm").addEventListener("click",()=>mutateBooking("confirm"));
+$("booking-recap-read").addEventListener("click",acknowledgeBookingRecap);
 $("booking-decline").addEventListener("click",()=>{clearBookingSelection();status("new-booking-status","Loobusid pakkumisest. Broneeringut ei loodud.");});
 $("booking-cancel-request").addEventListener("click",()=>{$("booking-cancel-actions").hidden=false;});
 $("booking-cancel").addEventListener("click",()=>mutateBooking("cancel"));

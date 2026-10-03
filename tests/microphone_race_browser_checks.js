@@ -35,8 +35,13 @@ async (page) => {
   const disabled=await example.isDisabled();
   await page.evaluate(()=>sendTurn({text:'Millal spaa avatud on?'}));
   const serialized=requests.length===0;
-  // Native playback controls can be pressed while permission is unresolved.
-  await page.locator('#demo-audio').evaluate(async audio=>{audio.loop=true;audio.currentTime=0;await audio.play();});
+  // Capture start retires the old audio URL. Restore local media while permission
+  // is unresolved to prove the second guard still stops newly started playback.
+  await page.locator('#demo-audio').evaluate(async (element,encoded)=>{
+    const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+    window.raceAudioUrl=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));
+    element.src=raceAudioUrl;element.loop=true;element.currentTime=0;await element.play();
+  },audio.toString('base64'));
   await page.waitForFunction(()=>!document.getElementById('demo-audio').paused && document.getElementById('demo-audio').currentTime>0.05);
   await page.evaluate(async()=>{
     window.raceContext=new AudioContext();await raceContext.resume();
@@ -58,7 +63,7 @@ async (page) => {
     permissionResolve(sink.stream);await openMicrophone;
   });
   const cancelled=await page.evaluate(()=>!state.mic && cancelledStream.getTracks().every(track=>track.readyState==='ended'));
-  await page.locator('#logout').click();await page.evaluate(()=>raceContext.close());
+  await page.locator('#logout').click();await page.evaluate(()=>{URL.revokeObjectURL(raceAudioUrl);return raceContext.close();});
   assert(disabled,'example input remained enabled during microphone permission');
   assert(serialized,'pending microphone permission allowed another conversational turn');
   assert(paused,'microphone capture overlapped assistant playback');

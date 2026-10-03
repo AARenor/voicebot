@@ -30,7 +30,11 @@ from .turn import (
 )
 from . import callslog
 from .conversation import (
-    Conversation, QUESTIONS, STYLE_INSTRUCTIONS, approved_dialogue, spa_hours_focus,
+    Conversation,
+    QUESTIONS,
+    STYLE_INSTRUCTIONS,
+    approved_dialogue,
+    spa_hours_focus,
 )
 from .russian import localize
 from .languages import (
@@ -170,7 +174,8 @@ def _spa_inquiry_fields(text, previous):
     text = text.casefold().strip().rstrip("?!.")
     words = set(re.findall(r"\w+", text))
     if words & {"ei", "ära", "ärge", "mitte", "ignoreeri", "unusta"} or re.search(
-        r"\b(?:kinnit\w*|tühist\w*|hotell\w*|spaahotell\w*|toa\w*|tuba\w*|sviit\w*|suite)\b", text
+        r"\b(?:kinnit\w*|tühist\w*|hotell\w*|spaahotell\w*|toa\w*|tuba\w*|sviit\w*|suite)\b",
+        text,
     ):
         return None
     # A few common ASR spellings are tolerated only for a request, never for
@@ -179,27 +184,55 @@ def _spa_inquiry_fields(text, previous):
         re.search(r"\b(?:spaa\w*|spa)\b", text)
         and re.search(
             r"\b(?:(?:broneeri|bruneeri|brooneeri|reserveeri)(?:da|ksin|ks|me)?|"
-            r"soovin|sooviksin|sooviks|tahaksin|tahaks|tahan)\b", text
+            r"soovin|sooviksin|sooviks|tahaksin|tahaks|tahan)\b",
+            text,
         )
     )
     hour_words = (
-        "null", "üks", "kaks", "kolm", "neli", "viis", "kuus", "seitse",
-        "kaheksa", "üheksa", "kümme", "üksteist", "kaksteist", "kolmteist",
-        "neliteist", "viisteist", "kuusteist", "seitseteist", "kaheksateist",
-        "üheksateist", "kakskümmend",
+        "null",
+        "üks",
+        "kaks",
+        "kolm",
+        "neli",
+        "viis",
+        "kuus",
+        "seitse",
+        "kaheksa",
+        "üheksa",
+        "kümme",
+        "üksteist",
+        "kaksteist",
+        "kolmteist",
+        "neliteist",
+        "viisteist",
+        "kuusteist",
+        "seitseteist",
+        "kaheksateist",
+        "üheksateist",
+        "kakskümmend",
     )
     hour = r"(?:\d{1,2}|" + "|".join(hour_words) + r")"
     clock = rf"(?:kell\s+)?{hour}(?:[:.]\d{{2}})?"
     day = r"(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})"
-    followup = bool(previous and re.fullmatch(
-        rf"(?:palun\s+)?(?:{day}(?:[,\s]+{clock})?|{clock})(?:\s+(?:palun|sobib))?",
-        text,
-    ))
+    followup = bool(
+        previous
+        and re.fullmatch(
+            rf"(?:palun\s+)?(?:{day}(?:[,\s]+{clock})?|{clock})(?:\s+(?:palun|sobib))?",
+            text,
+        )
+    )
     if not spa_request and not followup:
         return None
     fields = {"kind": "slot"} if spa_request else dict(previous)
     date_tokens = re.findall(r"\b(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})\b", text)
-    if len(date_tokens) > 1 or words & {"või", "kuni", "vahel", "umbes", "paiku", "asemel"}:
+    if len(date_tokens) > 1 or words & {
+        "või",
+        "kuni",
+        "vahel",
+        "umbes",
+        "paiku",
+        "asemel",
+    }:
         return None
     if date_tokens:
         token = date_tokens[0]
@@ -215,9 +248,12 @@ def _spa_inquiry_fields(text, previous):
         if requested < today:
             return None
         fields["date"] = requested.isoformat()
-    clock_matches = list(re.finditer(
-        rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])", text,
-    ))
+    clock_matches = list(
+        re.finditer(
+            rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])",
+            text,
+        )
+    )
     clocks = [matched.groups() for matched in clock_matches]
     remaining = re.sub(rf"\b{day}\b", "", text).strip(" ,")
     if not clocks and followup:
@@ -235,7 +271,7 @@ def _spa_inquiry_fields(text, previous):
             # minutes or multiple alternatives with only one "kell".
             remaining = text
             for matched in reversed(clock_matches):
-                remaining = remaining[:matched.start()] + remaining[matched.end():]
+                remaining = remaining[: matched.start()] + remaining[matched.end() :]
             remaining = re.sub(rf"\b{day}\b", "", remaining)
             if re.search(rf"\b(?:\d+|{'|'.join(hour_words)})\b", remaining):
                 return None
@@ -257,18 +293,62 @@ def _is_spa_clarification(text):
         return False
     words = re.findall(r"[a-zõäöüšž]+", question)
     allowed = {
-        "mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal",
-        "kuupäev", "kuupäeva", "kuupäevaks", "kuupäeval", "päev", "päeval", "päevaks",
-        "kell", "kellaajal", "kellaajaks", "kellaaega", "kellaaeg", "aega", "ajaks",
-        "ajale", "ajal", "soovid", "soovite", "sooviksid", "tahad", "tahaksid",
-        "eelistad", "eelistate", "broneerida", "testbroneeringut", "demo", "spaa",
-        "spaad", "spaasse", "spaahooldust", "spaateenust", "teenust", "konsultatsiooni",
-        "spaakonsultatsiooni", "homme", "täna", "ja", "või", "ning", "endale",
-        "sulle", "teile", "palun", "tulla",
+        "mis",
+        "millist",
+        "millise",
+        "millisele",
+        "millisel",
+        "milliseks",
+        "millal",
+        "kuupäev",
+        "kuupäeva",
+        "kuupäevaks",
+        "kuupäeval",
+        "päev",
+        "päeval",
+        "päevaks",
+        "kell",
+        "kellaajal",
+        "kellaajaks",
+        "kellaaega",
+        "kellaaeg",
+        "aega",
+        "ajaks",
+        "ajale",
+        "ajal",
+        "soovid",
+        "soovite",
+        "sooviksid",
+        "tahad",
+        "tahaksid",
+        "eelistad",
+        "eelistate",
+        "broneerida",
+        "testbroneeringut",
+        "demo",
+        "spaa",
+        "spaad",
+        "spaasse",
+        "spaahooldust",
+        "spaateenust",
+        "teenust",
+        "konsultatsiooni",
+        "spaakonsultatsiooni",
+        "homme",
+        "täna",
+        "ja",
+        "või",
+        "ning",
+        "endale",
+        "sulle",
+        "teile",
+        "palun",
+        "tulla",
     }
     return bool(
         words
-        and words[0] in {"mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal"}
+        and words[0]
+        in {"mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal"}
         and set(words) <= allowed
     )
 
@@ -497,6 +577,7 @@ class CallTools:
         self.offers, self.held_stays = {}, {}
         self._hold_order = []
         self.booking_kinds = {}
+        self.booking_holds = {}
         self.pending: dict[str, Any] | None = None
         self.cancel_approval: dict[str, Any] | None = None
         self.last_booking = None
@@ -524,17 +605,22 @@ class CallTools:
     def language_instructions(self):
         if self.language != "ru":
             return ""
-        prompts = [localize(text, "ru") for text in (
-            ASK_DATE_TIME, ASK_DATE, ASK_TIME,
-            "Kas soovid broneerida spaahooldust või hotellituba?",
-            "Millist spaateenust soovid ja mis kuupäevaks?",
-            "Mis kellaaega eelistad?",
-            "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
-            "Millist toatüüpi eelistad?",
-            "Tere! Kuidas saan aidata?",
-            "Kas soovid veel midagi küsida?",
-            "Aitäh! Head päeva!",
-        )]
+        prompts = [
+            localize(text, "ru")
+            for text in (
+                ASK_DATE_TIME,
+                ASK_DATE,
+                ASK_TIME,
+                "Kas soovid broneerida spaahooldust või hotellituba?",
+                "Millist spaateenust soovid ja mis kuupäevaks?",
+                "Mis kellaaega eelistad?",
+                "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
+                "Millist toatüüpi eelistad?",
+                "Tere! Kuidas saan aidata?",
+                "Kas soovid veel midagi küsida?",
+                "Aitäh! Head päeva!",
+            )
+        ]
         return (
             "\nCurrent caller language: Russian. Respond ONLY in Russian. "
             "This overrides earlier Estonian language/wording instructions. "
@@ -696,6 +782,10 @@ class CallTools:
 
     @property
     def direct_reply(self):
+        if self.pending and not self.pending["approved"]:
+            # Repeat/language-switch turns keep an owned proposal but revoke
+            # its delivery. Reuse its canonical recap, not a model paraphrase.
+            return self.guard_reply("", [])
         if self.conversation.reply is None:
             return None
         return self.guard_reply(self.conversation.reply, [])
@@ -744,10 +834,14 @@ class CallTools:
             self._booking_inquiry = None
             self.invalidate_recap()
             return
-        self._spa_hours_inquiry = not self.unsupported_language and spa_hours_focus(text)
+        self._spa_hours_inquiry = not self.unsupported_language and spa_hours_focus(
+            text
+        )
         self._booking_inquiry = (
             _spa_inquiry_fields(text, self._booking_inquiry)
-            if selected == "et" and not self.unsupported_language and not self._spa_hours_inquiry
+            if selected == "et"
+            and not self.unsupported_language
+            and not self._spa_hours_inquiry
             else None
         )
         normalized = (
@@ -774,7 +868,14 @@ class CallTools:
             and now < self.pending["expires_at"]
             and self.pending["delivery"]
             and not self.unsupported_language
-            and normalized in (AFFIRMATIONS_EN if selected == "en" else AFFIRMATIONS_RU if selected == "ru" else AFFIRMATIONS)
+            and normalized
+            in (
+                AFFIRMATIONS_EN
+                if selected == "en"
+                else AFFIRMATIONS_RU
+                if selected == "ru"
+                else AFFIRMATIONS
+            )
         ):
             self.pending["approved"] = True
         else:
@@ -783,9 +884,13 @@ class CallTools:
         if (
             self.last_booking
             and not self.unsupported_language
-            and normalized in (
-                CANCELLATIONS_EN if selected == "en" else
-                CANCELLATIONS_RU if selected == "ru" else CANCELLATIONS
+            and normalized
+            in (
+                CANCELLATIONS_EN
+                if selected == "en"
+                else CANCELLATIONS_RU
+                if selected == "ru"
+                else CANCELLATIONS
             )
         ):
             self.cancel_approval = {
@@ -797,10 +902,15 @@ class CallTools:
     def spa_hours_inquiry(self):
         """A current working-plan request, never availability or write consent."""
         return bool(
-            self._spa_hours_inquiry and "get_slot_catalogue" in self.names
-            and not self.unsupported_language and not self.clarification
-            and not self.pending and not self.cancel_approval and not self.turn_mutation
-            and not self.mutation_uncertain and self.outcome != "write_outcome_unknown"
+            self._spa_hours_inquiry
+            and "get_slot_catalogue" in self.names
+            and not self.unsupported_language
+            and not self.clarification
+            and not self.pending
+            and not self.cancel_approval
+            and not self.turn_mutation
+            and not self.mutation_uncertain
+            and self.outcome != "write_outcome_unknown"
         )
 
     @property
@@ -808,20 +918,30 @@ class CallTools:
         """Parsed requested fields for the next turn; no transcript or backend IDs."""
         return (
             dict(self._booking_inquiry)
-            if self.language == "et" and not self.unsupported_language and self._booking_inquiry
+            if self.language == "et"
+            and not self.unsupported_language
+            and self._booking_inquiry
             else None
         )
 
     def inquiry_reply(self):
         """Trusted clarification only, without a provider call or booking action."""
         if (
-            self.language != "et" or self.unsupported_language
-            or not self._booking_inquiry or self.results or self.pending
-            or self.cancel_approval or self.turn_mutation or self.mutation_uncertain
+            self.language != "et"
+            or self.unsupported_language
+            or not self._booking_inquiry
+            or self.results
+            or self.pending
+            or self.cancel_approval
+            or self.turn_mutation
+            or self.mutation_uncertain
             or self.outcome == "write_outcome_unknown"
         ):
             return None
-        day, start = self._booking_inquiry.get("date"), self._booking_inquiry.get("start_time")
+        day, start = (
+            self._booking_inquiry.get("date"),
+            self._booking_inquiry.get("start_time"),
+        )
         if not day and not start:
             return ASK_DATE_TIME
         if not day:
@@ -877,12 +997,23 @@ class CallTools:
                 "{nights} ööd, {adults} täiskasvanut ja {children} last, "
                 "külaline {guest_name}. Näidishind kokku {quoted_total} {currency}. "
                 "Makseid ei koguta. Kas kinnitad selle testbroneeringu? Ütle: „{consent}”",
-                **fields, consent=self.say(CONSENT_TEXT),
+                **fields,
+                consent=self.say(CONSENT_TEXT),
             )
         if self.language == "ru":
             month = (
-                "января", "февраля", "марта", "апреля", "мая", "июня",
-                "июля", "августа", "сентября", "октября", "ноября", "декабря",
+                "января",
+                "февраля",
+                "марта",
+                "апреля",
+                "мая",
+                "июня",
+                "июля",
+                "августа",
+                "сентября",
+                "октября",
+                "ноября",
+                "декабря",
             )[start.month - 1]
             return (
                 f"Тестовое бронирование: {fields['service_name']}, "
@@ -999,9 +1130,11 @@ class CallTools:
         if clarification and _is_spa_clarification(text):
             return clarification
         static = (
-            ENGLISH_STATIC if english else
-            {localize(reply, "ru") for reply in STATIC_REPLIES}
-            if self.language == "ru" else STATIC_REPLIES | {ENGLISH_INVITATION}
+            ENGLISH_STATIC
+            if english
+            else {localize(reply, "ru") for reply in STATIC_REPLIES}
+            if self.language == "ru"
+            else STATIC_REPLIES | {ENGLISH_INVITATION}
         ) | approved_dialogue(self.language)
         provider_prompts = (
             REPEAT_PROMPT[self.language],
@@ -1021,7 +1154,9 @@ class CallTools:
             canonical = (
                 render_english_read(result, focus=self.conversation.focus)
                 if english
-                else self._render_read_result(result, self.language, focus=self.conversation.focus)
+                else self._render_read_result(
+                    result, self.language, focus=self.conversation.focus
+                )
             )
             if canonical:
                 return safe_speech(canonical, results, self.language)
@@ -1030,6 +1165,7 @@ class CallTools:
     @staticmethod
     def _render_read_result(result, language="et", *, focus=None):
         """Render verified reads as natural speech, without model paraphrases."""
+
         def say(text, **values):
             translated = localize(text, language)
             return translated.format(**values) if values else translated
@@ -1045,8 +1181,9 @@ class CallTools:
                     "Fiktiivse hotelli toatüübid: {choices}. "
                     "Saabumine alates {checkin_time}, lahkumine kuni {checkout_time}. "
                     "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
-                    choices=choices, checkin_time=property['checkin_time'],
-                    checkout_time=property['checkout_time'],
+                    choices=choices,
+                    checkin_time=property["checkin_time"],
+                    checkout_time=property["checkout_time"],
                 )
             if isinstance(result.get("services"), list) and isinstance(
                 result.get("providers"), list
@@ -1094,40 +1231,59 @@ class CallTools:
                         for summary, labels in groups.items()
                     )
                     if schedule:
-                        schedules.append(say(
-                            "{name} tööajad: {schedule}",
-                            name=provider['name'], schedule=schedule,
-                        ))
+                        schedules.append(
+                            say(
+                                "{name} tööajad: {schedule}",
+                                name=provider["name"],
+                                schedule=schedule,
+                            )
+                        )
                 schedule = (
                     ". ".join(schedules)
                     if schedules
                     else say("Tööaegu ei ole andmebaasist kinnitatud")
                 )
                 if focus == "hours":
-                    return say("{schedule}. Vaba aeg tuleb eraldi kontrollida.", schedule=schedule)
+                    return say(
+                        "{schedule}. Vaba aeg tuleb eraldi kontrollida.",
+                        schedule=schedule,
+                    )
                 return say(
                     "Demo spaateenused: {choices}. {schedule}. Vaba aeg tuleb eraldi kontrollida.",
-                    choices=choices, schedule=schedule,
+                    choices=choices,
+                    schedule=schedule,
                 )
             if isinstance(result.get("offers"), list):
                 offers = result["offers"]
                 if not offers:
-                    return say("Soovitud kuupäevadel ja külaliste arvuga vabu demotube ei ole. Kas soovid teisi kuupäevi?")
+                    return say(
+                        "Soovitud kuupäevadel ja külaliste arvuga vabu demotube ei ole. Kas soovid teisi kuupäevi?"
+                    )
                 return (
                     say("Saadaval demotoapakkumised: ")
                     + "; ".join(
-                        say("{label}, {checkin} kuni {checkout}, kokku {quoted_total} {currency}", **o)
+                        say(
+                            "{label}, {checkin} kuni {checkout}, kokku {quoted_total} {currency}",
+                            **o,
+                        )
                         for o in offers[:3]
                     )
-                    + say(". Need on fiktiivsed näidishinnad. Millist toatüüpi eelistad?")
+                    + say(
+                        ". Need on fiktiivsed näidishinnad. Millist toatüüpi eelistad?"
+                    )
                 )
             if isinstance(result.get("slots"), list):
                 slots = result["slots"]
                 if not slots:
-                    return say("Selleks kuupäevaks vabu spaademo aegu ei ole. Kas soovid teist kuupäeva?")
+                    return say(
+                        "Selleks kuupäevaks vabu spaademo aegu ei ole. Kas soovid teist kuupäeva?"
+                    )
                 starts = [datetime.fromisoformat(s["start"]) for s in slots[:4]]
                 return (
-                    say("Saadaval spaademo ajad {date}: ", date=starts[0].date().isoformat())
+                    say(
+                        "Saadaval spaademo ajad {date}: ",
+                        date=starts[0].date().isoformat(),
+                    )
                     + ", ".join(s.strftime("%H:%M") for s in starts)
                     + say(". Mis kellaaega eelistad?")
                 )
@@ -1433,7 +1589,7 @@ class CallTools:
                 f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”"
             ),
             "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
-            "consent_prompt_ru": f'Подтверждаете это тестовое бронирование? Скажите: «{CONSENT["ru"]}»',
+            "consent_prompt_ru": f"Подтверждаете это тестовое бронирование? Скажите: «{CONSENT['ru']}»",
         }
 
     async def prepare_demo_stay(self, hold_id, guest_fixture_id="guest-001"):
@@ -1501,7 +1657,7 @@ class CallTools:
             **quote,
             "consent_prompt_et": f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”",
             "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
-            "consent_prompt_ru": f'Подтверждаете это тестовое бронирование? Скажите: «{CONSENT["ru"]}»',
+            "consent_prompt_ru": f"Подтверждаете это тестовое бронирование? Скажите: «{CONSENT['ru']}»",
         }
 
     async def dispatch(self, name, args) -> dict[str, Any]:
@@ -1823,6 +1979,7 @@ class CallTools:
                 "stay" if name == "confirm_booking" else "slot"
             )
             self.last_booking = str(booking["id"])
+            self.booking_holds[self.last_booking] = args["hold_id"]
             self.confirmed_holds.add(args["hold_id"])
             self.outcome = "booking_confirmed"
             slot = self.held_slots.get(args["hold_id"], {})
@@ -1863,6 +2020,12 @@ class CallTools:
                 return self._unknown_mutation(name)
             self.outcome = "booking_cancelled"
             self.cancelled_bookings.add(args["booking_id"])
+            cancelled_hold = self.booking_holds.get(args["booking_id"])
+            for held_action, held_result in list(self.actions.items()):
+                if cancelled_hold and held_result.get("hold_id") == cancelled_hold:
+                    # Only a new owned hold may rebook. Keep consumed holds,
+                    # confirmation receipts and cancellation facts intact.
+                    self.actions.pop(held_action)
             if args["booking_id"] in self.booking_details:
                 receipt = {
                     **self.booking_details[args["booking_id"]],

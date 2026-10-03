@@ -992,9 +992,7 @@ class EasyAppointmentsAdapter(SlotAdapter):
         if journal is not None and journal["status"] == "success":
             return journal["result"] or {"ok": True}
         if journal is not None and journal["status"] == "failed":
-            raise ProviderError(
-                (journal["result"] or {}).get("error", "easy.confirm: failed")
-            )
+            return self._failed_confirmation(journal)
         if journal is not None and journal["status"].startswith("pending"):
             return await self._settle_pending(idempotency_key, journal, hold_id)
         replayed = self._holds.check_replay(idempotency_key)
@@ -1046,6 +1044,16 @@ class EasyAppointmentsAdapter(SlotAdapter):
         self._journal.put_result(key, marker, "failed", None, result)
         return self._holds.record(key, result)
 
+    @staticmethod
+    def _failed_confirmation(row: dict) -> dict:
+        # Older journals contain private provider details, not public codes.
+        result = row.get("result")
+        error = result.get("error") if isinstance(result, dict) else None
+        return {
+            "ok": False,
+            "error": "slot_stale" if error == "slot_stale" else "confirm_failed",
+        }
+
     async def _confirm_locked(
         self,
         key: str,
@@ -1060,9 +1068,7 @@ class EasyAppointmentsAdapter(SlotAdapter):
         if journal is not None and journal["status"] == "success":
             return journal["result"] or {"ok": True}
         if journal is not None and journal["status"] == "failed":
-            raise ProviderError(
-                (journal["result"] or {}).get("error", "easy.confirm: failed")
-            )
+            return self._failed_confirmation(journal)
         if journal is not None and journal["status"].startswith("pending"):
             return await self._settle_pending(key, journal, hold_id)
         # A pre-lock snapshot may expire or be consumed while waiting. Durable
@@ -1094,28 +1100,15 @@ class EasyAppointmentsAdapter(SlotAdapter):
                 raise ProviderError("easy.service: bad duration")
             start = _parse_start(snapshot["start"])
             end = start + timedelta(minutes=minutes)
-        except RetryableProviderError:
-            return {"ok": False, "error": "write_outcome_unknown"}
-        except ProviderError as exc:
-            result = self._fail(key, marker, str(exc))
-            raise ProviderError(result["error"])
-        except (OverflowError, ValueError):
-            result = self._fail(key, marker, "easy.service: bad appointment range")
-            raise ProviderError(result["error"]) from None
-        if minutes <= 0:
-            result = self._fail(key, marker, "easy.service: bad duration")
-            raise ProviderError(result["error"])
-        try:
             times = await self._availability_times(
                 service_id, provider_id, snapshot["date"]
             )
-        except RetryableProviderError:
-            # Ambiguous recheck: fail closed without a journal row.
-            return {"ok": False, "error": "write_outcome_unknown"}
-        except ProviderError as exc:
-            result = self._fail(key, marker, str(exc))
-            raise ProviderError(result["error"])
-        if start not in {_parse_start(value) for value in times}:
+            available_starts = {_parse_start(value) for value in times}
+        except (ProviderError, OverflowError, ValueError):
+            # No POST has begun: even a read timeout is a known failed attempt.
+            # Persist it so this key never retries automatically or after restart.
+            return self._fail(key, marker, "confirm_failed")
+        if start not in available_starts:
             return self._fail(key, marker, "slot_stale")
         if not self._holds.reserve(key):
             return {"ok": False, "error": "confirm_in_progress"}
@@ -1137,9 +1130,8 @@ class EasyAppointmentsAdapter(SlotAdapter):
                     customer_id = await self._ensure_customer(clean_guest)
                 except RetryableProviderError:
                     return {"ok": False, "error": "write_outcome_unknown"}
-                except ProviderError as exc:
-                    result = self._fail(key, marker, str(exc))
-                    raise ProviderError(result["error"])
+                except ProviderError:
+                    return self._fail(key, marker, "confirm_failed")
                 self._holds.memo(key, "customerId", customer_id)
                 self._journal.put_result(
                     key, marker, "customer_ready", None, {"customerId": customer_id}
@@ -1171,10 +1163,9 @@ class EasyAppointmentsAdapter(SlotAdapter):
             except RetryableProviderError:
                 # 429/5xx: commit state ambiguous — stay pending.
                 return {"ok": False, "error": "write_outcome_unknown"}
-            except ProviderError as exc:
+            except ProviderError:
                 # Known 4xx: terminal, never retry this key blindly.
-                result = self._fail(key, marker, str(exc))
-                raise ProviderError(result["error"])
+                return self._fail(key, marker, "confirm_failed")
             if response.status_code != 201:
                 return {"ok": False, "error": "write_outcome_unknown"}
             try:

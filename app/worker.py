@@ -127,19 +127,22 @@ class TelephoneAgent(Agent):
         turn = self._final_user_turn
         user = next(
             (
-                item for item in reversed(chat_ctx.items)
+                item
+                for item in reversed(chat_ctx.items)
                 if getattr(item, "role", None) == "user"
             ),
             None,
         )
         current = turn is not None and turn == (
-            getattr(user, "id", None), self.state._turn_serial
+            getattr(user, "id", None),
+            self.state._turn_serial,
         )
         # SDK instruction refreshes append configuration metadata after the
         # user's item. That metadata does not change which turn is answered.
         tail = next(
             (
-                item for item in reversed(chat_ctx.items)
+                item
+                for item in reversed(chat_ctx.items)
                 if not isinstance(item, llm.AgentConfigUpdate)
             ),
             None,
@@ -202,16 +205,22 @@ class TelephoneAgent(Agent):
             items.insert(items.index(tail), inquiry)
             chat_ctx = llm.ChatContext(items=items)
         responded = False
-        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            if current and (initial or after_tool) and (
-                turn != self._final_user_turn
-                or turn[1] != self.state._turn_serial
+        async for chunk in Agent.default.llm_node(
+            self, chat_ctx, tools, model_settings
+        ):
+            if (
+                current
+                and (initial or after_tool)
+                and (
+                    turn != self._final_user_turn or turn[1] != self.state._turn_serial
+                )
             ):
                 # SDK tool execution consumes emitted chunks directly. Withhold
                 # late calls as well as IDs after a newer final user turn.
                 return
             if (
-                current and (initial or after_tool)
+                current
+                and (initial or after_tool)
                 and turn == self._final_user_turn
                 and turn[1] == self.state._turn_serial
             ):
@@ -224,8 +233,10 @@ class TelephoneAgent(Agent):
             elif isinstance(chunk, llm.ChatChunk):
                 responded |= chunk.has_response()
             yield chunk
-        if current and (initial or after_tool) and (
-            turn != self._final_user_turn or turn[1] != self.state._turn_serial
+        if (
+            current
+            and (initial or after_tool)
+            and (turn != self._final_user_turn or turn[1] != self.state._turn_serial)
         ):
             return
         if not responded:
@@ -272,8 +283,11 @@ class TelephoneAgent(Agent):
         if self.state.history_enabled:
             outcome = (
                 "fallback"
-                if event.item.text_content in {
-                    UNVERIFIED_REPLY, ENGLISH["unverified"], localize(UNVERIFIED_REPLY, "ru")
+                if event.item.text_content
+                in {
+                    UNVERIFIED_REPLY,
+                    ENGLISH["unverified"],
+                    localize(UNVERIFIED_REPLY, "ru"),
                 }
                 else self.state.outcome
             )
@@ -314,7 +328,7 @@ class TelephoneAgent(Agent):
             async def checked():
                 yield normalize_estonian_speech(reply, language)
 
-            frames = False
+            frames = voiced = False
             # Azure snapshots options per sentence. Keep every sentence in an
             # interrupted stream on its voice until cancellation completes.
             async with self._tts_voice_lock:
@@ -325,14 +339,17 @@ class TelephoneAgent(Agent):
                 if self.speech_provider is not None:
                     voice, locale = self.speech_config.voice_for(language)
                     self.speech_provider.update_options(voice=voice, language=locale)
-                async for frame in Agent.default.tts_node(self, checked(), model_settings):
+                async for frame in Agent.default.tts_node(
+                    self, checked(), model_settings
+                ):
                     if not frames:
                         frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
                     frames = True
+                    voiced = voiced or any(frame.data)
                     yield frame
-            if not frames:
-                raise RuntimeError("speech produced no audio")
-            complete = frames
+            if not voiced:
+                raise RuntimeError("speech_audio_empty")
+            complete = True
             if (
                 complete
                 and pending
