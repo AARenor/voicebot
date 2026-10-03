@@ -328,7 +328,7 @@ class TestAzureTts(unittest.TestCase):
     def test_ssml_escapes_guest_text(self):
         out = ssml("Tere <Mari> & co", "et-EE-AnuNeural", "et-EE")
         self.assertIn("Tere &lt;Mari&gt; &amp; co", out)
-        self.assertIn("name='et-EE-AnuNeural'", out)
+        self.assertIn('name="et-EE-AnuNeural"', out)
 
 
 class TestEasyAppointments(unittest.TestCase):

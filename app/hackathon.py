@@ -359,6 +359,9 @@ class _TrustedLlm:
         # Standalone greetings/FAQs use approved text, not model paraphrases
         # that the shared speech guard would reject. Mixed requests use tools.
         if messages and messages[-1].get("role") == "user":
+            direct = state.direct_reply
+            if direct is not None:
+                return {"content": direct}
             question = messages[-1].get("content")
             if isinstance(question, str):
                 question = " ".join(question.strip().rstrip("?!.").casefold().split())

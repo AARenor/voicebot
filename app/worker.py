@@ -15,7 +15,7 @@ from pathlib import Path
 from livekit import api, rtc
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli, llm, stt
 from livekit.agents.types import TimedString, USERDATA_TIMED_TRANSCRIPT
-from livekit.plugins import azure, groq, silero
+from livekit.plugins import groq, silero
 
 from .booking.easyappointments import EasyAppointmentsAdapter
 from .booking.demo_stay import DemoStayAdapter
@@ -23,6 +23,8 @@ from .booking.tools import Dispatcher
 from . import callslog, call_history
 from .providers.voice_config import SpeechConfig, VoiceConfig
 from .providers.telephone_stt import TelephoneSTT
+from .providers.telephone_tts import TelephoneTTS
+from .providers.speech_delivery import SpeechDelivery
 from .languages import ENGLISH, ENGLISH_INVITATION
 from .telephone import (
     ASK_DATE_TIME,
@@ -64,6 +66,11 @@ class TelephoneAgent(Agent):
         self._unsupported_language = False
 
     async def llm_node(self, chat_ctx, tools, model_settings):
+        # Reviewed social turns and recap repeats need no provider round trip.
+        reply = self.state.direct_reply
+        if reply is not None:
+            yield reply
+            return
         responded = False
         async for chunk in Agent.default.llm_node(
             self, chat_ctx, tools, model_settings
@@ -103,9 +110,9 @@ class TelephoneAgent(Agent):
             new_message.text_content if new_message.role == "user" else "",
             is_final=True,
             detected_language=self._detected_language,
-            language=self.speech_config.mode
-            if self.speech_config.mode != "auto"
-            else None,
+            language=(
+                self.speech_config.mode if self.speech_config.mode != "auto" else None
+            ),
             unsupported=self._unsupported_language,
         )
         self._detected_language = None
@@ -198,6 +205,10 @@ class TelephoneAgent(Agent):
                 self.speech_provider.update_options(voice=voice, language=locale)
             pending = self.state.pending
             canonical = self.state.render_recap()
+            if isinstance(self.speech_provider, TelephoneTTS):
+                self.speech_provider.set_recap_delivery(
+                    bool(pending and reply == canonical)
+                )
 
             async def checked():
                 yield reply
@@ -566,6 +577,7 @@ async def entrypoint(ctx: JobContext):
         validate_environment()
         config = VoiceConfig.from_env()
         speech_config = SpeechConfig.from_env()
+        delivery = SpeechDelivery.from_env()
         adapter = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"],
             os.environ["EASY_API_KEY"],
@@ -603,9 +615,10 @@ async def entrypoint(ctx: JobContext):
             mode=speech_config.mode,
             api_key=os.environ["GROQ_API_KEY"],
         )
-        speech_provider = azure.TTS(
+        speech_provider = TelephoneTTS(
             voice=voice,
             language=language,
+            delivery=delivery,
             speech_key=os.environ["AZURE_SPEECH_KEY"],
             speech_region=os.environ["AZURE_REGION"],
         )

@@ -107,9 +107,9 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
 
         stack["llm_primary"] = Plan()
         recap = await run_demo_turn(session, stack, b"", "Soovin aega", "et")
-        assert "backend-hold" not in recap["reply"], (
-            "caller-facing recap is not a tool-ID channel"
-        )
+        assert (
+            "backend-hold" not in recap["reply"]
+        ), "caller-facing recap is not a tool-ID channel"
         if condition == "expired":
             state.pending["expires_at"] = 0
         if condition == "uncertain":
@@ -145,9 +145,7 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
         text = (
             "Jah, tühista."
             if condition == "cancel"
-            else "Ei, aitäh."
-            if condition == "declined"
-            else CONSENT_TEXT
+            else "Ei, aitäh." if condition == "declined" else CONSENT_TEXT
         )
         result = await run_demo_turn(
             session,
@@ -167,14 +165,14 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
                 ]
                 == "backend-hold"
             )
-        elif condition in {"uncertain", "cancel"}:
-            assert not contexts, (
-                "trusted terminal state unnecessarily requested the model"
-            )
+        elif condition in {"uncertain", "cancel", "declined"}:
+            assert (
+                not contexts
+            ), "trusted terminal state unnecessarily requested the model"
             assert state.pending is None
             if condition == "uncertain":
                 assert state.mutation_uncertain and result["booking_changes"] == []
-        elif condition in {"declined", "expired"}:
+        elif condition == "expired":
             assert contexts[0]["pending"] is None
         if condition == "uncertain":
             assert result["outcome"] == "unknown_outcome"

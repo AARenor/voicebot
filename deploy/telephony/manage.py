@@ -56,6 +56,9 @@ def environment(source):
         "AZURE_EN_VOICE",
         "AZURE_EN_LANG",
         "VOICEBOT_TELEPHONE_LANGUAGE",
+        "VOICEBOT_SPEAKING_STYLE",
+        "VOICEBOT_SPEECH_RATE",
+        "VOICEBOT_RECAP_RATE",
         "STAY_STATE_DB",
         "STAY_DEMO_WRITES",
     ):

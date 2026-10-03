@@ -32,6 +32,8 @@ def test_english_voice_and_mode_survive_trusted_environment_copy():
         EASY_DEMO_WRITES="1", EASY_STATE_DB="/data/easy-booking.db",
         VOICEBOT_TELEPHONE_LANGUAGE="en", AZURE_EN_VOICE="en-GB-SoniaNeural",
         AZURE_EN_LANG="en-GB",
+        VOICEBOT_SPEAKING_STYLE="neutral", VOICEBOT_SPEECH_RATE="1.0",
+        VOICEBOT_RECAP_RATE="0.92",
     )
     inspected = [{
         "Config": {"Env": [key + "=" + value for key, value in values.items()]},
@@ -43,9 +45,12 @@ def test_english_voice_and_mode_survive_trusted_environment_copy():
     assert env["AZURE_EN_VOICE"] == "en-GB-SoniaNeural"
     assert env["AZURE_EN_LANG"] == "en-GB"
     assert env["VOICEBOT_TELEPHONE_LANGUAGE"] == "en"
+    assert env["VOICEBOT_SPEAKING_STYLE"] == "neutral"
+    assert env["VOICEBOT_SPEECH_RATE"] == "1.0"
+    assert env["VOICEBOT_RECAP_RATE"] == "0.92"
     assert env["VOICEBOT_DATA_VOLUME"] == "existing-booking-volume"
     compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
-    for key in ("AZURE_EN_VOICE", "AZURE_EN_LANG", "VOICEBOT_TELEPHONE_LANGUAGE"):
+    for key in ("AZURE_EN_VOICE", "AZURE_EN_LANG", "VOICEBOT_TELEPHONE_LANGUAGE", "VOICEBOT_SPEAKING_STYLE", "VOICEBOT_SPEECH_RATE", "VOICEBOT_RECAP_RATE"):
         assert key + ": ${" + key in compose
 
 
