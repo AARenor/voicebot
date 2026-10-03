@@ -16,7 +16,7 @@ async (page) => {
       require(redirect.status() === 301, `Legacy hotel returned ${redirect.status()}, expected permanent redirect: ${path}`);
       require(redirect.headers().location === destination, `Wrong hotel redirect destination: ${path}`);
       await tab.goto(url, {waitUntil: 'networkidle', timeout: 30000});
-      require(tab.url() === destination && /Meretuule/.test(await tab.title()), `Legacy hotel redirect loop or wrong site: ${path}`);
+      require(tab.url() === destination && /restoran|restaurant|ресторан/i.test(await tab.title()), `Legacy hotel redirect loop or wrong site: ${path}`);
       legacyRedirects.push({path, status: redirect.status(), destination});
     }
     const response = await tab.goto('https://meretuule.arleserver.cfd/', {
@@ -25,10 +25,9 @@ async (page) => {
     require(response?.status() === 200, `Meretuule root returned ${response?.status()}, expected 200`);
     const title = await tab.title();
     const headings = await tab.locator('h1').allTextContents();
-    require(title === 'Meretuule — restorani demo', `Wrong public restaurant title: ${title}`);
-    require(!/Vastuvõtulaud/i.test(title), 'Public domain served the operator dashboard');
+    require(/restoran|restaurant|ресторан/i.test(title), `Restaurant reception did not load: ${title}`);
     require(tab.url() === 'https://meretuule.arleserver.cfd/', 'Website root redirected elsewhere');
-    const homepageLinks = await tab.locator('a.wordmark, a.footer-brand').evaluateAll(elements =>
+    const homepageLinks = await tab.locator('a.demo-website-link').evaluateAll(elements =>
       elements.map(el => el.getAttribute('href'))
     );
     require(homepageLinks.length === 2 && homepageLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Website homepage links did not use the exact canonical Meretuule root');
@@ -49,13 +48,14 @@ async (page) => {
       if (version) require(sha256.slice(0, 12) === version, `Stale versioned asset: ${url}`);
       assets.push({url, status: asset.status(), bytes: content.length, sha256});
     }
-    await tab.waitForFunction(() => document.querySelectorAll('.table-card').length > 0);
-    require(await tab.locator('#menu-list li').count() > 0, 'Public restaurant menu did not load');
-    const operatorLinks = await tab.locator('a[href]').evaluateAll(elements =>
-      elements.filter(el => /book=|demo-section/.test(el.href) || /operaatori töölaud/i.test(el.textContent || '')).map(el => el.href)
-    );
-    require(operatorLinks.length > 0, 'Website is missing its management links');
-    require(operatorLinks.every(href => new URL(href).origin === 'https://robot.arleserver.cfd'), 'A management link stayed on the public website');
+    await tab.waitForFunction(() => document.querySelectorAll('#menu-list li').length > 0);
+    require(await tab.locator('#restaurant-name').textContent() === 'Meretuule Demo Restaurant', 'Published restaurant name did not load');
+    require((await tab.locator('#opening-hours').textContent()).length > 0, 'Restaurant opening hours did not load');
+    require((await tab.locator('#restaurant-policies').textContent()).length > 0, 'Restaurant policies did not load');
+    require(await tab.locator('#reservation-prepare').isDisabled(), 'Unauthenticated reservation controls are active');
+    const information = await tab.request.get('https://meretuule.arleserver.cfd/api/public/restaurant');
+    const property = await information.json();
+    require(information.status() === 200 && property.business_type === 'restaurant' && property.synthetic === true, 'Public data is not the restaurant business');
     for (const host of ['meretuule.arleserver.cfd', 'robot.arleserver.cfd']) {
       const denied = await tab.request.get(`https://${host}/api/bookings`);
       require(denied.status() === 403, `${host} exposed private bookings`);
@@ -66,25 +66,28 @@ async (page) => {
     require(robot.status() === 200 && robotHtml.includes('Restaurant reception'), 'Robot root no longer serves the restaurant dashboard');
     require(robotHtml.includes('id="reservation-party"') && robotHtml.includes('id="operator-token"'), 'Robot root did not serve table-reservation/operator controls');
     require(!robotHtml.includes('id="booking-kind-stay"') && !robotHtml.includes('id="booking-kind-slot"'), 'Robot retained the hotel/spa composer');
-    const dashboardHotelLinks = await tab.evaluate(html =>
-      [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a[href="https://meretuule.arleserver.cfd/"]')].map(el => el.getAttribute('href')),
+    const dashboardRestaurantLinks = await tab.evaluate(html =>
+      [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.demo-website-link')].map(el => el.getAttribute('href')),
     robotHtml);
-    require(dashboardHotelLinks.length === 2 && dashboardHotelLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Dashboard hotel links did not use the exact canonical Meretuule root');
+    require(dashboardRestaurantLinks.length === 2 && dashboardRestaurantLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Management restaurant links did not use the exact canonical Meretuule root');
     const health = await tab.request.get('https://robot.arleserver.cfd/health');
     require(health.status() === 200 && (await health.json()).ok === true, 'Robot health check failed');
     const management = await page.context().newPage();
+    management.on('pageerror', error => errors.push(error.message));
     try {
-      await management.goto('https://robot.arleserver.cfd/', {waitUntil: 'networkidle', timeout: 30000});
-      const demoLinks = management.locator('a[href="https://meretuule.arleserver.cfd/"]');
-      require(await demoLinks.count() === 2, 'Dashboard demo links do not point directly to the public root');
-      await demoLinks.first().click();
-      await management.waitForURL('https://meretuule.arleserver.cfd/');
-      require(await management.title() === 'Meretuule — restorani demo', 'Dashboard demo link did not open the restaurant website');
+      for (const index of [0, 1]) {
+        await management.goto('https://robot.arleserver.cfd/', {waitUntil: 'networkidle', timeout: 30000});
+        const demoLinks = management.locator('a.demo-website-link');
+        require(await demoLinks.count() === 2, 'Management demo links do not point directly to the public root');
+        await demoLinks.nth(index).click();
+        await management.waitForURL('https://meretuule.arleserver.cfd/');
+        require(/restoran|restaurant|ресторан/i.test(await management.title()), 'Management demo link did not open the restaurant website');
+      }
     } finally { await management.close(); }
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,
-      tables: await tab.locator('.table-card').count(), menuItems: await tab.locator('#menu-list li').count(),
-      homepageLinks, dashboardHotelLinks, operatorLinks, legacyRedirects, dashboardDemoLinkVerified: true,
+      menuItems: await tab.locator('#menu-list li').count(), tables: property.restaurant.tables.length,
+      homepageLinks, dashboardRestaurantLinks, legacyRedirects, dashboardDemoLinkVerified: true, dashboardDemoLinksVerified: 2,
       privateRoutesDenied: true, robotHealthy: true, errors};
   } finally {
     await tab.close();

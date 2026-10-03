@@ -8,7 +8,7 @@
       content="Restaurant voice assistant and fictional table-reservation demo."
     />
     <title>Voicebot · Restaurant reception</title>
-    <link rel="stylesheet" href="/restaurant.css?v=9a9b181d01e5" />
+    <link rel="stylesheet" href="/restaurant.css?v=c18283fd3108" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script src="/speech-playback.js?v=27698f675462" defer></script>
     <script src="/restaurant.js?v=c8f5c53df053" defer></script>
@@ -19,6 +19,9 @@
     <header class="site-header">
       <a class="brand" href="#main"
         >voicebot <span data-copy="brand">Restorani vastuvõtt</span></a
+      >
+      <a class="demo-website-link" href="https://meretuule.arleserver.cfd/"
+        >Restorani demo <span aria-hidden="true">↗</span></a
       >
       <span id="connection-state" class="connection" role="status"
         >Ühendamata</span
@@ -31,7 +34,6 @@
           <p data-copy="intro">
             Üks abiline laua leidmiseks ja külaliste küsimustele vastamiseks.
           </p>
-          <a href="https://meretuule.arleserver.cfd/">Meretuule avalik restoranidemo ↗</a>
         </div>
         <div class="language">
           <label for="demo-language" data-copy="language"
@@ -384,8 +386,9 @@
       </section>
     </main>
     <footer>
-      <a href="https://meretuule.arleserver.cfd/">Meretuule avalik restoranidemo ↗</a>
       <span data-copy="footer">Restorani demo · Eesti, English, Русский</span
+      ><a class="demo-website-link" href="https://meretuule.arleserver.cfd/"
+        >Vaata restorani demo <span aria-hidden="true">↗</span></a
       ><span id="service-status" role="status"></span>
     </footer>
   </body>

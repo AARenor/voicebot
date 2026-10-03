@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const {chromium}=require(process.argv[2] || 'playwright');
 const root=path.resolve(__dirname,'..');
 process.chdir(root);
-const available=['dashboard_browser_checks.js','booking_browser_checks.js','hotel_browser_checks.js','voice_browser_checks.js','microphone_race_browser_checks.js','english_demo_browser_checks.js','modern_voice_browser_checks.js','streaming_voice_browser_checks.js','restaurant_browser_checks.js','restaurant_public_browser_checks.js'];
+const available=['dashboard_browser_checks.js','booking_browser_checks.js','hotel_browser_checks.js','voice_browser_checks.js','microphone_race_browser_checks.js','english_demo_browser_checks.js','modern_voice_browser_checks.js','streaming_voice_browser_checks.js','restaurant_browser_checks.js'];
 const checks=process.argv.slice(4);
 if(!checks.length)checks.push(...available);
 if(checks.some(name=>!available.includes(name)))throw new Error('expected a local browser check filename');
@@ -38,11 +38,11 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   try {
     const regular=await startFixture('create_app');
     const streaming=checks.includes('streaming_voice_browser_checks.js') ? await startFixture('create_streaming_app') : regular;
-    const restaurant=checks.some(name=>name.startsWith('restaurant_')) ? await startFixture('tests.restaurant_browser_fixture:create_app') : regular;
+    const restaurant=checks.includes('restaurant_browser_checks.js') ? await startFixture('tests.restaurant_browser_fixture:create_app') : regular;
     fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
     browser=await chromium.launch({headless:true,...(channel?{channel}:{})});
     for(const name of checks){
-      const origin=name.startsWith('restaurant_') ? restaurant.origin : name==='streaming_voice_browser_checks.js' ? streaming.origin : regular.origin;
+      const origin=name==='restaurant_browser_checks.js' ? restaurant.origin : name==='streaming_voice_browser_checks.js' ? streaming.origin : regular.origin;
       const context=await browser.newContext({serviceWorkers:'block'}), external=[];
       await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin && url.protocol!=='blob:'){external.push(url.origin);return route.abort('blockedbyclient');}return route.continue();});
       const page=await context.newPage();

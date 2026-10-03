@@ -7,6 +7,9 @@ async page => {
   });
   await page.setViewportSize({width:1440,height:1000});
   await page.goto('http://127.0.0.1:8766/', {waitUntil:'networkidle'});
+  assert.deepEqual(await page.locator('a.demo-website-link').evaluateAll(links=>links.map(link=>link.href)),[
+    'https://meretuule.arleserver.cfd/', 'https://meretuule.arleserver.cfd/'
+  ]);
   assert(await page.locator('#demo-start').isDisabled());
   assert(await page.locator('#reservation-prepare').isDisabled());
   assert.equal(await page.locator('#menu-list li').count(),3);
@@ -102,6 +105,9 @@ async page => {
   await page.setViewportSize({width:390,height:844});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile horizontal overflow');
   await page.screenshot({path:'output/playwright/restaurant-mobile.png',fullPage:true});
+  await page.setViewportSize({width:320,height:844});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'320px horizontal overflow');
+  await page.setViewportSize({width:390,height:844});
   // A late private reply must not restore data after disconnect.
   let release; const gate=new Promise(resolve=>{release=resolve;});
   await page.route('**/api/bookings?**',async route=>{await gate;await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({items:[],has_more:false})}).catch(()=>{});});

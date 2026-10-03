@@ -13,9 +13,12 @@
   branch as an audit record; it is **not** the deployment source. Only our own
   unfinished merge was aborted before creating a clean worktree on master.
   No other owner's uncommitted source or goal was overwritten.
-- The public presentation reuses the earlier committed Meretuule restaurant
-  wording/design, existing local fonts/CSS and the current restaurant DTO.
-  Archived hotel/spa assets remain separate for explicit rollback mode.
+- Concurrent published domain fix `36a9c3d` supplies the existing authored
+  restaurant reception at the canonical Meretuule root and two robot demo links.
+  Its ingress removes the obsolete root-to-`/hotel` rewrite. This implementation
+  is reused without a new public design or parallel hotel presentation. Our own
+  undeployed alternative renderer was removed; its audit history remains in
+  `0c457a4`. Archived hotel fixtures remain separate for explicit rollback mode.
 - Published telephone FAQ `7df7edb` contributes the reviewed unsupported-note
   and food/takeaway/delivery answers. Current explicitly fictional menu data and
   allergen declarations remain authoritative; no real menu or allergy safety is
@@ -25,8 +28,11 @@
 
 - Four failing-first public-route/link checks exposed restaurant `/hotel` 410
   behind the existing public-root rewrite and zero dashboard demo links. The
-  selected public renderer now works on the guest host while direct robot
-  `/hotel` stays 410. Both operator links use the canonical Meretuule root.
+  first alternative renderer was verified but not deployed. The subsequent
+  published domain fix already solves these defects with the authored restaurant
+  UI; normal merge preserves it and keeps `/hotel` retired. Its regression first
+  failed against our alternative renderer, then was restored to the published
+  contract. Both operator links use the canonical Meretuule root.
 - Twelve real-constructor/HTTP failures exposed missing published restaurant
   answers. The existing shared bank loader/matcher is used inside the selected
   restaurant subclass, respecting final transcripts and explicit language tags.
@@ -38,7 +44,7 @@
   in caller order. The full suite also caught an overbroad hotel-room inquiry;
   the original domain refusal was retained and freshly verified.
 
-## Executed verification
+## Initial executed verification (before concurrent domain merge)
 
 ```sh
 env -i PATH=/usr/bin:/bin HOME=/tmp/opencode LANG=C.UTF-8 \
@@ -76,3 +82,17 @@ Deployment and fresh live source/URL/storage/provider checks are recorded in the
 activation follow-up, not inferred from local tests. No real restaurant booking,
 PSTN/physical-microphone acceptance, allergy safety, kitchen notification, food
 ordering or payment acceptance is claimed.
+
+## Concurrent publication integration
+
+Publication was safely stopped by the ancestor gate when master advanced to
+`36a9c3d`. No force push, overwrite, routing replacement or deployment occurred.
+Its authored presentation, canonical links/styles, read-only public acceptance
+and disabled unauthenticated booking controls are retained. Installed ingress
+and release-controller source already match the published repository files;
+no self-upgrade or extra installation is required.
+
+The goal remains active pending latest-master integration, fresh full-suite and
+browser verification, independent Codex review, normal publication and live
+source/storage/private-speech acceptance. Earlier counts are historical rather
+than evidence for a later untested release.
