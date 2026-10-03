@@ -40,8 +40,10 @@ from .booking_faq import (
     CLARIFY as FAQ_CLARIFY,
     MISSING_FACTS,
     NO_BOOKING,
+    RESTAURANT_FAQ_PATH,
     action_claim,
     booking_input,
+    load_faq,
     match_question,
     normalize as normalize_question,
     question_language,
@@ -819,13 +821,17 @@ class CallTools:
         if is_final is not True:
             return
         text = text if isinstance(text, str) else ""
+        faq_bank = (
+            load_faq(RESTAURANT_FAQ_PATH)
+            if getattr(self, "business", "legacy") == "restaurant" else None
+        )
         selected = (
             language
             if language is not None and language in LANGUAGES
             else select_language(text, detected_language, self.language)
         )
         if language is None and detected_language is None:
-            selected = question_language(text, selected)
+            selected = question_language(text, selected, entries=faq_bank)
         # A saved guest name is a selection, not a request to change language.
         named_fixture = " ".join(text.casefold().strip(" .!?").split()) in {
             *self.demo["guests"],
@@ -849,7 +855,7 @@ class CallTools:
         self.cancel_approval = None
         self._spa_hours_inquiry = False
         self.faq_entries = (
-            match_question(text, selected) if not self.unsupported_language else ()
+            match_question(text, selected, entries=faq_bank) if not self.unsupported_language else ()
         )
         if self.faq_entries and all(entry["id"] in {"booking-025", "booking-026"} for entry in self.faq_entries):
             self.conversation.focus = "hours"
