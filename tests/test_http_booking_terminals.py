@@ -11,6 +11,7 @@ from app.booking.tools import Dispatcher
 from app.providers.errors import RateLimitedError
 from app.languages import CONSENT
 from tests.test_product_demo import (
+    AUTH,
     SimpleLlm,
     call,
     install_backend,
@@ -72,7 +73,13 @@ def test_prepare_consent_cancel_use_one_model_request(client, tmp_path, kind, la
     )
     assert model.calls == 1
 
-    confirmed = send(client, session, CONSENT[language], language=language).json()
+    confirmed = send(
+        client,
+        session,
+        CONSENT[language],
+        language=language,
+        recap_delivery_id=prepared["recap_delivery_id"],
+    ).json()
     assert confirmed["outcome"] == "tools_ok" and confirmed["warnings"] == []
     assert len(confirmed["booking_changes"]) == 1
     assert confirmed["booking_changes"][0]["action"] == "confirmed"
@@ -130,12 +137,16 @@ def test_failed_recap_audio_does_not_enable_terminal_confirmation(client, tmp_pa
 
     client.app.state.stack.update(llm_primary=Planning(), tts=FailedSpeech())
     session = start(client)
-    assert send(client, session, "Palun valmista testbroneering ette.").json()[
-        "tts_failed"
-    ]
-    assert client.app.state.demo_sessions.sessions[session].tools.pending is None
+    prepared = send(client, session, "Palun valmista testbroneering ette.").json()
+    assert prepared["tts_failed"] and prepared["recap_delivery_id"]
+    state = client.app.state.demo_sessions.sessions[session].tools
+    assert state.pending and not state.pending["delivery"]
     client.app.state.stack["llm_primary"] = SimpleLlm(error=RateLimitedError("PRIVATE"))
-    result = send(client, session, "Jah, kinnitan.").json()
+    result = client.post(
+        "/api/turn",
+        json={"session_id": session, "text": "Jah, kinnitan."},
+        headers=AUTH,
+    ).json()
     assert result["booking_changes"] == [] and not records and not writes
 
 

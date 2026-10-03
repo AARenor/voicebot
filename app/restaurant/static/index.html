@@ -10,8 +10,9 @@
     <title>Voicebot · Restaurant reception</title>
     <link rel="stylesheet" href="/restaurant.css?v=9a9b181d01e5" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <script src="/restaurant.js?v=707a1c781578" defer></script>
-    <script src="/speech-capture.js?v=ddcb97f2030c" defer></script>
+    <script src="/speech-playback.js?v=27698f675462" defer></script>
+    <script src="/restaurant.js?v=c8f5c53df053" defer></script>
+    <script src="/speech-capture.js?v=09feffb8cdd4" defer></script>
   </head>
   <body>
     <a class="skip" href="#main" data-copy="skip">Hüppa sisu juurde</a>
@@ -129,6 +130,14 @@
             data-aria="transcript"
           ></div>
           <audio id="demo-audio" controls hidden data-aria="audio"></audio>
+          <label for="demo-voice" data-copy="voice">Abilise hääl</label>
+          <select id="demo-voice" aria-describedby="demo-voice-help">
+            <option value="azure">Azure Neural</option>
+          </select>
+          <p id="demo-voice-help" class="helper" data-copy="voiceSelectorHelp">
+            Vali hääl enne vestlust.
+          </p>
+          <p id="demo-voice-result" class="status" role="status"></p>
           <button
             id="demo-recap-read"
             type="button"

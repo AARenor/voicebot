@@ -140,7 +140,7 @@ async function toggleMic() {
     context = null;
   state.micStarting = true;
   controls();
-  $("demo-audio").pause();
+  stopAudio(true);
   status("demo-status", demoCopy().micPermission);
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -210,7 +210,8 @@ async function toggleMic() {
       if (
         mic.frames >= Math.floor(context.sampleRate * 15) ||
         (mic.speechFrames >= context.sampleRate * 0.2 &&
-          mic.silenceFrames >= context.sampleRate * 1.5)
+          mic.silenceFrames >=
+            context.sampleRate * (state.endpointingMs / 1000))
       )
         toggleMic();
     };

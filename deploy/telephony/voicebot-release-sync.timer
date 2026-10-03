@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for a successfully deployed Voicebot release every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+Unit=voicebot-release-sync.service
+
+[Install]
+WantedBy=timers.target

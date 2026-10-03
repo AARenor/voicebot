@@ -4,4 +4,7 @@
 fastapi==0.142.1
 uvicorn==0.54.0
 httpx==0.28.1
+# Optional modern demo providers: documented dialogue WebSocket and refreshing ADC.
+websockets==17.1
+google-auth[requests]==2.59.1
 tzdata==2026.4 ; sys_platform == "win32"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Synchronize Voicebot telephone services to the healthy published web release
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=arle
+Group=arle
+WorkingDirectory=/home/arle
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/lib/voicebot-release-sync/release_sync.py --repository /home/arle/voicebot --state-directory /home/arle/.local/share/voicebot-release-sync
+TimeoutStartSec=4800
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

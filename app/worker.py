@@ -329,7 +329,7 @@ class TelephoneAgent(Agent):
             async def checked():
                 yield normalize_estonian_speech(reply, language)
 
-            frames = False
+            frames = voiced = False
             # Azure snapshots options per sentence. Keep every sentence in an
             # interrupted stream on its voice until cancellation completes.
             async with self._tts_voice_lock:
@@ -346,10 +346,11 @@ class TelephoneAgent(Agent):
                     if not frames:
                         frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
                     frames = True
+                    voiced = voiced or any(frame.data)
                     yield frame
-            if not frames:
-                raise RuntimeError("speech produced no audio")
-            complete = frames
+            if not voiced:
+                raise RuntimeError("speech_audio_empty")
+            complete = True
             if (
                 complete
                 and pending
@@ -684,7 +685,8 @@ def on_provider_error(failed, event, *, state=None):
 
 server = AgentServer(
     num_idle_processes=2,
-    drain_timeout=30,
+    # Cover setup, the bounded ten-minute call and independent resource cleanup.
+    drain_timeout=900,
     session_end_timeout=10,
     shutdown_process_timeout=40,
     setup_fnc=prewarm,

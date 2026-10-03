@@ -22,6 +22,18 @@ verification remain pending.
 
 ## Existing host
 
+The multilingual booking FAQ update adds `data/demo/booking-faq.json` and shared
+server routing for 50 questions in all three languages. Web code deploys from
+GitHub as before. Hosts using the current
+[release synchronizer](../../deploy/telephony/README.md#automatic-release-synchronization)
+update the native services after the matching web release is healthy and calls
+are idle. Otherwise, use the manual rebuild/restart commands below. Verify the
+running revision before checking phone behaviour. No new provider, dependency or
+environment variable is required. Check alternate question wording, multiple
+questions, fresh catalogue facts, unknown-policy disclosure and clarification of
+unsupported subquestions.
+Confirm that FAQs and mixed question/confirmation sentences never authorize writes.
+
 Use the existing `/home/arle/voicebot` checkout. Inspect its branch and worktree
 before updating; preserve any local work. Update `master` with a fast-forward
 only. Identify the current trusted web container as `VOICEBOT_WEB_CONTAINER`.

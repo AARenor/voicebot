@@ -12,6 +12,7 @@ import pytest
 
 from app.booking.demo_stay import DemoStayAdapter
 from app.booking.tools import Dispatcher
+from app.booking_faq import MISSING_FACTS
 from app.languages import (
     CONSENT,
     ENGLISH,
@@ -434,7 +435,13 @@ def test_authenticated_http_english_booking_uses_same_policy(client, tmp_path):
         "Fictional test booking" in recap["reply"]
         and "Yes, I confirm." in recap["reply"]
     )
-    result = send(client, session, CONSENT["en"], language="en").json()
+    result = send(
+        client,
+        session,
+        CONSENT["en"],
+        language="en",
+        recap_delivery_id=recap["recap_delivery_id"],
+    ).json()
     assert result["reply"] == ENGLISH["confirmed"] and result["booking_ids"] == ["42"]
     cancelled = send(
         client, session, "Please cancel this test booking.", language="en"
@@ -468,6 +475,9 @@ def test_http_english_greetings_and_faq_need_no_model_request(client, question_i
     else:
         entry = CallTools(Slots(), language="en").demo["faq"][question_index]
         question, answer = entry["question_en"], entry["answer_en"]
+        if question_index == 1:
+            # Duration needs a current catalogue, unavailable in this fixture.
+            answer = MISSING_FACTS["en"]
     result = send(client, start(client), question, language="en").json()
     assert result["reply"] == answer and result["warnings"] == []
     assert result["timings_ms"]["llm"] == 0

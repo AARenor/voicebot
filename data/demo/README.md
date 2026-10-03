@@ -2,6 +2,23 @@
 
 `telephone-demo.json` contains a fictional spa profile, three synthetic guests,
 three illustrative appointments, approved fictional FAQ and Estonian call prompts.
+`booking-faq.json` supplies 50 reviewed questions, aliases and replies in Estonian,
+English and Russian. The shared native/HTTP policy recognizes complete questions
+and reviewed alternate wording, including up to three questions in one turn.
+Extra booking commands continue through planning; FAQ text never authorizes a write.
+
+Room/service catalogues, durations, amenities and hours are rendered from fresh
+tool results. Saved research answers and `observed_answer_et` are documentation,
+not a runtime source of catalogue facts. Availability and room quotes still need
+the existing search/planning tools. Booking status uses only this conversation's
+owned result; missing hotel policies are disclosed instead of guessed. An unknown
+question gets a clarification, while unsupported success claims retain the
+established verification warning. Translation templates preserve backend values.
+Matching uses complete reviewed phrases rather than a shared keyword: a Wi-Fi
+password question, breakfast menu or hotel-hours question cannot silently become
+a different amenity or spa-hours answer. Short booking details continue to the
+existing planner.
+
 Email uses the reserved `example.invalid` domain; phone numbers use the fictional
 NANPA 202-555-01xx range. Never send email, dial or text these fixtures.
 
@@ -57,3 +74,11 @@ docker exec -i livekit-worker-1 python - < deploy/telephony/booking_probe.py
 Public telephone calling still requires the DIDWW number and public SIP/RTP
 route. See [telephone runbook](../../deploy/telephony/README.md) and
 [configured backend dataset](../../deploy/easyappointments/README.md).
+# Restaurant demo
+
+`restaurant-demo.json` is the current validated fictional venue knowledge and
+table capacity configuration. Restaurant mode is the default; ET/EN/RU menu,
+hours, policies and allergy wording must all be present. See the
+[restaurant operations guide](../../docs/operations/restaurants.md).
+Earlier hotel/spa files are retained for explicit rollback and historical
+fixtures. They are not the restaurant's advertised knowledge.

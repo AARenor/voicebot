@@ -10,13 +10,14 @@ import pytest
 
 from app.booking.easyappointments import EasyAppointmentsAdapter
 from app.booking.tools import Dispatcher
+from app.booking_faq import MISSING_FACTS
 from app.telephone import CallTools, FALLBACK, GREETING
 from tests.test_product_demo import (
     AUTH,
     BookingLlm,
     SimpleLlm,
     call,
-    client,
+    client as client,
     install_backend,
     send,
     start,
@@ -83,6 +84,9 @@ def test_http_approved_faq_uses_canonical_answer_without_model_paraphrase(
     session = start(client)
     state = client.app.state.demo_sessions.sessions[session].tools
     expected = state.demo["faq"][faq_index]["answer_et"]
+    if faq_index == 1:
+        # Never substitute the saved duration when no live catalogue is available.
+        expected = MISSING_FACTS["et"]
 
     response = send(client, session, question)
     assert response.status_code == 200
@@ -177,15 +181,20 @@ def test_http_faq_invalidates_a_pending_booking_instead_of_confirming_it(
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    prepared = send(client, session, "Soovin testbroneeringut")
-    assert prepared.status_code == 200 and prepared.json()["recap_delivery_id"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200 and preparation.json()["recap_delivery_id"]
     state = client.app.state.demo_sessions.sessions[session].tools
     assert state.pending and not state.pending["delivery"]
     client.app.state.stack["llm_primary"] = SimpleLlm(
         "Sinu testbroneering on edukalt loodud."
     )
 
-    result = send(client, session, "Kas see on päris spaa?").json()
+    result = send(
+        client,
+        session,
+        "Kas see on päris spaa?",
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()
     assert result["reply"] == state.demo["faq"][0]["answer_et"]
     assert state.pending is None
     assert send(client, session, CONSENT).json()["reply"] == UNVERIFIED
@@ -202,8 +211,14 @@ def test_http_old_booking_does_not_license_a_zero_tool_new_booking_claim(
     day, records, writes = install_backend(client, tmp_path)
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
-    assert send(client, session, CONSENT).json()["booking_ids"] == ["42"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200
+    assert send(
+        client,
+        session,
+        CONSENT,
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()["booking_ids"] == ["42"]
     client.app.state.stack["llm_primary"] = SimpleLlm(
         "Broneerisin sulle uue aja reedeks kell 11:00."
     )
@@ -620,8 +635,14 @@ def test_http_committed_delete_timeout_stays_unknown_next_turn_and_blocks_retry(
     model = BookingLlm(day)
     client.app.state.stack["llm_primary"] = model
     session = start(client)
-    assert send(client, session, "Soovin testbroneeringut").status_code == 200
-    assert send(client, session, CONSENT).json()["booking_ids"] == ["42"]
+    preparation = send(client, session, "Soovin testbroneeringut")
+    assert preparation.status_code == 200
+    assert send(
+        client,
+        session,
+        CONSENT,
+        recap_delivery_id=preparation.json()["recap_delivery_id"],
+    ).json()["booking_ids"] == ["42"]
     assert records
 
     class CancelLlm:

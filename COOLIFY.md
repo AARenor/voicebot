@@ -1,5 +1,22 @@
 # Deploy to Coolify → robot.arleserver.cfd
 
+## Restaurant release — current default
+
+The current product is restaurant reception in ET/EN/RU. Use
+`VOICEBOT_BUSINESS_TYPE=restaurant`, `RESTAURANT_DEMO_WRITES=1` for explicitly
+fictional reservations, `RESTAURANT_STATE_DB=/data/restaurant-booking.db` and
+`CALLS_DB=/data/calls.db`. Mount the existing persistent `/data` volume in both
+web and native worker containers. EasyAppointments credentials are optional in
+restaurant mode. An absent restaurant write flag inherits the prior authorized
+`EASY_DEMO_WRITES` setting; an explicit `0` disables table writes.
+
+The root page serves restaurant voice and table controls. `/hotel` returns 410
+in restaurant mode; existing ingress routes for the earlier guest website need
+separate operator review. See [restaurant configuration, deployment and
+rollback](docs/operations/restaurants.md). The older hotel/spa settings below
+are rollback and historical deployment context. Voice provider settings and
+the separate media worker deployment still apply to the restaurant pipeline.
+
 Dashboard + API in one container. Coolify terminates TLS and proxies to
 port 8000. No secrets are baked into the image (see `.dockerignore`).
 
@@ -116,8 +133,15 @@ running that revision. A successful creation ping is not deployment proof;
 HTTP 200 alone is also insufficient because rejected signatures return a failed
 result with HTTP 200. After deployment, verify health plus the existing `/data`
 mount and journal counts (see Persistent Storage requirements above).
-This hook deploys only the web/API application;
-the separately deployed telephone and booking services remain unchanged.
+The hook deploys the web/API application. On the existing Arle host,
+`voicebot-release-sync.timer` then synchronizes the native worker and Twilio
+bridge to the same healthy published `master` revision. It checks every minute,
+waits while voice rooms are active, preserves the shared journal and existing
+bridge credentials, and never restarts the booking or media infrastructure.
+See the [telephone release pipeline](deploy/telephony/README.md#automatic-release-synchronization).
+Only pushed/merged `master` changes deploy; uncommitted work and other branches
+remain outside production. A `[skip cd]` documentation push does not create a
+new web release, so synchronization waits for the next ordinary deployment.
 
 ## 4. Verify
 
@@ -145,6 +169,11 @@ docker run --rm -p 8000:8000 -e OPERATOR_TOKEN=demo-token voicebot:local
 - The [natural conversation profile](docs/operations/natural-conversation.md)
   shares voice pacing and pronunciation across HTTP/native speech. Browser
   replies use high-fidelity 48 kHz / 96 kbit/s MP3; native PCM remains 24 kHz.
+- Optional [modern website voice profiles](docs/operations/modern-voices.md)
+  use server-only provider credentials and a locked session selector. Azure
+  remains the default/fallback. Incremental MP3 playback improves buffering on
+  supported browsers; Google REST stays explicitly buffered. An available
+  configuration does not prove live audio quality or telephone activation.
 - Mutations, demo sessions, `/api/turn`, `/api/calls`, `/api/bookings` and
   `/api/catalogue` require operator authorization; responses/errors are `no-store`.
   The operator token exists only in page memory; logout clears private content,

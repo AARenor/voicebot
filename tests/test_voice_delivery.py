@@ -9,7 +9,7 @@ from tests.test_product_demo import (
     AUTH,
     CONSENT,
     BookingLlm,
-    client,
+    client as client,
     install_backend,
     start,
 )
@@ -101,9 +101,15 @@ def test_stale_foreign_or_expired_receipt_cannot_authorize_a_write(
         )["ok"]
     else:
         session.tools.pending["expires_at"] = 0
+    target = client.app.state.demo_sessions.sessions[session_id]
+    serial = target.tools._turn_serial
+    history = list(target.history)
     result = post(client, session_id, CONSENT, receipt)
-    assert result.status_code == 200
-    assert not records and not writes and not result.json()["booking_changes"]
+    assert result.status_code == 409
+    assert result.json() == {"detail": "recap_delivery_expired_or_unknown"}
+    assert result.headers["Cache-Control"] == "no-store"
+    assert target.tools._turn_serial == serial and target.history == history
+    assert not records and not writes
 
 
 @pytest.mark.parametrize("receipt", [True, [], {}, "not-a-receipt", "a" * 33])
@@ -143,6 +149,12 @@ def test_unknown_write_with_valid_delivery_stays_sticky_without_blind_retry(
     )
     client.app.state.stack["llm_primary"] = BookingLlm("2099-01-01")
     result = post(client, session_id, CONSENT, prepared["recap_delivery_id"])
+    assert result.status_code == 409
+    assert result.json() == {"detail": "recap_delivery_expired_or_unknown"}
+    state = client.app.state.demo_sessions.sessions[session_id].tools
+    assert state.mutation_uncertain and state.outcome == "write_outcome_unknown"
+    result = post(client, session_id, CONSENT)
+    assert result.status_code == 200
     assert result.json()["outcome"] == "unknown_outcome"
     assert (
         sum(r.method == "POST" and r.url.path.endswith("/appointments") for r in writes)
@@ -222,10 +234,15 @@ def test_stay_http_delivery_receipt_is_preparation_owned_and_preserves_metadata(
         "Ei, ära kinnita." if receipt_kind == "negative" else CONSENT,
         receipt,
     )
-    assert result.status_code == 200
+    rejected = receipt_kind in {"foreign", "stale", "expired"}
+    assert result.status_code == (409 if rejected else 200)
+    if rejected:
+        assert result.json() == {"detail": "recap_delivery_expired_or_unknown"}
     booked = asyncio.run(stay.get_operator_bookings())["items"]
     if receipt_kind != "valid":
-        assert not booked and not result.json()["booking_changes"]
+        assert not booked
+        if not rejected:
+            assert not result.json()["booking_changes"]
         return
     assert len(booked) == 1
     change = result.json()["booking_changes"][0]

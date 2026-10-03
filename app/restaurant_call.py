@@ -345,6 +345,11 @@ class RestaurantCallTools(CallTools):
     def available_tools(self):
         return self.conversation_tools()
 
+    def faq_response(self, *, allow_actions=True):
+        # Reviewed hotel/spa FAQs belong to the rollback mode. Restaurant facts
+        # are selected by trusted_restaurant_response from this venue's data.
+        return None
+
     @property
     def greeting(self):
         return COPY[self.language]["greeting"]
@@ -398,6 +403,9 @@ class RestaurantCallTools(CallTools):
         if kwargs.get("is_final", True) is not True:
             return
         self._booking_inquiry = None
+        self.faq_entries = ()
+        self._faq_unmatched = False
+        self._legacy_faq_answer = None
         self._spa_hours_inquiry = False
         self._restaurant_alternatives = None
         self._restaurant_focus = None

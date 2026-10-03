@@ -1,66 +1,38 @@
-# Voicebot — fictional Estonian hotel and spa demo
+# Restaurant voicebot — Estonian, English and Russian
 
-LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
-**1.6.0**. The dashboard reads actual provider bookings and offers a protected
-text/microphone demo, direct spa and room booking, and a public hotel pitch at
-`https://meretuule.arleserver.cfd/`. Room inventory is a finite, persistent
-fictional PMS; Easy!Appointments
-continues to supply spa services, working plans and appointment availability.
-Only fictional guests and approved fictional FAQ data.
-Spoken writes require an owned hold, a delivered recap and subsequent explicit
-consent. Model prose is not booking evidence.
+Restaurant reception is the default business pipeline. The assistant collects a
+reservation date, exact local arrival time and total guest count, assigns a
+suitable table, reads the canonical recap and waits for explicit consent before
+confirmation. Cancellation is limited to the caller's owned reservation.
 
-Both voice transports use configurable Groq `openai/gpt-oss-120b` and
-`whisper-large-v3`. Telephone calls automatically detect Estonian, English or
-Russian and reply with Azure Anu, Jenny or Svetlana respectively. English covers the same
-fictional spa/room searches, opening hours, FAQs, recaps, confirmation and
-cancellation. Ambiguous English numeric dates and hours require clarification;
-changing language requires a fresh delivered recap before confirmation. See
-`GROQ_CHAT_MODEL`, `GROQ_STT_MODEL` and `GROQ_MAX_COMPLETION_TOKENS` in
-`.env.example`. Configuration is reported by `/api/status`; it is not evidence
-of an actual successful carrier call. HTTP turns return per-stage timings and
-closed warning codes, and the native worker logs bounded latency summaries.
-The browser demo automatically selects the caller's language. HTTP callers can
-also select `language: "en"` or `language: "ru"` explicitly. Russian uses approved
-FAQ answers, inventory wording and booking recaps; backend names, dates and
-quoted amounts are preserved. Confirmation requires a delivered Russian recap
-followed by `Да, подтверждаю.`; switching language resets recap approval.
-The initial automatic greeting remains Estonian with the English invitation.
-A Russian call uses the cached Estonian apology if the speech provider fails.
-GitHub auto deployment updates the web demo; phone calls require a separate
-native worker rebuild/restart. Russian live-call verification remains pending.
-See the [English telephone runbook](docs/operations/english-telephone.md) for
-voice selection, fixed language modes, worker deployment and live call checks.
-The [deployment handoff](docs/operations/voicebot-release-2026-10-03.md) includes
-the Russian worker rollout.
+Approved restaurant knowledge covers the menu, declared allergens, opening and
+kitchen hours and policies. Routine replies come from validated venue data.
+Unknown prices, allergy safety, accessibility and exceptional requests require
+staff verification. This demo cannot transfer real calls, take payments or place
+food orders. Restaurant specialization uses approved knowledge and conversation
+policy; it does not claim fine-tuned model weights.
 
-Both languages share shorter conversational questions, reviewed social replies,
-focused catalogue answers and configurable Azure speech pacing. Recaps are read
-more slowly, and Estonian dates/times have pronunciation aliases. See the
-[natural conversation runbook](docs/operations/natural-conversation.md) for
-settings, neutral rollback and listening checks, and the
-[local verification report](docs/evidence/2026-10-03-natural-conversation.md).
+**The bundled Meretuule Demo Restaurant and every reservation are fictional.**
+Real restaurant information and a verified production booking connector have not
+been supplied. ET/EN/RU language detection, Azure speech, optional modern voice
+profiles and guarded incremental browser playback are retained. The native
+LiveKit telephone worker selects the same restaurant policy and database.
 
-On `robot.arleserver.cfd`, choose **English** in the **Conversation language**
-selector under **Proovi kõneabilist** before starting. The demo opens with an
-English greeting and uses English recognition, replies and audio for text and
-microphone turns. Its controls, examples and confirmation guidance switch to
-English. End the current conversation to select another language. **Auto** keeps
-the existing automatic language behavior. See the
-[browser English verification](docs/evidence/2026-10-03-browser-english.md).
+On `robot.arleserver.cfd`, select **English**, **Eesti** or **???????**, connect
+with your existing operator token and start **Try the voice assistant**. The
+restaurant form also provides an explicit review, read acknowledgement,
+confirmation and owned cancellation flow. The token stays in page memory.
 
-Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
-The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
-records the earlier defects and live speech failures. The
-[2026-10-03 update](docs/evidence/2026-10-03-voice-and-booking-update.md)
-records the repaired SDK fallback, room/website changes and current verification gaps.
-**This fictional pilot is not production-approved.**
-The first carrier target is the supplied **US Twilio number** over signed HTTPS
-Media Streams, avoiding the missing public SIP/RTP edge. Fresh rotated credentials,
-number webhook activation and a real incoming phone call remain separate gates.
-The alternative [private SIP deployment](deploy/telephony/README.md) is retained.
-See [Twilio environment/deployment and activation](TWILIO.md); no public SIP/RTP
-route is required for that path.
+See the [restaurant operations guide](docs/operations/restaurants.md),
+[restaurant verification report](docs/evidence/2026-10-03-restaurant-pipeline.md)
+and [deployment guide](COOLIFY.md). GitHub web deployment and telephone worker
+rollout are separate; configuration alone does not verify a carrier call.
+The [modern voice guide](docs/operations/modern-voices.md) documents optional
+provider configuration, fallback and streaming limits.
+
+`VOICEBOT_BUSINESS_TYPE=restaurant` is the default. The former hotel/spa mode
+is retained as an explicit rollback with `VOICEBOT_BUSINESS_TYPE=hotel_spa`.
+Historical hotel/spa research and evidence describe that earlier product scope.
 
 ## Layout
 

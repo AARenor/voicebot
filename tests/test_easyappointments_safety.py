@@ -362,8 +362,10 @@ class TestAmbiguousWrites(unittest.TestCase):
             a = make_adapter(handler, os.path.join(d, "j.db"), allow_writes=True)
             sid = seed_slot(a)
             hold = run(a.create_hold(sid))
-            with self.assertRaises(ProviderError):
-                run(a.confirm(hold.hold_id, dict(GUEST), "k-auth-1"))
+            self.assertEqual(
+                run(a.confirm(hold.hold_id, dict(GUEST), "k-auth-1")),
+                {"ok": False, "error": "confirm_failed"},
+            )
 
     def test_restart_replay_without_hold(self):
         import hashlib
@@ -501,8 +503,10 @@ class TestAmbiguousWrites(unittest.TestCase):
             a = make_adapter(handler, db, allow_writes=True)
             sid = seed_slot(a)
             hold = run(a.create_hold(sid))
-            with self.assertRaises(ProviderError):
-                run(a.confirm(hold.hold_id, dict(GUEST), "k-pii-2"))
+            self.assertEqual(
+                run(a.confirm(hold.hold_id, dict(GUEST), "k-pii-2")),
+                {"ok": False, "error": "confirm_failed"},
+            )
             blob = open(db, "rb").read().decode("utf-8", "ignore")
             self.assertNotIn("Mari", blob)
             self.assertNotIn("+3725123456", blob)
@@ -711,11 +715,15 @@ class TestReviewRework(unittest.TestCase):
             a = make_adapter(handler, os.path.join(d, "j.db"), allow_writes=True)
             sid = seed_slot(a)
             hold = run(a.create_hold(sid))
-            with self.assertRaises(ProviderError):
-                run(a.confirm(hold.hold_id, dict(GUEST), "k-svc400"))
+            self.assertEqual(
+                run(a.confirm(hold.hold_id, dict(GUEST), "k-svc400")),
+                {"ok": False, "error": "confirm_failed"},
+            )
             self.assertEqual(calls["customers"], 0)  # validated before side effects
-            with self.assertRaises(ProviderError):
-                run(a.confirm(hold.hold_id, dict(GUEST), "k-svc400"))
+            self.assertEqual(
+                run(a.confirm(hold.hold_id, dict(GUEST), "k-svc400")),
+                {"ok": False, "error": "confirm_failed"},
+            )
             self.assertEqual(calls["customers"], 0)  # failed row replays, no retry
 
     def test_customer_timeout_never_duplicates(self):

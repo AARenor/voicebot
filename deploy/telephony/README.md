@@ -39,7 +39,8 @@ is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
   `voicebot-media-redis` alias avoids a DNS collision with another authenticated
   Redis on the shared Docker network.
 - Worker: `python -m app.worker start`, two call processes, process-local dialogue,
-  VAD endpointing/interruption, no cloud-inference turn detector, 30-second drain.
+  VAD endpointing/interruption, no cloud-inference turn detector, 900-second drain
+  budget covering setup, the bounded call and cleanup.
   Caller arrival is bounded to 30 seconds, conversation to 600 seconds afterward.
 - Final recognition carries Groq's detected language metadata; unsupported
   languages retain the existing safe clarification behavior. Numeric and
@@ -95,10 +96,29 @@ DOCKER_CONFIG=/tmp/opencode/docker-voicebot python3 deploy/telephony/manage.py b
 python3 deploy/telephony/manage.py up --source-container "$VOICEBOT_WEB_CONTAINER"
 ```
 
+To update an **existing** deployment without restarting LiveKit/SIP/Redis, use
+`up --worker-only --source-container "$VOICEBOT_WEB_CONTAINER"` after the build.
+When the existing bridge supplies the agent name, also pass
+`--bridge-source-container voicebot-twilio-twilio-bridge-1`. A mismatched explicit
+website/bridge name fails closed before replacement. The worker retains the
+website's model, ET/EN voices, configured agent name and
+existing persistent volume. SIP dispatch honors that same configured agent name.
+For the separate bridge, validate and update with `--twilio` plus
+`--bridge-source-container voicebot-twilio-twilio-bridge-1`; the helper reuses its
+existing inbound configuration in memory, requires matching media credentials,
+and retains its HTTPS ingress settings. It does not purchase/provision a number
+or copy carrier credentials into the website. Set the website's
+`PUBLIC_PHONE_NUMBER` to the already configured, validated inbound contact when
+it should be displayed; this does not change carrier verification.
+
+Native empty model replies produce a guarded response, and empty/silent synthesis
+uses the independent cached failure audio without granting recap delivery.
+
 Temporary Docker config avoids this host's root-owned buildx activity file; it
 contains no registry login. Config checksums recreate LiveKit when its mounted
-config changes. Deploy after jobs finish; the 40-second Docker stop grace exceeds
-the worker drain. Old `/home/arle/livekit` files remain untouched as an operator
+config changes. Deploy after jobs finish; the 1000-second worker Docker stop grace
+exceeds the SDK drain and both process-cleanup budgets. Old `/home/arle/livekit`
+files remain untouched as an operator
 rollback reference, not the canonical deployment. Do not automatically alternate
 two different manifests against the same project.
 
@@ -107,6 +127,66 @@ session. Rebuild/restart the native worker and verify actual calls before claimi
 Russian telephone readiness. Provider references:
 [Groq speech recognition](https://console.groq.com/docs/speech-to-text) and
 [Azure language support](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support).
+
+## Automatic release synchronization
+
+The signed GitHub `master` webhook deploys the web/API through Coolify first.
+On the existing Arle host, `voicebot-release-sync.timer` checks every minute
+and reconciles only the native worker and Twilio bridge after the website is
+healthy on the published `master` commit. It uses an immutable Git archive,
+not the potentially dirty working tree, and tags the shared media image with
+that full commit. Both services record `voicebot.release` and
+`voicebot.web-source` labels; an already-current run is a no-op.
+
+Language/model/prosody settings come from the trusted web environment using
+the release's existing manager. The bridge keeps its own configured account
+authentication and number in memory, not a stale copy from another service.
+The original web/worker journal volume must match. A running call, different
+web/master revision or concurrent container replacement defers the update.
+Ambiguous/untrusted sources and storage/configuration mismatches fail closed.
+Configuration, build or health failures return nonzero
+without printing Docker output or credentials; the next timer run retries.
+There is no automatic rollback and no recording, booking or paid carrier probe.
+
+The bridge stops new admission during shutdown and waits for admitted media
+handlers instead of cancelling active streams. Its drain is bounded; timeout
+is an error, not successful completion. The worker SDK drain covers the full
+bounded call lifecycle, including a call admitted during an idle-check race.
+The controller verifies the stopped bridge's exit status before replacement;
+a concurrent source change resumes only the unchanged old bridge and defers.
+Stopped/unhealthy owned targets can recover on a later good release, using a
+private count-only probe if the worker is unavailable. No probe starts an agent
+job or sends caller audio. Both running services must use the identical image
+ID, not merely matching tag strings, before synchronization is successful.
+The first upgrade of an older cancellation-based bridge still requires an
+observed idle maintenance window; this is not a zero-downtime carrier claim.
+
+The controller uses `up --no-deps --no-build --wait` with an explicit service
+target. LiveKit, SIP, Redis, booking containers and their volumes are not
+recreated. Infrastructure configuration upgrades still require a planned
+operator deployment. A documentation-only `[skip cd]` push waits for the next
+ordinary successful web release; unmerged branches never deploy.
+
+Install from a reviewed published release on this host (these commands contain
+no credentials):
+
+```bash
+sudo install -d -m 755 /usr/local/lib/voicebot-release-sync
+sudo install -m 644 deploy/telephony/release_sync.py /usr/local/lib/voicebot-release-sync/release_sync.py
+install -d -m 700 /home/arle/.local/share/voicebot-release-sync
+sudo install -m 644 deploy/telephony/voicebot-release-sync.service /etc/systemd/system/voicebot-release-sync.service
+sudo install -m 644 deploy/telephony/voicebot-release-sync.timer /etc/systemd/system/voicebot-release-sync.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now voicebot-release-sync.timer
+sudo systemctl start voicebot-release-sync.service
+```
+
+Verify the oneshot result and timer, then compare both runtime release labels
+and source hashes with the published revision. Health and labels alone do not
+prove a real PSTN call or acoustic language quality. To suspend synchronization
+for a planned manual operation, stop the timer and wait for the oneshot to
+finish; restart the timer afterward. Updating controller code or unit files
+requires reinstalling those reviewed files and reloading systemd.
 
 ## Synthetic proofs
 

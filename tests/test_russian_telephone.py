@@ -68,7 +68,9 @@ def test_russian_hours_readback_preserves_database_names_times_and_breaks():
         assert not state.pending and not state.bookings
         state.observe_user_text("Какие часы работы спа?")
         unknown = state.guard_reply("", [{"services": [], "providers": []}])
-        assert "Время работы не подтверждено данными системы" in unknown
+        from app.booking_faq import MISSING_FACTS
+
+        assert unknown == MISSING_FACTS["ru"]
         assert "09:00" not in unknown and "17:00" not in unknown
 
     asyncio.run(run())

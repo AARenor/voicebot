@@ -2,6 +2,8 @@
 
 python deploy/telephony/manage.py validate|build|up --source-container NAME
 Add --twilio for the separate HTTPS bridge (validate/up; reuse media image).
+Use --worker-only for an existing media stack, and --bridge-source-container
+to preserve the existing bridge's inbound configuration when replacing it.
 Source must be the existing trusted voicebot container; never use untrusted images.
 """
 
@@ -17,7 +19,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def environment(source):
+def environment(source, *, bridge_source=None):
     inspected = subprocess.run(
         ["docker", "inspect", source], capture_output=True, check=True
     )
@@ -87,6 +89,7 @@ def environment(source):
         "VOICEBOT_SPEAKING_STYLE",
         "VOICEBOT_SPEECH_RATE",
         "VOICEBOT_RECAP_RATE",
+        "VOICEBOT_AGENT_NAME",
     ):
         if k in source_env:
             env[k] = source_env[k]
@@ -112,6 +115,48 @@ def environment(source):
         ):
             raise ValueError("shared database path not identified")
         env[key] = path
+    if bridge_source:
+        inspected = subprocess.run(
+            ["docker", "inspect", bridge_source], capture_output=True, check=True
+        )
+        bridge = json.loads(inspected.stdout)[0]
+        labels = bridge["Config"].get("Labels") or {}
+        if (
+            labels.get("com.docker.compose.project") != "voicebot-twilio"
+            or labels.get("com.docker.compose.service") != "twilio-bridge"
+        ):
+            raise ValueError("trusted bridge source required")
+        bridge_env = dict(v.split("=", 1) for v in bridge["Config"]["Env"] if "=" in v)
+        fields = (
+            "TWILIO_AUTH_TOKEN",
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_PHONE_NUMBER",
+            "LIVEKIT_URL",
+        )
+        if any(not bridge_env.get(k, "").strip() for k in fields):
+            raise ValueError("bridge source configuration incomplete")
+        if any(
+            bridge_env.get(k) != env[k]
+            for k in ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+        ):
+            raise ValueError("bridge source media configuration differs")
+        env.update({k: bridge_env[k] for k in fields})
+        bridge_agent = bridge_env.get("VOICEBOT_AGENT_NAME", "voicebot")
+        if env.get("VOICEBOT_AGENT_NAME", bridge_agent) != bridge_agent:
+            raise ValueError("bridge source agent configuration differs")
+        env.setdefault("VOICEBOT_AGENT_NAME", bridge_agent)
+        for field, label in (
+            (
+                "TWILIO_TRAEFIK_ENTRYPOINT",
+                "traefik.http.routers.voicebot-twilio.entrypoints",
+            ),
+            (
+                "TWILIO_TRAEFIK_CERTRESOLVER",
+                "traefik.http.routers.voicebot-twilio.tls.certresolver",
+            ),
+        ):
+            if labels.get(label):
+                env[field] = labels[label]
     env["VOICEBOT_DATA_VOLUME"] = volumes[0]
     env["MEDIA_CONFIG_SHA"] = hashlib.sha256(
         (ROOT / "deploy/telephony/livekit.yaml").read_bytes()
@@ -137,6 +182,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=["validate", "build", "up"])
     p.add_argument("--source-container", required=True)
+    p.add_argument("--bridge-source-container")
+    p.add_argument("--worker-only", action="store_true")
     p.add_argument(
         "--twilio",
         action="store_true",
@@ -145,8 +192,14 @@ def main():
     args = p.parse_args()
     if args.twilio and args.action == "build":
         p.error("build the media worker image without --twilio first")
+    if args.bridge_source_container and not (args.twilio or args.worker_only):
+        p.error("bridge source requires --twilio or --worker-only")
+    if args.worker_only and (args.twilio or args.action != "up"):
+        p.error("worker-only requires native up")
     try:
-        env = environment(args.source_container)
+        env = environment(
+            args.source_container, bridge_source=args.bridge_source_container
+        )
         compose = [
             "docker",
             "compose",
@@ -178,6 +231,8 @@ def main():
             if args.action == "build"
             else ["up", "-d", "--no-build"]
         )
+        if args.worker_only:
+            cmd += ["--no-deps", "worker"]
         return subprocess.run(compose + cmd, env=env, cwd=ROOT).returncode
     except Exception:
         print(

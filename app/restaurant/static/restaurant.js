@@ -9,6 +9,13 @@ const state = {
   callId: null,
   turnBusy: false,
   audioUrl: null,
+  audioEpoch: 0,
+  playback: null,
+  turnController: null,
+  recap: null,
+  demoVoice: "azure",
+  voiceCatalog: null,
+  endpointingMs: 650,
   mic: null,
   micStarting: false,
   micEpoch: 0,
@@ -35,6 +42,17 @@ const reservation = {
   date: null,
 };
 const TEXT = {
+  voice: ["Abilise hääl", "Assistant voice", "Голос помощника"],
+  voiceSelectorHelp: [
+    "Vali hääl enne vestlust. Saadaval on ainult seadistatud hääled.",
+    "Choose before starting. Only configured voices are available.",
+    "Выберите до начала разговора. Доступны только настроенные голоса.",
+  ],
+  voiceFallback: [
+    "Kasutati varuhäält",
+    "Fallback voice used",
+    "Использован резервный голос",
+  ],
   endReservation: [
     "Lõpeta broneerimisvestlus",
     "End reservation session",
@@ -46,6 +64,29 @@ const TEXT = {
     "Бронирование столиков не включено.",
   ],
   guests: ["külalist", "guests", "гостей"],
+  reservationReady: [
+    "Vali laua kuupäev, saabumisaeg ja külaliste koguarv.",
+    "Choose the table date, arrival time and total guest count.",
+    "Выберите дату, время прибытия и общее число гостей.",
+  ],
+  browserConversation: [
+    "Veebivestlus",
+    "Browser conversation",
+    "Разговор в браузере",
+  ],
+  telephoneConversation: [
+    "Telefonikõne",
+    "Telephone call",
+    "Телефонный звонок",
+  ],
+  messages: ["sõnumit", "messages", "сообщений"],
+  completed: ["Lõpetatud", "Completed", "Завершено"],
+  needsAttention: [
+    "Vajab kontrollimist",
+    "Needs attention",
+    "Требует проверки",
+  ],
+  active: ["Pooleli", "In progress", "В процессе"],
   booked: ["kinnitatud", "confirmed", "подтверждено"],
   cancelledState: ["tühistatud", "cancelled", "отменено"],
   skip: ["Hüppa sisu juurde", "Skip to content", "Перейти к содержимому"],
@@ -459,6 +500,7 @@ function localize() {
     ru: "Прослушайте или прочитайте точный итог. Затем скажите «Да, подтверждаю.» или нажмите отдельную кнопку подтверждения. «Да, отмените.» отменяет только бронирование из этого разговора. Не вводите настоящие контакты.",
   }[uiLanguage()];
   renderInformation();
+  renderVoices();
   controls();
 }
 function controls() {
@@ -474,6 +516,8 @@ function controls() {
   $("demo-start").disabled =
     !state.connected || !state.voiceReady || !!state.sessionId || locked;
   $("demo-end").disabled = !state.sessionId || locked;
+  $("demo-voice").disabled =
+    !state.connected || !!state.sessionId || locked || !!state.mic;
   for (const id of ["demo-text", "demo-send"])
     $(id).disabled = !state.sessionId || locked;
   $("demo-mic").disabled = !state.connected || !state.audioReady || locked;
@@ -481,7 +525,7 @@ function controls() {
     $("demo-mic").textContent = state.sessionId
       ? demoCopy().micReady
       : demoCopy().micStart;
-  $("demo-recap-read").disabled = !state.awaitingRecapId || locked;
+  $("demo-recap-read").disabled = !currentRecap(state.recap) || locked;
   $("refresh").disabled = !state.connected || state.readBusy;
   $("booking-prev").disabled =
     !state.connected || state.readBusy || state.page <= 1;
@@ -516,11 +560,115 @@ function requireDemoConnection() {
   $("operator-token").focus();
   return false;
 }
+const VOICE_LABELS = {
+  azure: "Azure Neural",
+  elevenlabs: "ElevenLabs",
+  google: "Google Chirp",
+  cartesia: "Cartesia Sonic",
+};
+function renderVoices() {
+  const select = $("demo-voice");
+  select.replaceChildren();
+  const catalog = state.voiceCatalog || [
+    { id: "azure", available: state.voiceReady, languages: ["et", "en", "ru"] },
+  ];
+  for (const profile of catalog) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = VOICE_LABELS[profile.id];
+    option.disabled =
+      !profile.available || !profile.languages.includes(uiLanguage());
+    select.append(option);
+  }
+  if (
+    !state.sessionId &&
+    !Array.from(select.options).some(
+      (option) => option.value === state.demoVoice && !option.disabled,
+    )
+  )
+    state.demoVoice = "azure";
+  select.value = state.demoVoice;
+}
+async function loadVoices() {
+  const generation = state.generation;
+  try {
+    const data = await api("/api/demo/voices");
+    if (generation !== state.generation || !state.connected) return;
+    const ids = new Set();
+    if (
+      !Array.isArray(data.voices) ||
+      data.voices.length > 4 ||
+      data.voices.some(
+        (profile) =>
+          !profile ||
+          !Object.hasOwn(VOICE_LABELS, profile.id) ||
+          ids.has(profile.id) ||
+          !ids.add(profile.id) ||
+          typeof profile.available !== "boolean" ||
+          !Array.isArray(profile.languages) ||
+          profile.languages.some(
+            (language) => !["et", "en", "ru"].includes(language),
+          ),
+      ) ||
+      !ids.has("azure")
+    )
+      throw new Error("Invalid voice catalog");
+    state.voiceCatalog = data.voices;
+    state.endpointingMs =
+      Number.isInteger(data.endpointing_ms) &&
+      data.endpointing_ms >= 300 &&
+      data.endpointing_ms <= 2000
+        ? data.endpointing_ms
+        : 650;
+  } catch (_) {
+    if (generation !== state.generation || !state.connected) return;
+    state.voiceCatalog = null;
+  }
+  renderVoices();
+  controls();
+}
+function renderVoiceResult(data) {
+  const profile = data.voice?.effective;
+  $("demo-voice-result").textContent =
+    !data.tts_failed && Object.hasOwn(VOICE_LABELS, profile)
+      ? demoCopy().voice +
+        ": " +
+        VOICE_LABELS[profile] +
+        (data.voice.fallback ? " · " + demoCopy().voiceFallback : "")
+      : "";
+}
+$("demo-voice").addEventListener("change", () => {
+  if (
+    !state.connected ||
+    state.sessionId ||
+    state.turnBusy ||
+    state.micStarting ||
+    state.mic
+  ) {
+    $("demo-voice").value = state.demoVoice;
+    return;
+  }
+  const selected = Array.from($("demo-voice").options).find(
+    (option) => option.selected && !option.disabled,
+  );
+  if (selected) {
+    stopAudio();
+    state.demoVoice = selected.value;
+  }
+  renderVoices();
+});
 async function api(path, options = {}) {
   const generation = state.generation;
   const controller = new AbortController();
   state.controllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const streaming =
+    path === "/api/turn" &&
+    new Headers(options.headers || {}).get("Accept") === "application/x-ndjson";
+  if (streaming) state.turnController = controller;
+  const timeout = setTimeout(
+    () => controller.abort(),
+    streaming ? 120000 : 45000,
+  );
   try {
     const response = await fetch(path, {
       ...options,
@@ -532,7 +680,12 @@ async function api(path, options = {}) {
     });
     if (generation !== state.generation)
       throw new DOMException("Cancelled", "AbortError");
-    const data = await response.json();
+    const data =
+      response.ok &&
+      streaming &&
+      response.headers.get("Content-Type")?.startsWith("application/x-ndjson")
+        ? await readTurnStream(response, controller)
+        : await response.json();
     if (!response.ok) {
       const error = new Error(demoCopy().failed);
       error.status = response.status;
@@ -543,6 +696,7 @@ async function api(path, options = {}) {
   } finally {
     clearTimeout(timeout);
     state.controllers.delete(controller);
+    if (state.turnController === controller) state.turnController = null;
   }
 }
 function post(path, body) {
@@ -577,6 +731,8 @@ function logout() {
   state.turnBusy = state.readBusy = false;
   state.page = 1;
   state.hasMore = false;
+  state.demoVoice = "azure";
+  state.voiceCatalog = null;
   clearReservation();
   for (const id of ["demo-messages", "bookings", "call-history"])
     $(id).replaceChildren();
@@ -606,7 +762,13 @@ async function connect() {
     localize();
     status("auth-status", demoCopy().tokenHelp, "success");
     status("demo-status", demoCopy().ready);
-    await Promise.allSettled([loadBookings(), loadHistory()]);
+    status(
+      "reservation-status",
+      state.bookingReady
+        ? demoCopy().reservationReady
+        : demoCopy().bookingMissing,
+    );
+    await Promise.allSettled([loadBookings(), loadHistory(), loadVoices()]);
   } catch (error) {
     if (generation === state.generation) {
       logout();
@@ -622,20 +784,12 @@ function addMessage(label, text) {
   element.lang = state.replyLanguage;
   const heading = document.createElement("strong");
   heading.textContent = label;
-  element.append(heading, document.createTextNode(String(text || "")));
+  const content = document.createElement("span");
+  content.textContent = String(text || "");
+  element.append(heading, content);
   $("demo-messages").append(element);
   element.scrollIntoView({ block: "nearest" });
-}
-function stopAudio() {
-  $("demo-audio").onended = $("demo-audio").onerror = null;
-  $("demo-audio").pause();
-  $("demo-audio").removeAttribute("src");
-  $("demo-audio").load();
-  $("demo-audio").hidden = true;
-  if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
-  state.audioUrl = null;
-  state.recapDeliveryId = state.awaitingRecapId = null;
-  $("demo-recap-read").hidden = true;
+  return element;
 }
 function recapPlayedMessage() {
   return {
@@ -643,57 +797,6 @@ function recapPlayedMessage() {
     en: 'Recap delivered. To confirm, say "Yes, confirm."',
     ru: "Итог озвучен. Для подтверждения скажите «Да, подтверждаю.»",
   }[state.replyLanguage];
-}
-function playReply(data) {
-  state.awaitingRecapId = /^[a-f0-9]{32}$/.test(data.recap_delivery_id || "")
-    ? data.recap_delivery_id
-    : null;
-  $("demo-recap-read").hidden = !state.awaitingRecapId;
-  if (!data.audio_b64) {
-    controls();
-    return;
-  }
-  const generation = state.generation,
-    session = state.sessionId,
-    audio = $("demo-audio");
-  try {
-    const bytes = Uint8Array.from(atob(data.audio_b64), (char) =>
-      char.charCodeAt(0),
-    );
-    state.audioUrl = URL.createObjectURL(
-      new Blob([bytes], {
-        type: data.audio_type === "audio/wav" ? "audio/wav" : "audio/mpeg",
-      }),
-    );
-    const url = state.audioUrl,
-      receipt = state.awaitingRecapId;
-    audio.src = url;
-    audio.hidden = false;
-    audio.onended = () => {
-      if (
-        generation !== state.generation ||
-        session !== state.sessionId ||
-        url !== state.audioUrl
-      )
-        return;
-      if (receipt) {
-        state.recapDeliveryId = receipt;
-        $("demo-recap-read").hidden = true;
-        status("demo-status", recapPlayedMessage());
-      }
-    };
-    audio.onerror = () => {
-      if (generation === state.generation && url === state.audioUrl)
-        status("demo-status", demoCopy().audioError, "error");
-    };
-    audio.play().catch(() => {
-      if (generation === state.generation && url === state.audioUrl)
-        status("demo-status", demoCopy().autoplay);
-    });
-  } catch (_) {
-    status("demo-status", demoCopy().audioInvalid, "error");
-  }
-  controls();
 }
 async function startDemo() {
   if (
@@ -709,6 +812,7 @@ async function startDemo() {
   try {
     const data = await post("/api/demo/session", {
       language: state.demoLanguage,
+      voice: state.demoVoice,
     });
     if (generation !== state.generation) return;
     state.sessionId = data.session_id;
@@ -722,6 +826,7 @@ async function startDemo() {
     );
     stopAudio();
     playReply(data);
+    renderVoiceResult(data);
   } catch (error) {
     if (generation === state.generation)
       status("demo-status", demoCopy().failed, "error");
@@ -741,22 +846,31 @@ async function sendTurn(input) {
   )
     return;
   const generation = state.generation,
-    receipt = state.recapDeliveryId;
+    receipt = currentRecap(state.recap) ? state.recapDeliveryId : null;
   state.turnBusy = true;
   stopAudio();
   controls();
   status("demo-status", demoCopy().responding);
   try {
-    const data = await post("/api/turn", {
-      session_id: state.sessionId,
-      ...input,
-      language: state.demoLanguage,
-      ...(receipt ? { recap_delivery_id: receipt } : {}),
+    const data = await api("/api/turn", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+      },
+      body: JSON.stringify({
+        session_id: state.sessionId,
+        ...input,
+        language: state.demoLanguage,
+        ...(receipt ? { recap_delivery_id: receipt } : {}),
+      }),
     });
     if (generation !== state.generation) return;
     state.replyLanguage = data.language;
-    addMessage(demoCopy().you, data.text_heard);
-    addMessage(demoCopy().assistant, data.reply);
+    const heard = addMessage(demoCopy().you, data.text_heard);
+    const message =
+      data._stream?.replyNode || addMessage(demoCopy().assistant, data.reply);
+    if (data._stream) $("demo-messages").insertBefore(heard, message);
     $("demo-text").value = "";
     status(
       "demo-status",
@@ -767,7 +881,10 @@ async function sendTurn(input) {
           : demoCopy().ready,
       ["unknown_outcome", "tools_failed"].includes(data.outcome) ? "error" : "",
     );
-    playReply(data);
+    const recap = renderRecap(data, message, data._stream?.receivedAt);
+    if (data._stream) finishStreamPlayback(data, recap);
+    else playReply(data, recap);
+    renderVoiceResult(data);
     const change = (data.booking_changes || []).find((change) =>
       /^\d{4}-\d{2}-\d{2}$/.test(change.date),
     );
@@ -1011,9 +1128,21 @@ async function loadHistory() {
       const element = document.createElement("div");
       element.className = "booking-row";
       const label = document.createElement("strong");
-      label.textContent = `${call.channel} · ${call.language} · ${call.turns}`;
+      label.textContent = `${call.channel === "telephone" ? demoCopy().telephoneConversation : demoCopy().browserConversation} · ${{ et: "Eesti", en: "English", ru: "Русский" }[call.language] || ""} · ${call.turns} ${demoCopy().messages}`;
       const detail = document.createElement("span");
-      detail.textContent = call.outcome;
+      detail.textContent =
+        call.outcome === "in_progress"
+          ? demoCopy().active
+          : [
+                "ok",
+                "tools_ok",
+                "completed",
+                "booking_confirmed",
+                "booking_cancelled",
+                "hold_created",
+              ].includes(call.outcome)
+            ? demoCopy().completed
+            : demoCopy().needsAttention;
       element.append(label, detail);
       $("call-history").append(element);
     }
@@ -1114,15 +1243,18 @@ $("demo-language").addEventListener("change", () => {
   }
   state.demoLanguage = $("demo-language").value;
   localize();
-  for (const id of ["demo-status", "reservation-status"])
-    status(id, state.connected ? demoCopy().ready : demoCopy().signIn);
+  status("demo-status", state.connected ? demoCopy().ready : demoCopy().signIn);
+  status(
+    "reservation-status",
+    state.connected
+      ? state.bookingReady
+        ? demoCopy().reservationReady
+        : demoCopy().bookingMissing
+      : demoCopy().signIn,
+  );
 });
 $("demo-recap-read").addEventListener("click", () => {
-  if (state.awaitingRecapId && !state.turnBusy) {
-    state.recapDeliveryId = state.awaitingRecapId;
-    $("demo-recap-read").hidden = true;
-    status("demo-status", recapPlayedMessage());
-  }
+  acknowledgeRecap(state.recap);
 });
 for (const button of document.querySelectorAll("[data-example]"))
   button.addEventListener("click", () => {

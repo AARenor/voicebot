@@ -58,6 +58,29 @@ async page => {
   await page.locator('#demo-language').selectOption('en');
   await page.locator('#demo-start').click();
   await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
+  assert(await page.locator('#demo-voice').isDisabled(),'voice selection changed an active conversation');
+  await page.evaluate(()=>{window.restaurantOriginalPlay=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){return Promise.reject(new Error('fixture autoplay denied'));};});
+  const send = async text => {await page.locator('#demo-text').fill(text);await page.locator('#demo-send').click();await page.waitForFunction(()=>!state.turnBusy);};
+  await send("I'd like to reserve a table");
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('What date'));
+  await send('tomorrow');
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('What time'));
+  await send('at 16:00');
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('How many'));
+  await send('for two adults and two children');
+  assert(await page.locator('#demo-recap-read').isVisible());
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('4 guests'));
+  assert.equal(await page.evaluate(()=>state.recapDeliveryId),null,'failed autoplay authorized a booking');
+  await page.locator('#demo-recap-read').click();
+  const voiceReceipt=await page.evaluate(()=>state.recapDeliveryId);
+  assert(voiceReceipt);
+  await send('Yes, confirm.');
+  const confirmedVoice=requests.findLast(request=>request.body.recap_delivery_id);
+  assert.equal(confirmedVoice.body.recap_delivery_id,voiceReceipt);
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('confirmed'));
+  await send('Yes, cancel.');
+  assert((await page.locator('#demo-messages .message').last().textContent()).includes('cancelled'));
+  await page.evaluate(()=>{HTMLMediaElement.prototype.play=restaurantOriginalPlay;});
   await page.evaluate(()=>{
     const context=new AudioContext(),sink=context.createMediaStreamDestination(),source=context.createOscillator(),gain=context.createGain();
     source.frequency.value=300;gain.gain.value=.08;source.connect(gain);gain.connect(sink);source.start();
@@ -90,5 +113,5 @@ async page => {
   assert.equal(await page.locator('#demo-messages .message').count(),0);
   assert(await page.locator('#reservation-confirm').isDisabled());
   assert.deepEqual(errors,[]);
-  return {languages:3,confirmed:3,cancelled:3,microphoneWav:true,logoutIsolation:true,desktop:true,mobile:true,pageErrors:errors.length};
+  return {languages:3,confirmed:3,cancelled:3,voiceReservation:true,recapReceipt:true,microphoneWav:true,logoutIsolation:true,desktop:true,mobile:true,pageErrors:errors.length};
 }
