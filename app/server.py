@@ -15,11 +15,15 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING:
     from starlette.requests import Request
-except ImportError:  # keep provider-only installations importable
-    Request = None
+else:
+    try:
+        from starlette.requests import Request
+    except ImportError:  # keep provider-only installations importable
+        Request = None
 
 
 def build_stack() -> dict:
@@ -429,7 +433,9 @@ def create_app():
         try:
             if key is None:
                 callslog.history_safe(
-                    call_history.start, session.tools.call_id, "browser",
+                    call_history.start,
+                    session.tools.call_id,
+                    "browser",
                     session.tools.language if language == "auto" else language,
                 )
             response = await run_demo_turn(
@@ -460,20 +466,29 @@ def create_app():
         return response
 
     @app.post("/api/demo/session")
-    async def start_demo_session(authorization: str | None = Header(default=None)):
+    async def start_demo_session(
+        request: Request, authorization: str | None = Header(default=None)
+    ):
         import base64
         from fastapi import HTTPException
 
-        from .hackathon import operator_scope
+        from .hackathon import operator_scope, read_session_language
+        from .providers.azure_tts import AzureTtsClient
         from .turn import _speak
 
         dashboard_api._require_operator(authorization)
+        language = await read_session_language(request)
         stack = app.state.stack
         if stack["llm_primary"] is None or stack["tts"] is None:
             raise HTTPException(503, "voice_stack_not_configured")
-        data = sessions.create(stack["dispatcher"], operator_scope(authorization))
+        data = sessions.create(
+            stack["dispatcher"], operator_scope(authorization), language=language
+        )
+        speaker = stack["tts"]
+        if isinstance(speaker, AzureTtsClient):
+            speaker = speaker.for_language(data["language"])
         try:
-            audio = await asyncio.wait_for(_speak(stack["tts"], data["greeting"]), 25)
+            audio = await asyncio.wait_for(_speak(speaker, data["greeting"]), 25)
         except TimeoutError:
             audio = b""
         data.update(

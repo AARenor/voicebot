@@ -81,6 +81,7 @@ def test_product_controls_and_no_persistent_credential() -> None:
         "booking-prev",
         "booking-next",
         "demo-start",
+        "demo-language",
         "demo-text",
         "demo-send",
         "demo-mic",
