@@ -129,10 +129,10 @@ assistant reply. Serializing every conversational input during permission/
 encoding and pausing again at capture start fixes the demonstrated race.
 Neither corrected mechanism proves physical microphones or carrier dialogue.
 
-## Integrated verification before rollout
+## Integrated verification and rollout
 
-The final merged source passes **912 media tests / 4 skipped / 36 subtests**
-and **745 core tests / 39 skipped / 36 subtests** in clean `env -i` Linux
+The integrated snapshot before the English merge passed **912 media tests /
+4 skipped / 36 subtests** and **745 core tests / 39 skipped / 36 subtests** in clean `env -i` Linux
 environments. Skips are dependency/platform gates, not expected failures;
 `audioop` and TestClient dependency deprecations remain visible. Five Chromium
 suites cover dashboard/history, hotel, spa/stay booking, eight voice turns and
@@ -162,7 +162,9 @@ replies, the fresh isolated real-provider booking proof at
 fictional confirmation → independent readback → owned cancellation. Confirmation
 and cancellation used **zero model requests**, with controller totals
 **419.3/340.0 ms**, including TTS. Backend data was completely isolated; no
-real-customer writes occurred. Durable artifact: `live-http-booking-summary.json`.
+real-customer writes occurred. Those booking/consent turns used typed browser
+input, not physical or synthesized microphone consent; they are separate from
+the six microphone dialogue turns. Durable artifact: `live-http-booking-summary.json`.
 
 Before delivery, upstream additionally merged guarded English telephone work
 (`f541da6`). It is preserved rather than reverted: language-aware recognition,
@@ -183,6 +185,72 @@ before the repair. Timestamp conversion is now shared before the language
 branch; the backend metadata is unchanged. All six Estonian/English date cases
 pass. Prior HIGH/MEDIUM review findings remain closed; the remaining P2
 correction was self-reviewed and followed by the full suites above.
+
+### Deployed website and native boundaries
+
+Application commits `86a4dd3` and merge `0088edf` were pushed to both the repair
+branch and `master`. Public web commit `0088edf` is healthy; six changed source
+files match the integration checkout. The served dashboard JavaScript has the
+same SHA256 and cache version `1796afa1f928`. Only the idle native worker was
+replaced, after confirming zero live rooms. Its five checked source hashes
+match; image `5f812c12` is healthy with zero restarts and `pip check` passes.
+The bridge and unrelated media services were not restarted.
+
+The **deployed public website** completed six fresh read-only browser
+microphone-graph turns at **2026-10-03T09:29:51Z**. All had nonempty recognized
+input, reply PCM, advancing/completed playback, no booking changes and no
+JavaScript errors. Outcomes: five `ok`, one `tools_ok`, no provider fallback.
+Median capture + endpointing + HTTP response: **5.100 s**; controller/provider
+processing: **1.6469 s**; ASR: **0.5151 s**. These small observations are not a
+physical-microphone benchmark, a latency guarantee or a causal comparison with
+the earlier local run. Durable proof: `live-http-public-speech-summary.json`.
+
+Fresh deployed native **read-only RTC** dialogue at **2026-10-03T09:37:45Z**
+completed three Estonian and three English post-input spoken replies, rather
+than mistakenly counting the bilingual greeting as a reply. **Three of six
+were generic unverified-result replies**, despite no generic provider outage
+apology. This verifies continued audio delivery, not adequate conversation
+quality. Durable proof: `native-readonly-dialogue-summary.json`.
+
+The stricter real-provider native booking probes **failed in both languages
+before a canonical recap**, with no confirmation/cancellation utterance or
+booking write. English recognition contained the supplied date/time, followed
+by the guarded unverified reply; that narrows the observed failure beyond
+total microphone silence, but does not prove a particular model/tool root
+cause. Do not label native booking/cancellation or PSTN acceptance successful.
+After two failures the mutation acceptance probe was not retried blindly.
+
+An isolated invalid-Azure-credential worker nevertheless delivered cached
+Estonian apology PCM over RTC: **224640 received bytes**, independent ASR
+similarity **0.932**, all three expected apology words observed. The normal
+worker was not stopped. A signed synthetic HTTPS/WSS bridge assertion run
+also exited 0 through 8 kHz mu-law media/native playback markers; its caller
+wrapper did not print the returned label, so no frame count is claimed. This
+is a protocol probe, not a real carrier call.
+
+Preservation comparison at **2026-10-03T09:31:30Z** verifies all pre-rollout
+configuration fields unchanged, no removed fields, identical original shared
+volume, SQLite integrity and all baseline row hashes retained: journal **29**,
+calls **88**, plus all six stay tables. Calls increased only in count; existing
+baseline rows remain. Concurrent upstream added public phone display and the
+worker's explicit shared model/language/stay settings. The new worker uses
+shared-source **GPT-OSS120B/2048/full Whisper**, replacing the older image's
+compiled defaults; this is upstream alignment, not an independently proven
+model superiority claim. Credentials and incoming carrier configuration were
+not changed. The aggregate environment hashes therefore differ legitimately;
+do not call them byte-for-byte identical. Proofs: `before-final-deploy.json`,
+`after-final-deploy.json`, `final-deployment-preservation-proof.json`.
+
+The deployed browser's genuine **ten-minute session expiry** check passes at
+**2026-10-03T09:53:37Z**: **602.164 seconds** of real lifetime, expired turn
+HTTP **410**, microphone/audio closed, new voice-session control available,
+logout clean and zero JavaScript errors. No mocked time/state or booking was
+used. Final close-out at **09:56:51Z** has **49139.073 elapsed seconds** since
+server-stamped creation, timestamped substantive work and distributed checks;
+this is explicitly **not** an eight-hour continuous labor/soak assertion.
+Health, incoming signed route and SQLite integrity remain true; journal **29**,
+calls **96**, all baseline main rows retained. No owned failure clone or RTC
+room remains. Proofs: `live-public-session-expiry.json`, `final-closeout-proof.json`.
 
 ## Research round 3 — opposing evidence and privacy
 
