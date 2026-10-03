@@ -115,13 +115,13 @@
       "route": "static",
       "question_et": "Kas saan rääkida töötajaga?",
       "variants_et": ["Ühendage mind administraatoriga.", "Kas saate kõne inimesele suunata?"],
-      "answer_et": "Selles demos ei saa kõnet töötajale suunata. Saan aidata testbroneeringu või demokeskkonna küsimustega.",
+      "answer_et": "Selles demos ei saa kõnet töötajale suunata. Saan vastata demo küsimustele.",
       "question_en": "Can I speak to a member of staff?",
       "variants_en": ["Put me through to reception.", "Can you transfer me to a person?"],
-      "answer_en": "This demo can't transfer calls to a member of staff. I can help with test bookings and questions about the demo.",
+      "answer_en": "This demo can't transfer calls to a member of staff. I can answer questions about the demo.",
       "question_ru": "Можно поговорить с сотрудником?",
       "variants_ru": ["Соедините меня с администратором.", "Можете переключить звонок на человека?"],
-      "answer_ru": "В этой демонстрации нельзя переключить звонок на сотрудника. Я могу помочь с тестовым бронированием и вопросами о демонстрации.",
+      "answer_ru": "В этой демоверсии нельзя перевести звонок сотруднику. Могу ответить на вопросы о демоверсии.",
       "sources": ["policy_code"]
     },
     {

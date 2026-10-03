@@ -26,7 +26,8 @@ def test_greeting_prefixed_spa_inquiry_is_a_safe_question(client, audio_input, w
     payload = {"session_id": session, "language": "et"}
     payload.update(
         {"audio_b64": base64.b64encode(b"fixture-speech").decode()}
-        if audio_input else {"text": phrase}
+        if audio_input
+        else {"text": phrase}
     )
     response = client.post("/api/turn", json=payload, headers=AUTH)
     assert response.status_code == 200
@@ -47,7 +48,11 @@ def test_greeting_prefixed_spa_inquiry_is_a_safe_question(client, audio_input, w
 
 
 def test_spoken_typo_inquiry_keeps_tomorrow_for_later_time_and_consent(client):
-    day = (datetime.now(ZoneInfo("Europe/Tallinn")) + timedelta(days=1)).date().isoformat()
+    day = (
+        (datetime.now(ZoneInfo("Europe/Tallinn")) + timedelta(days=1))
+        .date()
+        .isoformat()
+    )
     backend = LiveSlots()
     backend.slots[0].update(date=day, start=day + " 10:30:00")
     stt = Mock()
@@ -65,13 +70,20 @@ def test_spoken_typo_inquiry_keeps_tomorrow_for_later_time_and_consent(client):
 
     model = Planning()
     client.app.state.stack.update(
-        dispatcher=Dispatcher(slot=backend), stt=stt, llm_primary=model,
+        dispatcher=Dispatcher(slot=backend),
+        stt=stt,
+        llm_primary=model,
     )
     session = start(client)
-    response = client.post("/api/turn", headers=AUTH, json={
-        "session_id": session, "language": "et",
-        "audio_b64": base64.b64encode(b"fixture-speech").decode(),
-    })
+    response = client.post(
+        "/api/turn",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "language": "et",
+            "audio_b64": base64.b64encode(b"fixture-speech").decode(),
+        },
+    )
     assert response.json()["reply"] == ASK_TIME
     assert model.calls == 0 and backend.calls == []
     prepared = send(client, session, "Kell 10:30.").json()
@@ -91,3 +103,49 @@ def test_spoken_typo_inquiry_keeps_tomorrow_for_later_time_and_consent(client):
     assert model.calls == 1
     assert sum(name == "confirm" for name, _ in backend.calls) == 1
     assert sum(name == "cancel" for name, _ in backend.calls) == 1
+
+
+def test_one_question_at_a_time_keeps_the_date_through_repeat_and_repair(client):
+    day = (
+        (datetime.now(ZoneInfo("Europe/Tallinn")) + timedelta(days=1))
+        .date()
+        .isoformat()
+    )
+    backend = LiveSlots()
+    backend.slots[0].update(date=day, start=day + " 10:30:00")
+
+    class Planning:
+        calls = 0
+
+        def chat(self, messages, tools=None):
+            self.calls += 1
+            assert self.calls == 1 and day in messages[0]["content"]
+            assert "10:30" in messages[0]["content"]
+            return call("plan_demo_booking", {"date": day, "start_time": "10:30"})
+
+    model = Planning()
+    client.app.state.stack.update(
+        dispatcher=Dispatcher(slot=backend), llm_primary=model
+    )
+    session = start(client)
+    for utterance, expected in [
+        ("Aitäh, soovin broneerida spaad.", "Mis kuupäev sulle sobiks?"),
+        ("Korda palun", "Mis kuupäev sulle sobiks?"),
+        ("Homme.", "Mis kell sulle sobiks?"),
+        ("See on segane", "Vabandust. Võtame ühe asja korraga. Mis kell sulle sobiks?"),
+        ("Korda palun", "Mis kell sulle sobiks?"),
+    ]:
+        result = send(client, session, utterance).json()
+        assert result["reply"] == expected
+        assert base64.b64decode(result["audio_b64"]).decode() == expected
+        assert result["tools_used"] == 0 and model.calls == 0 and backend.calls == []
+        assert result["booking_changes"] == result["booking_ids"] == []
+        assert not result["recap_delivery_id"]
+    result = send(client, session, "Palun kell 10:30.").json()
+    state = client.app.state.demo_sessions.sessions[session].tools
+    assert result["reply"] == state.render_recap()
+    assert state.pending["recap"]["date"] == day
+    assert result["booking_changes"] == result["booking_ids"] == []
+    assert not state.pending["delivery"] and not state.pending["approved"]
+    assert model.calls == 1
+    assert not any(name in {"confirm", "cancel"} for name, _ in backend.calls)
