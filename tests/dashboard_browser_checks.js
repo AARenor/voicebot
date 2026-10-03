@@ -6,6 +6,8 @@ async (page) => {
   let releaseBooking;
   let turns = 0;
   let speechFails = false;
+  let sessionEndStatus = 200;
+  let sessionEnds = 0;
   const audioUploads = [];
   const requests = [];
   const services = [{id:1,name:'Klassikaline massaaž',duration:60},{id:2,name:'Näohooldus',duration:45},{id:3,name:'Lõõgastav kehahooldus',duration:90}];
@@ -49,7 +51,10 @@ async (page) => {
       return reply({items:mode === 'empty' ? [] : selected.map((service,i)=>({id:second?201:i+101,service_name:service.name,provider_name:'Demo teenindaja',start_local:`${date} ${10+i*2}:00:00`,end_local:`${date} ${11+i*2}:00:00`,timezone:'Europe/Tallinn',time_state:'valid',status:'Booked'})),fetched_at:'2026-10-02T14:34:00+03:00',has_more:mode === 'empty'||second?false:'unknown'});
     }
     if (url.pathname === '/api/demo/session') return reply({session_id:'fixture-session',call_id:browserCall.id,greeting:'Tere! Olen Meretuule Demo Spa virtuaalne abiline. Millist teenust soovid proovida?'});
-    if (url.pathname.startsWith('/api/demo/session/')) return reply({ok:true});
+    if (url.pathname.startsWith('/api/demo/session/')) {
+      sessionEnds++;
+      return reply(sessionEndStatus === 200 ? {ok:true} : {detail:'fixture_session_unavailable'},sessionEndStatus);
+    }
     if (url.pathname === '/api/turn') {
       turns++;
       const input = request.postDataJSON();
@@ -194,6 +199,46 @@ async (page) => {
   assert(uploaded.readUInt32LE(24)===16000 && uploaded.readUInt16LE(22)===1 && uploaded.readUInt16LE(34)===16,'captured microphone WAV format incorrect');
   let peak=0;for(let offset=44;offset<uploaded.length;offset+=2)peak=Math.max(peak,Math.abs(uploaded.readInt16LE(offset)));
   assert(peak>1000,'resampling lost the captured signal');
+  for (const code of [409,503,404,410]) {
+    sessionEndStatus=code;
+    const sessionBefore=await page.evaluate(()=>state.sessionId);
+    const callBefore=await page.evaluate(()=>state.callId);
+    const transcriptBefore=await page.locator('#demo-messages').textContent();
+    const endsBefore=sessionEnds;
+    await page.evaluate(()=>{
+      window.fixtureMediaCleanup={tracks:0,disconnects:0,closed:0};
+      const disconnect=()=>fixtureMediaCleanup.disconnects++;
+      state.mic={timer:null,stream:{getTracks:()=>[{stop:()=>fixtureMediaCleanup.tracks++}]},processor:{disconnect},source:{disconnect},gain:{disconnect},context:{close:()=>{fixtureMediaCleanup.closed++;return Promise.resolve();}}};
+      state.audioUrl=URL.createObjectURL(new Blob());
+      document.getElementById('demo-audio').src=state.audioUrl;
+      document.getElementById('demo-audio').hidden=false;
+    });
+    await page.locator('#demo-end').click();
+    await page.waitForFunction(()=>!state.turnBusy && document.getElementById('demo-status').classList.contains('error'));
+    const ended=await page.evaluate(()=>({sessionId:state.sessionId,callId:state.callId,mic:state.mic,micStarting:state.micStarting,audioUrl:state.audioUrl,audioSrc:document.getElementById('demo-audio').getAttribute('src'),cleanup:fixtureMediaCleanup}));
+    assert(sessionEnds===endsBefore+1,`session end ${code} retried automatically`);
+    assert(ended.mic===null && !ended.micStarting && ended.audioUrl===null && ended.audioSrc===null,`session end ${code} retained local media or locked capture`);
+    assert(ended.cleanup.tracks===1 && ended.cleanup.disconnects===3 && ended.cleanup.closed===1,`session end ${code} did not release microphone resources`);
+    assert(await page.locator('#demo-audio').isHidden() && await page.locator('#mic-feedback').isHidden(),`session end ${code} retained audio or recording controls`);
+    assert((await page.locator('#demo-messages').textContent())===transcriptBefore,`session end ${code} discarded the transcript`);
+    assert(ended.callId===callBefore && await page.locator('#demo-history').isVisible() && await page.locator('#demo-history').isEnabled(),`session end ${code} discarded call history access`);
+    if(code===404 || code===410) {
+      assert(ended.sessionId===null,`session end ${code} retained the inactive session`);
+      assert(await page.locator('#demo-start').isEnabled(),`session end ${code} trapped the restart button`);
+      assert(await page.locator('#demo-end').isDisabled(),`session end ${code} retained the end button`);
+      for(const id of ['demo-text','demo-send','demo-mic']) assert(await page.locator('#'+id).isDisabled(),`session end ${code} retained ${id}`);
+      const message=await page.locator('#demo-status').textContent();
+      assert(message.includes('Alusta uut vestlust') && message.includes('taustsüsteemist') && message.includes('automaatselt ei tühista'),`session end ${code} omitted restart or booking-result guidance`);
+      await page.locator('#demo-start').click();
+      await page.waitForFunction(()=>!!state.sessionId && !state.turnBusy && !document.getElementById('demo-text').disabled);
+      assert(await page.locator('#demo-messages li').count()===1,`session end ${code} could not start a fresh conversation`);
+    } else {
+      assert(ended.sessionId===sessionBefore,`session end ${code} abandoned a recoverable session`);
+      assert(await page.locator('#demo-start').isDisabled(),`session end ${code} allowed a duplicate session`);
+      assert(await page.locator('#demo-end').isEnabled() && await page.locator('#demo-text').isEnabled(),`session end ${code} left active-session controls locked`);
+    }
+  }
+  sessionEndStatus=200;
   await page.locator('.navigation a[href="#calls-section"]').click();
   await page.waitForFunction(()=>document.querySelector('.navigation [aria-current]')?.getAttribute('href')==='#calls-section');
   const layouts = [];

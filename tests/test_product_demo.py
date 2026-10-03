@@ -169,7 +169,7 @@ def test_session_busy_denies_overlapping_paid_turns(client):
     session = start(client)
     replies = []
     thread = threading.Thread(
-        target=lambda: replies.append(send(client, session, "Tere"))
+        target=lambda: replies.append(send(client, session, "Soovin spaahooldust."))
     )
     thread.start()
     try:
@@ -191,7 +191,7 @@ def test_session_busy_denies_overlapping_paid_turns(client):
 )
 def test_safe_speech_normalized_before_tts_and_response_matches_audio(client, reply):
     client.app.state.stack["llm_primary"] = SimpleLlm(reply)
-    response = send(client, start(client), "Tere")
+    response = send(client, start(client), "Kui palju spaahooldus maksab?")
     assert response.status_code == 200
     result = response.json()
     assert result["reply"] == "Ma ei saa praegu hinda kinnitada."
@@ -235,7 +235,7 @@ def test_transcription_failure_reports_the_failed_stage_without_provider_details
 
 def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client):
     client.app.state.stack["llm_primary"] = SimpleLlm(error=RuntimeError("PRIVATE model error"))
-    response = send(client, start(client), "Tere")
+    response = send(client, start(client), "Soovin spaahooldust.")
     assert response.status_code == 200
     assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()["warnings"]
     assert response.json()["reply"]
@@ -411,7 +411,9 @@ def test_generic_http_uses_call_ownership_and_no_unapproved_hotel_faq(client):
 
     client.app.state.stack["llm_primary"] = Attack()
     with patch("app.callslog.log_call") as log:
-        response = client.post("/api/turn", json={"text": "Tere"}, headers=AUTH)
+        response = client.post(
+            "/api/turn", json={"text": "Soovin spaahooldust."}, headers=AUTH
+        )
     assert response.status_code == 200
     assert response.json()["outcome"] == "tools_failed"
     assert log.call_args.args[4] == "tools_failed"
@@ -580,7 +582,7 @@ def test_http_advertises_compact_native_conversation_tools(client, tmp_path):
             return {"content": "Tere!"}
 
     client.app.state.stack["llm_primary"] = Probe()
-    assert send(client, start(client), "Tere").status_code == 200
+    assert send(client, start(client), "Soovin spaahooldust.").status_code == 200
     assert "plan_demo_booking" in observed["names"]
     assert "search_slots" in observed["names"]
     assert "get_slot_catalogue" in observed["names"]

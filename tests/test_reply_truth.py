@@ -12,6 +12,7 @@ from app.booking.easyappointments import EasyAppointmentsAdapter
 from app.booking.tools import Dispatcher
 from app.telephone import CallTools, FALLBACK, GREETING
 from tests.test_product_demo import (
+    AUTH,
     BookingLlm,
     SimpleLlm,
     call,
@@ -62,6 +63,136 @@ def test_http_zero_tool_paraphrase_is_guarded_before_tts(client):
     assert result["booking_ids"] == result["booking_changes"] == []
     assert client.app.state.stack["tts"].spoken[-1] == result["reply"]
     assert base64.b64decode(result["audio_b64"]).decode() == result["reply"]
+
+
+@pytest.mark.parametrize(
+    "question,faq_index",
+    [
+        ("Kas see on päris spaa?", 0),
+        ("  KAS   SEE ON PÄRIS SPAA?!  ", 0),
+        ("Kui kaua demo konsultatsioon kestab?", 1),
+        ("Kus spaa asub?", 2),
+        ("Kas pean midagi maksma?", 3),
+    ],
+)
+def test_http_approved_faq_uses_canonical_answer_without_model_paraphrase(
+    client, question, faq_index
+):
+    model = SimpleLlm("Ei, tegemist on ainult fiktiivse spaademoga.")
+    client.app.state.stack["llm_primary"] = model
+    session = start(client)
+    state = client.app.state.demo_sessions.sessions[session].tools
+    expected = state.demo["faq"][faq_index]["answer_et"]
+
+    response = send(client, session, question)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reply"] == expected
+    assert result["text_heard"] == question
+    assert result["outcome"] == "ok"
+    assert not result["fallback_used"] and not result["tts_failed"]
+    assert result["warnings"] == []
+    assert result["tools_used"] == 0
+    assert result["booking_ids"] == result["booking_changes"] == []
+    assert model.messages == []
+    assert client.app.state.stack["tts"].spoken[-1] == expected
+    assert base64.b64decode(result["audio_b64"]).decode() == expected
+
+
+def test_http_audio_faq_uses_the_server_transcript_and_canonical_speech(client):
+    question = "Kas see on päris spaa?"
+
+    class Stt:
+        def transcribe(self, audio, *, language):
+            assert audio == b"RIFF-fixture"
+            assert language == "et"
+            return question
+
+    client.app.state.stack["stt"] = Stt()
+    model = SimpleLlm("Sinu testbroneering on edukalt loodud.")
+    client.app.state.stack["llm_primary"] = model
+    session = start(client)
+    state = client.app.state.demo_sessions.sessions[session].tools
+    expected = state.demo["faq"][0]["answer_et"]
+    response = client.post(
+        "/api/turn",
+        json={
+            "session_id": session,
+            "audio_b64": base64.b64encode(b"RIFF-fixture").decode(),
+        },
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["text_heard"] == question
+    assert result["reply"] == expected
+    assert result["outcome"] == "ok" and result["warnings"] == []
+    assert result["booking_ids"] == result["booking_changes"] == []
+    assert model.messages == []
+    assert base64.b64decode(result["audio_b64"]).decode() == expected
+
+
+@pytest.mark.parametrize("greeting", ["Tere", "Tere!", "  TERE?!  "])
+def test_http_standalone_greeting_uses_an_approved_response(client, greeting):
+    model = SimpleLlm("Tere! Olen teie hotelli virtuaalne administraator.")
+    client.app.state.stack["llm_primary"] = model
+    result = send(client, start(client), greeting).json()
+    assert result["reply"] == "Tere! Kuidas saan aidata?"
+    assert result["outcome"] == "ok" and result["warnings"] == []
+    assert result["booking_ids"] == result["booking_changes"] == []
+    assert model.messages == []
+    assert base64.b64decode(result["audio_b64"]).decode() == result["reply"]
+
+
+@pytest.mark.parametrize(
+    "user_text",
+    ["Kas see on päris spaa? Jah, kinnitan.", "Tere! Soovin broneerida hotellitoa."],
+)
+def test_http_faq_or_greeting_with_extra_intent_still_uses_the_model(client, user_text):
+    model = SimpleLlm("Sinu testbroneering on edukalt loodud.")
+    client.app.state.stack["llm_primary"] = model
+    result = send(client, start(client), user_text).json()
+    assert model.messages
+    assert result["reply"] == UNVERIFIED
+    assert result["booking_ids"] == result["booking_changes"] == []
+    assert base64.b64decode(result["audio_b64"]).decode() == UNVERIFIED
+
+
+@pytest.mark.parametrize("user_text", ["Kas see on päris spaa?", "Tere!"])
+def test_http_approved_response_does_not_hide_an_uncertain_write(client, user_text):
+    session = start(client)
+    state = client.app.state.demo_sessions.sessions[session].tools
+    state._unknown_mutation()
+    result = send(client, session, user_text).json()
+    assert result["outcome"] == "unknown_outcome"
+    assert result["reply"] == UNKNOWN
+    assert result["booking_changes"] == []
+    assert base64.b64decode(result["audio_b64"]).decode() == UNKNOWN
+    assert state.mutation_uncertain and state.pending is None
+
+
+def test_http_faq_invalidates_a_pending_booking_instead_of_confirming_it(
+    client, tmp_path
+):
+    day, records, writes = install_backend(client, tmp_path)
+    client.app.state.stack["llm_primary"] = BookingLlm(day)
+    session = start(client)
+    assert send(client, session, "Soovin testbroneeringut").status_code == 200
+    state = client.app.state.demo_sessions.sessions[session].tools
+    assert state.pending and state.pending["delivery"]
+    client.app.state.stack["llm_primary"] = SimpleLlm(
+        "Sinu testbroneering on edukalt loodud."
+    )
+
+    result = send(client, session, "Kas see on päris spaa?").json()
+    assert result["reply"] == state.demo["faq"][0]["answer_et"]
+    assert state.pending is None
+    assert send(client, session, CONSENT).json()["reply"] == UNVERIFIED
+    assert not records
+    assert not any(
+        request.method == "POST" and request.url.path.endswith("/appointments")
+        for request in writes
+    )
 
 
 def test_http_old_booking_does_not_license_a_zero_tool_new_booking_claim(

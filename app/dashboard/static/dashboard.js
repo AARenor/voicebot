@@ -288,7 +288,14 @@ async function endDemo() {
   stopMic(); stopAudio();
   const id=state.sessionId, generation=state.generation; state.turnBusy=true; controls();
   try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", "Vestlus lõpetatud. Broneeringuid see automaatselt ei tühista."); await loadHistory(); }
-  catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", error.message,"error"); }
+  catch(error) {
+    if(error.name!=="AbortError" && generation===state.generation && state.connected) {
+      if(error.status===410 || error.status===404) {
+        state.sessionId=null;
+        status("demo-status", "Vestlus ei ole enam aktiivne. Alusta uut vestlust; ebaselge broneerimise või tühistamise tulemust kontrolli esmalt taustsüsteemist. Broneeringuid see automaatselt ei tühista.", "error");
+      } else status("demo-status", error.message,"error");
+    }
+  }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
 }
 function encodeWav(input, rate=16000) {

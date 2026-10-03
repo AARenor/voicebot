@@ -1,6 +1,7 @@
 """Session history is durable, bounded, private and grounded in receipts."""
 
 from datetime import datetime, timedelta, timezone
+import base64
 import json
 import sqlite3
 from unittest.mock import Mock, patch
@@ -229,6 +230,50 @@ def test_http_turns_share_one_session_until_explicit_end(client, db):
     detail = client.get("/api/call-history/" + started["call_id"], headers=AUTH).json()
     assert detail["session"]["status"] == "ended"
     assert "private@example" not in json.dumps(detail)
+
+
+@pytest.mark.parametrize("user_text", ["Tere!", "Kas see on päris spaa?"])
+@pytest.mark.parametrize("input_kind", ["typed", "recognized"])
+def test_canonical_response_keeps_session_history_and_private_call_metadata(
+    client, db, user_text, input_kind
+):
+    started = client.post("/api/demo/session", headers=AUTH).json()
+    session = client.app.state.demo_sessions.sessions[started["session_id"]]
+    expected = (
+        "Tere! Kuidas saan aidata?"
+        if user_text == "Tere!"
+        else session.tools.demo["faq"][0]["answer_et"]
+    )
+    payload = {"session_id": started["session_id"]}
+    if input_kind == "recognized":
+        client.app.state.stack["stt"] = Mock()
+        client.app.state.stack["stt"].transcribe.return_value = user_text
+        payload["audio_b64"] = base64.b64encode(b"RIFF-fixture").decode()
+    else:
+        payload["text"] = user_text
+
+    response = client.post("/api/turn", json=payload, headers=AUTH)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reply"] == expected
+    assert result["input_status"] == input_kind and result["outcome"] == "ok"
+    assert result["warnings"] == []
+    if input_kind == "recognized":
+        client.app.state.stack["stt"].transcribe.assert_called_once_with(
+            b"RIFF-fixture", language="et"
+        )
+    client.app.state.stack["llm_primary"].chat.assert_not_called()
+    client.app.state.stack["tts"].synthesize.assert_called_once_with(expected)
+    assert session.history[-1] == {"role": "assistant", "content": expected}
+
+    detail = history.detail(db, started["call_id"])
+    row = detail["session"]
+    assert row["turns"] == 1 and row["outcome"] == "ok"
+    assert row["typed_turns"] == (input_kind == "typed")
+    assert row["recognized_turns"] == (input_kind == "recognized")
+    assert row["bookings"] == [] and not row["needs_attention"]
+    assert user_text not in json.dumps(detail, ensure_ascii=False)
+    assert expected not in json.dumps(detail, ensure_ascii=False)
 
 
 def test_isolated_turn_has_completed_history(client, db):

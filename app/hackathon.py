@@ -332,6 +332,20 @@ class _TrustedLlm:
 
     def chat(self, messages, tools=None):
         state = self.session.tools
+        # Standalone greetings/FAQs use approved text, not model paraphrases
+        # that the shared speech guard would reject. Mixed requests use tools.
+        if messages and messages[-1].get("role") == "user":
+            question = messages[-1].get("content")
+            if isinstance(question, str):
+                question = " ".join(question.strip().rstrip("?!.").casefold().split())
+                if question == "tere":
+                    return {"content": "Tere! Kuidas saan aidata?"}
+                for entry in state.demo["faq"]:
+                    approved = " ".join(
+                        entry["question_et"].strip().rstrip("?!.").casefold().split()
+                    )
+                    if question == approved:
+                        return {"content": entry["answer_et"]}
         context = {
             "pending": state.pending,
             "booking_ids": sorted(state.bookings)[-16:],
