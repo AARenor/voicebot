@@ -609,7 +609,7 @@ class DemoTableAdapter:
         with self._connect() as db:
             records = db.execute(
                 "SELECT * FROM table_bookings WHERE (? IS NULL OR date=?)"
-                " ORDER BY start,created_at,id LIMIT 200",
+                " ORDER BY status='confirmed' DESC,start,created_at DESC,id LIMIT 201",
                 (day, day),
             ).fetchall()
         return {
@@ -617,5 +617,6 @@ class DemoTableAdapter:
             "synthetic": True,
             "kind": "table",
             "date": day,
-            "items": [self._booking(row) for row in records],
+            "items": [self._booking(row) for row in records[:200]],
+            "truncated": len(records) > 200,
         }

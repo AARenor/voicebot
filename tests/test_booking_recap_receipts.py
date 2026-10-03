@@ -68,6 +68,31 @@ def test_receipt_is_one_use_and_exact_preparation_owned(client):
     assert post(client, "recap", body).status_code == 409
 
 
+@pytest.mark.parametrize("change", ["language", "recap_text"])
+def test_receipt_cannot_acknowledge_changed_text_on_the_same_pending_object(
+    client, change
+):
+    session, prepared = prepare(client)
+    state = client.app.state.demo_sessions.sessions[session]
+    pending = state.tools.pending
+    if change == "language":
+        state.tools.language = "en"
+    else:
+        pending["recap"]["guest_name"] = "Demo Teine"
+    assert state.tools.pending is pending
+    response = post(
+        client,
+        "recap",
+        {
+            "session_id": session,
+            "hold_id": prepared["hold_id"],
+            "recap_delivery_id": prepared["recap_delivery_id"],
+        },
+    )
+    assert response.status_code == 409
+    assert not pending["delivery"]
+
+
 def test_old_receipt_cannot_acknowledge_same_hold_reprepared_by_voice_tools(client):
     session, prepared = prepare(client)
     state = client.app.state.demo_sessions.sessions[session]

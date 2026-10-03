@@ -23,6 +23,7 @@ import logging
 def test_speech_is_fully_checked_before_synthesis(phrase):
     async def run():
         seen = []
+        frame = rtc.AudioFrame(b"\x01\x00" * 480, 24000, 1, 480)
 
         async def text():
             yield phrase[:8]
@@ -31,11 +32,11 @@ def test_speech_is_fully_checked_before_synthesis(phrase):
         async def fake_default(agent, text, settings):
             async for part in text:
                 seen.append(part)
-            yield rtc.AudioFrame(b"\x10\x01" * 480, 24000, 1, 480)
+            yield frame
 
         agent = TelephoneAgent(CallTools(Dispatcher()))
         with patch("livekit.agents.Agent.default.tts_node", fake_default):
-            assert len([frame async for frame in agent.tts_node(text(), None)]) == 1
+            assert [item async for item in agent.tts_node(text(), None)] == [frame]
         assert seen == ["Ma ei saa praegu hinda kinnitada."]
 
     asyncio.run(run())

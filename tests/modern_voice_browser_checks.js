@@ -20,7 +20,7 @@ async page => {
     if(path==='/api/turn'){
       requests.push({path,body:request.postDataJSON(),accept:request.headers().accept});
       const reply={type:'reply',reply:'<img src=x onerror=bad> Guarded fictional recap.',language:'en',audio_type:'audio/mpeg'};
-      const done={type:'done',reply:reply.reply,language:'en',text_heard:'Fictional request',audio_b64:'',audio_type:'audio/mpeg',outcome:'ok',booking_changes:[],recap_delivery_id:'a'.repeat(32),voice:{requested:'elevenlabs',effective:'azure',language:'en',fallback:true,reason:'provider_unavailable',streaming:true}};
+      const done={type:'done',reply:reply.reply,language:'en',text_heard:'Fictional request',audio_b64:'',audio_type:'audio/mpeg',outcome:'ok',booking_changes:[],recap_delivery_id:'a'.repeat(32),recap_expires_in_s:60,voice:{requested:'elevenlabs',effective:'azure',language:'en',fallback:true,reason:'provider_unavailable',streaming:true}};
       const events=[reply,{type:'audio',seq:0,audio_b64:mode==='malformed'?'bm90LW1wMw==':tone}];
       if(mode!=='truncated')events.push(done);
       return route.fulfill({status:200,contentType:'application/x-ndjson',body:events.map(e=>JSON.stringify(e)+'\n').join('')});
@@ -57,7 +57,7 @@ async page => {
   await page.evaluate(()=>{delete document.getElementById('demo-audio').play;});
   mode='truncated';await send();assert(await page.evaluate(()=>!state.awaitingRecapId && !state.recapDeliveryId));
   mode='malformed';await send();await page.waitForFunction(()=>!state.audioUrl || document.getElementById('demo-audio').error);
-  assert(await page.evaluate(()=>!state.awaitingRecapId && !state.recapDeliveryId),'decode failure armed receipt');
+  assert(await page.evaluate(()=>!state.recapDeliveryId),'decode failure acknowledged playback');
   // Force feature detection fallback but leave native HTMLAudioElement untouched.
   await page.evaluate(()=>{window.MediaSource=undefined;});mode='valid';await send();
   await page.waitForFunction(()=>document.getElementById('demo-audio').ended);

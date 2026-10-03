@@ -872,6 +872,7 @@ class CallTools:
         self.table_offers, self.held_tables = {}, {}
         self._hold_order = []
         self.booking_kinds = {}
+        self.booking_holds = {}
         self.pending: dict[str, Any] | None = None
         self.cancel_approval: dict[str, Any] | None = None
         self.last_booking = None
@@ -1137,6 +1138,10 @@ class CallTools:
 
     @property
     def direct_reply(self):
+        if self.pending and not self.pending["approved"]:
+            # Repeat/language-switch turns keep an owned proposal but revoke
+            # its delivery. Reuse its canonical recap, not a model paraphrase.
+            return self.guard_reply("", [])
         if self.conversation.reply is None:
             return None
         return self.guard_reply(self.conversation.reply, [])
@@ -2579,10 +2584,11 @@ class CallTools:
         action = hashlib.sha256(
             (name + json.dumps(args, sort_keys=True)).encode()
         ).hexdigest()
-        if name in HOLD_TOOLS | MUTATION_TOOLS:
+        # Table holds are offer-idempotent in the transactional adapter, which
+        # may renew an expired hold while the exact owned offer is still live.
+        if name in (HOLD_TOOLS - {"hold_table"}) | MUTATION_TOOLS:
             # Stable per-call/action key; raw arguments remain memory-only.
-            if name != "hold_table":
-                args["idempotency_key"] = f"tel-{self.call_id}-{action}"
+            args["idempotency_key"] = f"tel-{self.call_id}-{action}"
             if action in self.actions:
                 if (
                     name in CONFIRM_TOOLS
@@ -2860,6 +2866,7 @@ class CallTools:
             self.bookings.add(str(booking["id"]))
             self.booking_kinds[str(booking["id"])] = TOOL_KINDS.get(name, "slot")
             self.last_booking = str(booking["id"])
+            self.booking_holds[self.last_booking] = args["hold_id"]
             self.confirmed_holds.add(args["hold_id"])
             self.outcome = "booking_confirmed"
             slot = self.held_slots.get(args["hold_id"], {})
@@ -2916,6 +2923,12 @@ class CallTools:
                 return self._unknown_mutation(name)
             self.outcome = "booking_cancelled"
             self.cancelled_bookings.add(args["booking_id"])
+            cancelled_hold = self.booking_holds.get(args["booking_id"])
+            for held_action, held_result in list(self.actions.items()):
+                if cancelled_hold and held_result.get("hold_id") == cancelled_hold:
+                    # Only a new owned hold may rebook. Keep consumed holds,
+                    # confirmation receipts and cancellation facts intact.
+                    self.actions.pop(held_action)
             if args["booking_id"] in self.booking_details:
                 receipt = {
                     **self.booking_details[args["booking_id"]],
@@ -2938,7 +2951,6 @@ class CallTools:
             in {
                 "hold_slot",
                 "hold_offer",
-                "hold_table",
                 "confirm_booking",
                 "cancel_booking",
                 "confirm_slot_booking",

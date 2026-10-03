@@ -428,6 +428,8 @@ def add_booking_routes(app, sessions):
                 session.booking_recap_delivery = {
                     "id": uuid.uuid4().hex,
                     "pending": session.tools.pending,
+                    "text": session.tools.render_recap(held["hold_id"]),
+                    "language": session.tools.language,
                 }
                 result = {
                     **result,
@@ -464,6 +466,8 @@ def add_booking_routes(app, sessions):
                 and receipt["pending"] is session.tools.pending
                 and receipt["pending"] is not None
                 and receipt["pending"]["hold_id"] == body["hold_id"]
+                and receipt["language"] == session.tools.language
+                and session._recap_is_current(receipt["pending"], receipt["text"])
                 and session.tools.mark_recap_delivered(body["hold_id"])
             ):
                 raise HTTPException(409, "booking_recap_expired_or_unknown")

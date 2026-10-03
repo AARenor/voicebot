@@ -116,7 +116,9 @@ def test_stream_receipt_authorizes_exactly_one_later_owned_write(
     )
     if not unknown:
         assert done["booking_changes"][0]["action"] == "confirmed"
-    events(client.post("/api/turn", headers=STREAM_AUTH, json=body))
+    replay = client.post("/api/turn", headers=STREAM_AUTH, json=body)
+    assert replay.status_code == 409
+    assert replay.json() == {"detail": "recap_delivery_expired_or_unknown"}
     assert (
         sum(r.method == "POST" and r.url.path.endswith("/appointments") for r in writes)
         == 1
@@ -147,7 +149,7 @@ def test_partial_stream_failure_has_no_fallback_or_receipt(client, tmp_path):
 
 
 @pytest.mark.parametrize("audio", [None, "not audio bytes", [b"not complete audio"]])
-def test_nonbyte_synthesis_cannot_arm_recap_receipt(client, tmp_path, audio):
+def test_nonbyte_synthesis_never_offers_a_delivery_receipt(client, tmp_path, audio):
     day, records, writes = install_backend(client, tmp_path)
 
     class InvalidSpeaker:
@@ -163,9 +165,67 @@ def test_nonbyte_synthesis_cannot_arm_recap_receipt(client, tmp_path, audio):
         json={"session_id": key, "text": "Soovin testbroneeringut"},
     )
     assert response.status_code == 200
-    assert response.json()["tts_failed"] and not response.json()["audio_b64"]
-    assert response.json()["recap_delivery_id"] is None
-    assert client.app.state.demo_sessions.sessions[key].recap_delivery is None
+    data = response.json()
+    assert data["tts_failed"] and not data["audio_b64"]
+    session = client.app.state.demo_sessions.sessions[key]
+    assert "Live consultation" in data["reply"] and "Demo Esimene" in data["reply"]
+    assert data["recap_delivery_id"] is None
+    assert data["recap_expires_in_s"] is None
+    assert session.recap_delivery is None
+    assert session.tools.pending is None
+    assert not records and not writes
+
+    # A malformed provider result is not a trusted text-fallback delivery.
+    client.app.state.stack["tts"] = Speaker()
+    body = {
+        "session_id": key,
+        "text": CONSENT,
+        "recap_delivery_id": "a" * 32,
+    }
+    confirmed = client.post("/api/turn", headers=AUTH, json=body)
+    assert confirmed.status_code == 409, confirmed.text
+    assert not records and not writes
+
+
+@pytest.mark.parametrize("invalidated", ["expired", "foreign", "changed"])
+def test_streaming_rejects_invalid_receipts_before_committing_success_headers(
+    client, tmp_path, invalidated
+):
+    day, records, writes = install_backend(client, tmp_path)
+    speaker = StreamingSpeaker()
+    client.app.state.stack.update(llm_primary=BookingLlm(day), tts=speaker)
+    key = start(client)
+    result = events(
+        client.post(
+            "/api/turn",
+            headers=STREAM_AUTH,
+            json={"session_id": key, "text": "Soovin testbroneeringut"},
+        )
+    )[-1]
+    session = client.app.state.demo_sessions.sessions[key]
+    if invalidated == "expired":
+        session.tools.pending["expires_at"] = 0
+    elif invalidated == "changed":
+        session.tools.pending["recap"]["guest_name"] = "Demo Teine"
+    else:
+        key = start(client)
+        session = client.app.state.demo_sessions.sessions[key]
+    before = len(speaker.spoken)
+    serial = session.tools._turn_serial
+    response = client.post(
+        "/api/turn",
+        headers=STREAM_AUTH,
+        json={
+            "session_id": key,
+            "text": CONSENT,
+            "recap_delivery_id": result["recap_delivery_id"],
+        },
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "recap_delivery_expired_or_unknown"}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert session.tools._turn_serial == serial and not session.busy
+    assert len(speaker.spoken) == before
     assert not records and not writes
 
 

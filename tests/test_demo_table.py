@@ -89,6 +89,33 @@ def test_catalogue_is_fictional_physical_inventory(tmp_path):
     }
 
 
+def test_active_readback_survives_more_than_200_cancelled_receipts(adapter, day):
+    async def run():
+        for number in range(201):
+            held = await adapter.create_hold(
+                (await offer(adapter, day))["table_offer_id"]
+            )
+            result = await adapter.confirm(
+                held.hold_id, GUEST, f"readback-confirm-{number}"
+            )
+            assert result["ok"]
+            booking_id = result["booking"]["id"]
+            if number < 200:
+                assert (await adapter.cancel(booking_id, f"readback-cancel-{number}"))[
+                    "ok"
+                ]
+        response = await adapter.get_operator_bookings(day)
+        assert any(
+            row["id"] == booking_id and row["status"] == "confirmed"
+            for row in response["items"]
+        )
+        assert len(response["items"]) == 200
+        assert response["truncated"] is True
+        assert len((await adapter.get_operator_bookings())["items"]) == 200
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize(
     "party_size,capacity", [(1, 2), (2, 2), (3, 4), (4, 4), (5, 6), (6, 6)]
 )

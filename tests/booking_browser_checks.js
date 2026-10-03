@@ -32,6 +32,10 @@ async (page) => {
   assert((await page.locator('#booking-recap-text').textContent()).includes('Demo Esimene'),'table recap lacks the approved fictional guest');
   assert(!posts.some(item=>item.path==='/api/booking/recap'),'preparation auto-acknowledged reading');
   assert(await page.locator('#bookings tbody tr').count()===0,'prepare created a booking before consent');
+  await page.locator('#booking-recap-read').click();
+  await page.waitForFunction(()=>!bookingUi.busy);
+  assert(await page.locator('#booking-confirm').isEnabled(),'deliberate reading did not open separate confirmation');
+  assert(await page.locator('#bookings tbody tr').count()===0,'reading created a booking before consent');
   await page.locator('#booking-decline').click();
   assert(await page.locator('#bookings tbody tr').count()===0,'decline created a booking');
   await page.locator('#booking-search').click();
@@ -56,14 +60,15 @@ async (page) => {
   await page.locator('.offer-button').last().click();
   await page.waitForFunction(()=>!bookingUi.busy);
   const recapIdentity=await page.evaluate(()=>({session_id:bookingUi.sessionId,hold_id:bookingUi.holdId,recap_delivery_id:bookingUi.recapDeliveryId}));
+  const acknowledgmentsBefore=posts.filter(item=>item.path==='/api/booking/recap').length;
   await page.locator('#booking-recap-read').click();
   await page.waitForFunction(()=>!bookingUi.busy && bookingUi.acknowledged);
   assert(JSON.stringify(posts.filter(item=>item.path==='/api/booking/recap').at(-1).body)===JSON.stringify(recapIdentity),'recap acknowledgement omitted the exact one-use preparation receipt');
-  assert(posts.filter(item=>item.path==='/api/booking/recap').length===2,'recap acknowledgement repeated');
+  assert(posts.filter(item=>item.path==='/api/booking/recap').length===acknowledgmentsBefore+1,'recap acknowledgement repeated');
   assert(await page.locator('#booking-confirm').evaluate(element=>element===document.activeElement),'reading hid focus instead of moving it to explicit confirmation');
   assert(await page.locator('#bookings tbody tr').count()===0,'reading recap created a reservation');
   await page.locator('#booking-confirm').click();
-  await page.waitForFunction(()=>!bookingUi.busy);
+  await page.waitForFunction(()=>!bookingUi.busy && !state.readBusy && document.querySelectorAll('#bookings tbody tr').length===1);
   assert(await page.locator('#bookings tbody tr').count()===1,'confirmed table booking missing');
   assert(await page.locator('#booking-receipt-title').evaluate(element=>element===document.activeElement),'confirmation did not focus its receipt');
   const tableReceipt=await page.locator('#booking-receipt-text').textContent();
@@ -98,7 +103,7 @@ async (page) => {
   assert(await page.locator('#overview-tables').textContent()==='1','cancellation decline changed the confirmed count');
   await page.locator('#booking-cancel-request').click();
   await page.locator('#booking-cancel').click();
-  await page.waitForFunction(()=>!bookingUi.busy);
+  await page.waitForFunction(()=>!bookingUi.busy && !state.readBusy && state.bookings.some(item=>item.status==='cancelled'));
   assert((await page.locator('#bookings tbody tr').textContent()).includes('cancelled'),'independent readback did not show the actual cancellation status');
   assert(await page.locator('#overview-tables').textContent()==='0','cancelled table remained active in overview');
   const cancelled=posts.find(item=>item.path==='/api/booking/cancel' && item.body.session_id===recapIdentity.session_id).body;

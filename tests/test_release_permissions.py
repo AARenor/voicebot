@@ -37,8 +37,8 @@ def private_archive(tmp_path):
     return tmp_path
 
 
-def copies():
-    dockerfile = (ROOT / "deploy/telephony/Dockerfile").read_text()
+def copies(path="deploy/telephony/Dockerfile"):
+    dockerfile = (ROOT / path).read_text()
     return [
         line
         for line in dockerfile.splitlines()
@@ -52,8 +52,9 @@ def test_private_archive_keeps_parent_directories_private(tmp_path):
     assert (source / "data/demo").stat().st_mode & 0o777 == 0o700
 
 
-def test_nonroot_runtime_owns_private_archive_source():
-    lines = copies()
+@pytest.mark.parametrize("path", ["deploy/telephony/Dockerfile", "Dockerfile"])
+def test_nonroot_runtime_owns_private_archive_source(path):
+    lines = copies(path)
     assert len(lines) == 2
     assert all("--chown=voicebot:voicebot" in line for line in lines), lines
 
@@ -62,7 +63,8 @@ def test_nonroot_runtime_owns_private_archive_source():
     not os.environ.get("VOICEBOT_PACKAGING_BASE_IMAGE"),
     reason="explicit local Docker image required; no image pulls",
 )
-def test_actual_private_archive_image_imports_as_runtime_user(tmp_path):
+@pytest.mark.parametrize("path", ["deploy/telephony/Dockerfile", "Dockerfile"])
+def test_actual_private_archive_image_imports_as_runtime_user(tmp_path, path):
     source = private_archive(tmp_path)
     base = os.environ["VOICEBOT_PACKAGING_BASE_IMAGE"]
     assert re.fullmatch(r"sha256:[a-f0-9]{64}", base)
@@ -74,7 +76,7 @@ def test_actual_private_archive_image_imports_as_runtime_user(tmp_path):
                 "FROM " + base_tag,
                 "USER root",
                 "WORKDIR /app",
-                *copies(),
+                *copies(path),
                 "USER voicebot",
             ]
         )

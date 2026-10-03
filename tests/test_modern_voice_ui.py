@@ -42,6 +42,7 @@ def test_voice_selector_is_native_labeled_and_keeps_language_default() -> None:
         "lifecycle",
         "underrun",
         "wire",
+        "recap",
     ],
 )
 def test_modern_voice_production_js(group: str) -> None:
@@ -63,6 +64,7 @@ class Element {
   addEventListener(t,f){this.listeners[t]=f;} removeEventListener(t){delete this.listeners[t];}
   setAttribute(){} removeAttribute(){} replaceChildren(...v){this.children=v;this.textContent='';}
   append(...v){this.children.push(...v);} appendChild(v){this.append(v);}
+  contains(v){return this===v || this.children.some(child=>child.contains?.(v));}
   insertBefore(v,b){this.children=this.children.filter(x=>x!==v);this.children.splice(this.children.indexOf(b),0,v);}
   pause(){this.paused=true;} load(){} focus(){} play(){this.paused=false;this.onplaying?.();return Promise.resolve();}
 }
@@ -95,17 +97,18 @@ const run=s=>vm.runInContext(s,context), flush=async()=>{for(let i=0;i<40;i++)aw
 const connected=()=>run("state.credential='fixture-operator';state.connected=true;state.sessionId='fixture';state.demoLanguage='en';controls()");
 const receipt='a'.repeat(32), reply={type:'reply',reply:'<img onerror=bad> guarded recap',language:'en',audio_type:'audio/mpeg'};
 const chunk={type:'audio',seq:0,audio_b64:'SUQz'};
-const done={type:'done',reply:reply.reply,language:'en',text_heard:'fixture question',audio_type:'audio/mpeg',audio_b64:'',outcome:'ok',recap_delivery_id:receipt,booking_changes:[],voice:{requested:'azure',effective:'azure',language:'en',fallback:false,reason:null,streaming:true}};
+const done={type:'done',reply:reply.reply,language:'en',text_heard:'fixture question',audio_type:'audio/mpeg',audio_b64:'',outcome:'ok',recap_delivery_id:receipt,recap_expires_in_s:60,booking_changes:[],voice:{requested:'azure',effective:'azure',language:'en',fallback:false,reason:null,streaming:true}};
+run('function playFixtureRecap(data) { const message=addMessage(demoCopy().assistant,data.reply); playReply(data,renderRecap(data,message)); }');
 function streamed(){let controller;const body=new ReadableStream({start(c){controller=c;}});turnResponse=new Response(body,{headers:{'Content-Type':'application/x-ndjson'}});return {write:e=>controller.enqueue(new TextEncoder().encode(typeof e==='string'?e:JSON.stringify(e)+'\n')),close:()=>controller.close()};}
 function ended(start=0,end=2){const audio=el('demo-audio');audio.currentTime=2;audio.ended=true;audio.played={length:1,start:()=>start,end:()=>end};audio.onended?.();}
 async function streamTurn(events,tail=''){const s=streamed(), task=run("sendTurn({text:'fixture'})");for(const e of events)s.write(e);if(tail)s.write(tail);s.close();await task;await flush();return task;}
 async function checks(){
   if(group==='underrun'){
-    connected();context.data={audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt};
-    run('playReply(data)');const audio=el('demo-audio');audio.currentTime=.2;audio.onwaiting?.();
+    connected();context.data={reply:reply.reply,outcome:'ok',audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt,recap_expires_in_s:60};
+    run('playFixtureRecap(data)');const audio=el('demo-audio');audio.currentTime=.2;audio.onwaiting?.();
     audio.onplaying?.();ended();assert.equal(run('state.recapDeliveryId'),null,'resumed underrun granted automatic recap receipt');
     assert.equal(el('demo-recap-read').hidden,false,'underrun removed explicit text-reading acknowledgment');
-    const staleWaiting=audio.onwaiting;run('stopAudio();playReply(data)');staleWaiting?.();ended();
+    const staleWaiting=audio.onwaiting;run('stopAudio();playFixtureRecap(data)');staleWaiting?.();ended();
     assert.equal(run('state.recapDeliveryId'),receipt,'old underrun callback disqualified newer playback');
     run('stopAudio()');assert.equal(audio.onwaiting,null,'cleanup retained underrun handler');assert.equal(audio.onstalled,null,'cleanup retained stalled handler');
   }
@@ -133,16 +136,35 @@ async function checks(){
    run("renderVoiceResult({tts_failed:true,voice:{requested:'elevenlabs',effective:'elevenlabs',language:'en',fallback:false,reason:null,streaming:true}})");assert(!el('demo-voice-result').textContent.includes('ElevenLabs'),'failed speech pretends selected voice was used');
  }
  if(group==='receipt'){
-   connected();const data={audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt};
-   context.data=data;run('playReply(data)');ended(1.9);assert.equal(run('state.recapDeliveryId'),null,'seek-to-end granted playback receipt');
-   run('stopAudio();playReply(data)');const stale=el('demo-audio').onended;ended();assert.equal(run('state.recapDeliveryId'),receipt,'full coverage did not grant receipt');
-   run('stopAudio();playReply(data)');stale();assert.equal(run('state.recapDeliveryId'),null,'same-session stale epoch granted receipt');
-   run('stopAudio();playReply(data)');el('demo-audio').src='blob:fixture/foreign';ended();assert.equal(run('state.recapDeliveryId'),null,'foreign audio identity granted receipt');
-   run('stopAudio();playReply(data)');ended(0,1.97);assert.equal(run('state.recapDeliveryId'),null,'missing final audio coverage granted receipt');
-   el('demo-audio').play=()=>Promise.reject(Error('blocked'));run('stopAudio();playReply(data)');await flush();ended();assert.equal(run('state.recapDeliveryId'),null,'blocked play granted receipt');
+    connected();const data={reply:reply.reply,outcome:'ok',audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt,recap_expires_in_s:60};
+    context.data=data;run('playFixtureRecap(data)');ended(1.9);assert.equal(run('state.recapDeliveryId'),null,'seek-to-end granted playback receipt');
+    run('stopAudio();playFixtureRecap(data)');const stale=el('demo-audio').onended;ended();assert.equal(run('state.recapDeliveryId'),receipt,'full coverage did not grant receipt');
+    run('stopAudio();playFixtureRecap(data)');stale();assert.equal(run('state.recapDeliveryId'),null,'same-session stale epoch granted receipt');
+    run('stopAudio();playFixtureRecap(data)');el('demo-audio').src='blob:fixture/foreign';ended();assert.equal(run('state.recapDeliveryId'),null,'foreign audio identity granted receipt');
+    run('stopAudio();playFixtureRecap(data)');ended(0,1.97);assert.equal(run('state.recapDeliveryId'),null,'missing final audio coverage granted receipt');
+    el('demo-audio').play=()=>Promise.reject(Error('blocked'));run('stopAudio();playFixtureRecap(data)');await flush();ended();assert.equal(run('state.recapDeliveryId'),null,'blocked play granted receipt');
    assert.equal(el('demo-recap-read').hidden,false,'blocked play removed explicit reading');
    run('logout()');stale();assert.equal(run('state.recapDeliveryId'),null,'logout callback revived receipt');assert.equal(run('state.audioUrl'),null);
- }
+  }
+  if(group==='recap'){
+    connected();context.data={reply:reply.reply,outcome:'ok',audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt,recap_expires_in_s:60};
+    for(const expiry of [undefined,0,-1,Infinity,'60',601]) {
+      context.data.recap_expires_in_s=expiry;run('stopAudio();playFixtureRecap(data)');ended();
+      assert.equal(run('state.recapDeliveryId'),null,'invalid lifetime acknowledged playback');
+      assert.equal(el('demo-recap-read').hidden,true,'invalid lifetime enabled reading');
+    }
+    context.data.recap_expires_in_s=60;
+    run('stopAudio();playFixtureRecap(data); state.recap.expiresAt=Date.now()-1');ended();
+    assert.equal(run('state.recapDeliveryId'),null,'expired recap acknowledged playback');
+    run('stopAudio();playFixtureRecap(data); state.recap.message.children[1].textContent="changed"');ended();
+    el('demo-recap-read').listeners.click();assert.equal(run('state.recapDeliveryId'),null,'altered canonical text granted receipt');
+    run('stopAudio();playFixtureRecap(data)');el('demo-recap-read').listeners.click();
+    assert.equal(run('state.recapDeliveryId'),receipt,'deliberate reading did not grant receipt');
+    const expiry=[...timers.values()].find(timer=>timer.delay===60000);expiry.fn();
+    assert.equal(run('state.recapDeliveryId'),null,'expiry timer retained delivered receipt');
+    assert.equal(run('state.awaitingRecapId'),null,'expiry timer retained reading receipt');
+    assert.equal(el('demo-recap-read').disabled,true,'expiry timer left reading enabled');
+  }
  if(group==='stream'){
    connected();const s=streamed(), task=run("sendTurn({text:'fixture'})");s.write(reply);s.write(chunk);await flush();
    assert.equal(requests.find(r=>r.path==='/api/turn').opts.headers.get('Accept'),'application/x-ndjson','turn does not negotiate streaming');

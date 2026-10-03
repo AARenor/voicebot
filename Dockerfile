@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Build context is this directory (Coolify: set base directory to
 # voicebot/, or push voicebot/ as the repo root).
-COPY app/ ./app/
-COPY data/demo/ ./data/demo/
+COPY --chown=voicebot:voicebot app/ ./app/
+COPY --chown=voicebot:voicebot data/demo/ ./data/demo/
 
 USER voicebot
 EXPOSE 8000

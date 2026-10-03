@@ -97,6 +97,15 @@ def test_probe_failure_is_closed_and_never_echoes_transcripts():
     )
 
 
+def test_probe_diagnostics_count_restaurant_recaps_without_private_text():
+    stats = module().diagnostic_counts(
+        ["PRIVATE"], ["Fiktiivne laua testbroneering: fixture"]
+    )
+    assert stats["table_recap_prefixes"] == 1
+    assert stats["final_input_turns"] == stats["spoken_replies"] == 1
+    assert "PRIVATE" not in json.dumps(stats)
+
+
 def test_actual_sqlite_probe_only_cancels_its_scope(tmp_path):
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo

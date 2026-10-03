@@ -28,9 +28,16 @@ from tests.test_demo_plan import LiveSlots, REQUEST
 def tool_chunk(name, arguments, call_id="planning-call"):
     return llm.ChatChunk(
         id="fixture-response",
-        delta=llm.ChoiceDelta(role="assistant", tool_calls=[llm.FunctionToolCall(
-            name=name, arguments=json.dumps(arguments), call_id=call_id,
-        )]),
+        delta=llm.ChoiceDelta(
+            role="assistant",
+            tool_calls=[
+                llm.FunctionToolCall(
+                    name=name,
+                    arguments=json.dumps(arguments),
+                    call_id=call_id,
+                )
+            ],
+        ),
     )
 
 
@@ -42,7 +49,9 @@ class PlanningModel(llm.LLM):
     def chat(self, *, chat_ctx, tools, conn_options, **kwargs):
         self.calls += 1
         assert self.calls == 1, "a terminal reply requested the model again"
-        return PlanningStream(self, chat_ctx=chat_ctx, tools=tools, conn_options=conn_options)
+        return PlanningStream(
+            self, chat_ctx=chat_ctx, tools=tools, conn_options=conn_options
+        )
 
 
 class PlanningStream(llm.LLMStream):
@@ -64,7 +73,8 @@ class UnusedTTS(tts.TTS):
     def __init__(self):
         super().__init__(
             capabilities=tts.TTSCapabilities(streaming=False),
-            sample_rate=24000, num_channels=1,
+            sample_rate=24000,
+            num_channels=1,
         )
 
     def synthesize(self, *args, **kwargs):
@@ -74,7 +84,8 @@ class UnusedTTS(tts.TTS):
 class Playback(io.AudioOutput):
     def __init__(self):
         super().__init__(
-            label="fixture", sample_rate=24000,
+            label="fixture",
+            sample_rate=24000,
             capabilities=io.AudioOutputCapabilities(pause=False),
         )
         self.duration = 0
@@ -95,7 +106,7 @@ async def synthesize(agent, text, settings):
     # The real TelephoneAgent still validates text and records completed frames.
     async for _ in text:
         pass
-    yield rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+    yield rtc.AudioFrame(b"\x01\x00" * 240, 24000, 1, 240)
 
 
 async def finalized(agent, text):
@@ -110,43 +121,54 @@ async def native_turn(session, agent, text):
     assert handle.exception() is None
 
 
-@pytest.mark.parametrize("question,failed", [
-    (
-        "Mis kell spaateenindaja töötab ja millal on tema lõunapaus? "
-        "Palun kontrolli tööplaani.",
-        False,
-    ),
-    ("Palun näita spaa tööaegu, tahaks teada.", False),
-    ("Palun näita spaa tööaegu, tahaks teada.", True),
-])
+@pytest.mark.parametrize(
+    "question,failed",
+    [
+        (
+            "Mis kell spaateenindaja töötab ja millal on tema lõunapaus? "
+            "Palun kontrolli tööplaani.",
+            False,
+        ),
+        ("Palun näita spaa tööaegu, tahaks teada.", False),
+        ("Palun näita spaa tööaegu, tahaks teada.", True),
+    ],
+)
 def test_sdk_hours_execute_catalogue_and_finish_without_model(question, failed):
     async def run():
         backend = LiveSlots()
         backend.catalogue["providers"][0]["working_hours"] = {
             "monday": {
-                "start": "09:00", "end": "17:00",
+                "start": "09:00",
+                "end": "17:00",
                 "breaks": [{"start": "12:00", "end": "13:00"}],
             },
             "sunday": None,
         }
         if failed:
+
             async def failed_catalogue():
                 backend.calls.append(("catalogue", {}))
                 raise RuntimeError("PRIVATE backend exception")
+
             backend.get_slot_catalogue = failed_catalogue
 
         state = CallTools(Dispatcher(slot=backend))
         model = UnusedModel()
         agent = TelephoneAgent(state)
-        session = AgentSession(llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"})
+        session = AgentSession(
+            llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"}
+        )
         session.output.audio = Playback()
         session.on("conversation_item_added", agent.on_conversation_item_added)
         executed, spoken = [], []
-        session.on("function_tools_executed", lambda event: executed.extend(event.function_calls))
+        session.on(
+            "function_tools_executed",
+            lambda event: executed.extend(event.function_calls),
+        )
 
         async def tts_boundary(agent, text, settings):
             spoken.extend([part async for part in text])
-            yield rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+            yield rtc.AudioFrame(b"\x01\x00" * 240, 24000, 1, 240)
 
         with patch("livekit.agents.Agent.default.tts_node", tts_boundary):
             await session.start(agent=agent, record=False)
@@ -169,7 +191,9 @@ def test_sdk_hours_execute_catalogue_and_finish_without_model(question, failed):
                     assert "Backend therapist" in canonical
                     assert "09:00–17:00" in canonical and "12:00–13:00" in canonical
                     assert "paus" in canonical and "suletud" in canonical
-                    assert "9 kuni kell 17" in spoken[0] and "12 kuni kell 13" in spoken[0]
+                    assert (
+                        "9 kuni kell 17" in spoken[0] and "12 kuni kell 13" in spoken[0]
+                    )
             finally:
                 await session.aclose()
 
@@ -189,7 +213,7 @@ def test_native_speech_normalizes_hours_after_guard_without_replacing_history():
         canonical = state.guard_reply("", state.results)
         assert "09:00–17:00" in canonical
         spoken = []
-        frame = rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+        frame = rtc.AudioFrame(b"\x01\x00" * 240, 24000, 1, 240)
 
         async def text():
             yield ""
@@ -207,14 +231,18 @@ def test_native_speech_normalizes_hours_after_guard_without_replacing_history():
             for part in frame.userdata[USERDATA_TIMED_TRANSCRIPT]:
                 yield part
 
-        assert [part async for part in agent.transcription_node(actual_speech(), None)] == [canonical]
+        assert [
+            part async for part in agent.transcription_node(actual_speech(), None)
+        ] == [canonical]
         assert state.pending is None
 
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("kind", ["slot", "stay"])
-def test_sdk_plan_recap_later_consent_confirm_cancel_need_one_model_call(tmp_path, kind):
+def test_sdk_plan_recap_later_consent_confirm_cancel_need_one_model_call(
+    tmp_path, kind
+):
     async def run():
         if kind == "slot":
             backend = LiveSlots()
@@ -224,17 +252,28 @@ def test_sdk_plan_recap_later_consent_confirm_cancel_need_one_model_call(tmp_pat
             backend = DemoStayAdapter(str(tmp_path / "stay.db"))
             state = CallTools(Dispatcher(stay=backend))
             day = datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(days=12)
-            name, arguments = "plan_demo_stay", {
-                "checkin": day.isoformat(), "checkout": (day + timedelta(days=2)).isoformat(),
-                "adults": 2, "children": 0, "room_type": "garden-double",
-            }
+            name, arguments = (
+                "plan_demo_stay",
+                {
+                    "checkin": day.isoformat(),
+                    "checkout": (day + timedelta(days=2)).isoformat(),
+                    "adults": 2,
+                    "children": 0,
+                    "room_type": "garden-double",
+                },
+            )
         model = PlanningModel(name, arguments)
         agent = TelephoneAgent(state)
-        session = AgentSession(llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"})
+        session = AgentSession(
+            llm=model, tts=UnusedTTS(), turn_handling={"turn_detection": "manual"}
+        )
         session.output.audio = Playback()
         session.on("conversation_item_added", agent.on_conversation_item_added)
         executed = []
-        session.on("function_tools_executed", lambda event: executed.extend(event.function_calls))
+        session.on(
+            "function_tools_executed",
+            lambda event: executed.extend(event.function_calls),
+        )
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
             await session.start(agent=agent, record=False)
             try:
@@ -245,10 +284,16 @@ def test_sdk_plan_recap_later_consent_confirm_cancel_need_one_model_call(tmp_pat
                 assert not state.bookings and model.calls == 1
                 await native_turn(session, agent, CONSENT_TEXT)
                 assert len(state.bookings) == 1 and state.turn_mutation == "confirmed"
-                assert agent.chat_ctx.items[-1].text_content == MUTATION_REPLIES["confirmed"]
+                assert (
+                    agent.chat_ctx.items[-1].text_content
+                    == MUTATION_REPLIES["confirmed"]
+                )
                 await native_turn(session, agent, "Jah, tühista.")
                 assert state.cancelled_bookings == state.bookings
-                assert agent.chat_ctx.items[-1].text_content == MUTATION_REPLIES["cancelled"]
+                assert (
+                    agent.chat_ctx.items[-1].text_content
+                    == MUTATION_REPLIES["cancelled"]
+                )
                 assert model.calls == 1
                 assert [call.name for call in executed] == [
                     name,
@@ -257,6 +302,7 @@ def test_sdk_plan_recap_later_consent_confirm_cancel_need_one_model_call(tmp_pat
                 ]
             finally:
                 await session.aclose()
+
     asyncio.run(run())
 
 
@@ -269,12 +315,19 @@ async def prepared_agent():
 
 
 async def collect(agent, items, *, tool_choice="auto"):
-    return [chunk async for chunk in agent.llm_node(
-        llm.ChatContext(items=items), agent.tools, ModelSettings(tool_choice=tool_choice),
-    )]
+    return [
+        chunk
+        async for chunk in agent.llm_node(
+            llm.ChatContext(items=items),
+            agent.tools,
+            ModelSettings(tool_choice=tool_choice),
+        )
+    ]
 
 
-@pytest.mark.parametrize("case", ["wrong_user", "old_tool", "tool_choice_none", "tool_removed"])
+@pytest.mark.parametrize(
+    "case", ["wrong_user", "old_tool", "tool_choice_none", "tool_removed"]
+)
 def test_action_shortcut_requires_current_initial_turn_and_allowed_tool(case):
     async def run():
         agent = await prepared_agent()
@@ -285,18 +338,25 @@ def test_action_shortcut_requires_current_initial_turn_and_allowed_tool(case):
         if case == "wrong_user":
             items = [llm.ChatMessage(role="user", content=[CONSENT_TEXT])]
         elif case == "old_tool":
-            items.append(llm.FunctionCallOutput(name="plan_demo_booking", call_id="old", output="{}", is_error=False))
+            items.append(
+                llm.FunctionCallOutput(
+                    name="plan_demo_booking", call_id="old", output="{}", is_error=False
+                )
+            )
         elif case == "tool_choice_none":
             choice = "none"
         else:
             await agent.update_tools([])
         delegated = []
+
         async def fallback(*args):
             delegated.append(True)
             yield GREETING
+
         with patch("livekit.agents.Agent.default.llm_node", fallback):
             assert await collect(agent, items, tool_choice=choice) == [GREETING]
         assert delegated == [True] and not state.bookings
+
     asyncio.run(run())
 
 
@@ -307,13 +367,19 @@ def test_failed_or_interrupted_recap_cannot_shortcut_later_confirmation(failure)
         canonical = agent.state.render_recap()
         proposal = agent.state.pending
         speech = SpeechHandle.create()
+
         async def text():
             yield canonical
+
         async def failing(*args):
             raise RuntimeError("fixture synthesis failure")
             yield
+
         with (
-            patch("livekit.agents.Agent.default.tts_node", failing if failure == "synthesis" else synthesize),
+            patch(
+                "livekit.agents.Agent.default.tts_node",
+                failing if failure == "synthesis" else synthesize,
+            ),
             patch.object(agent, "_current_speech", return_value=speech),
         ):
             assert [frame async for frame in agent.tts_node(text(), None)]
@@ -328,17 +394,22 @@ def test_failed_or_interrupted_recap_cannot_shortcut_later_confirmation(failure)
         else:
             assert agent.state.pending is None
         item = llm.ChatMessage(
-            role="assistant", content=[canonical], interrupted=failure == "interrupted",
+            role="assistant",
+            content=[canonical],
+            interrupted=failure == "interrupted",
         )
         speech._item_added([item])
         agent.on_conversation_item_added(SimpleNamespace(item=item))
         assert agent.state.pending is None
         consent = await finalized(agent, CONSENT_TEXT)
+
         async def fallback(*args):
             yield GREETING
+
         with patch("livekit.agents.Agent.default.llm_node", fallback):
             assert await collect(agent, [consent]) == [GREETING]
         assert not agent.state.bookings and agent.state.pending is None
+
     asyncio.run(run())
 
 
@@ -346,17 +417,26 @@ def test_nonterminal_read_delegates_and_old_call_ids_do_not_survive_final_turn()
     async def run():
         agent = TelephoneAgent(CallTools(Dispatcher(slot=LiveSlots())))
         message = await finalized(agent, "Millised teenused on saadaval?")
+
         async def read_model(*args):
             yield tool_chunk("get_slot_catalogue", {})
+
         with patch("livekit.agents.Agent.default.llm_node", read_model):
             await collect(agent, [message])
         assert agent._tool_call_ids == {"planning-call"}
         await agent.state.dispatch("get_slot_catalogue", {})
-        output = llm.FunctionCallOutput(name="get_slot_catalogue", call_id="planning-call", output="fixture", is_error=False)
+        output = llm.FunctionCallOutput(
+            name="get_slot_catalogue",
+            call_id="planning-call",
+            output="fixture",
+            is_error=False,
+        )
         delegated = []
+
         async def fallback(*args):
             delegated.append(True)
             yield GREETING
+
         with patch("livekit.agents.Agent.default.llm_node", fallback):
             assert await collect(agent, [message, output]) == [GREETING]
             newer = await finalized(agent, "Ei, ära broneeri.")
@@ -364,6 +444,7 @@ def test_nonterminal_read_delegates_and_old_call_ids_do_not_survive_final_turn()
             assert await collect(agent, [message, output]) == [GREETING]
             assert await collect(agent, [newer, output]) == [GREETING]
         assert len(delegated) == 3
+
     asyncio.run(run())
 
 
@@ -379,10 +460,15 @@ def test_sdk_config_updates_do_not_hide_current_user_or_tool_output(phase):
             items = [message]
         else:
             agent._tool_call_ids.add("current-plan")
-            items = [message, llm.FunctionCallOutput(
-                name="plan_demo_booking", call_id="current-plan", output="fixture",
-                is_error=False,
-            )]
+            items = [
+                message,
+                llm.FunctionCallOutput(
+                    name="plan_demo_booking",
+                    call_id="current-plan",
+                    output="fixture",
+                    is_error=False,
+                ),
+            ]
         items.append(llm.AgentConfigUpdate(instructions=agent.instructions))
 
         async def forbidden(*args):
@@ -397,6 +483,7 @@ def test_sdk_config_updates_do_not_hide_current_user_or_tool_output(phase):
         else:
             assert chunks == [agent.state.render_recap()]
             assert agent.state.pending["delivery"] is False
+
     asyncio.run(run())
 
 
@@ -405,10 +492,14 @@ def test_native_normalization_keeps_the_captured_voice_language(language):
     async def run():
         state = CallTools(Dispatcher(slot=LiveSlots()), language=language)
         voice_updates, spoken = [], []
-        provider = SimpleNamespace(update_options=lambda **options: voice_updates.append(options))
+        provider = SimpleNamespace(
+            update_options=lambda **options: voice_updates.append(options)
+        )
         agent = TelephoneAgent(state, speech_provider=provider)
-        reply = "Opening hours 09:00–17:00" if language == "en" else "Tööajad 09:00–17:00"
-        frame = rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+        reply = (
+            "Opening hours 09:00–17:00" if language == "en" else "Tööajad 09:00–17:00"
+        )
+        frame = rtc.AudioFrame(b"\x01\x00" * 240, 24000, 1, 240)
 
         async def checked_reply(text):
             return reply
@@ -429,7 +520,10 @@ def test_native_normalization_keeps_the_captured_voice_language(language):
             assert [output async for output in agent.tts_node(text(), None)] == [frame]
         assert spoken == [normalize_estonian_speech(reply, language)]
         assert str(frame.userdata[USERDATA_TIMED_TRANSCRIPT][0]) == reply
-        assert voice_updates[0]["language"] == ("en-US" if language == "en" else "et-EE")
+        assert voice_updates[0]["language"] == (
+            "en-US" if language == "en" else "et-EE"
+        )
+
     asyncio.run(run())
 
 
@@ -454,7 +548,9 @@ def test_late_model_chunk_cannot_attach_old_tool_output_to_newer_proposal():
         assert not agent._tool_call_ids
         proposal = agent.state.pending
         output = llm.FunctionCallOutput(
-            name="get_slot_catalogue", call_id="older-call", output="fixture",
+            name="get_slot_catalogue",
+            call_id="older-call",
+            output="fixture",
             is_error=False,
         )
 
@@ -464,6 +560,7 @@ def test_late_model_chunk_cannot_attach_old_tool_output_to_newer_proposal():
         with patch("livekit.agents.Agent.default.llm_node", fallback):
             assert await collect(agent, [older, newer, output]) == [GREETING]
         assert agent.state.pending is proposal and not agent.state.bookings
+
     asyncio.run(run())
 
 
@@ -478,7 +575,8 @@ def test_native_followup_model_gets_parsed_tomorrow_and_time():
 
         async def model(agent, chat_ctx, tools, settings):
             seen.extend(
-                item.text_content for item in chat_ctx.items
+                item.text_content
+                for item in chat_ctx.items
                 if isinstance(item, llm.ChatMessage) and item.role == "system"
             )
             yield GREETING

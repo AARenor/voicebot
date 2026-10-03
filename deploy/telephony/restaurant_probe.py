@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from livekit import api, rtc
 from app.providers.azure_tts import AzureTtsClient
 from app.languages import CONSENT, spoken_date
-from conversation_probe import diagnostic_counts, failure_message
+from conversation_probe import failure_message
 from probe import credentials
 
 
@@ -149,6 +149,20 @@ def scenario(language, day):
         "consent": CONSENT[language],
         "expected_time": "18:00",
         "party_size": 4,
+    }
+
+
+def diagnostic_counts(inputs, replies):
+    markers = tuple(
+        scenario(language, datetime.now().date())["recap_marker"]
+        for language in ("et", "en", "ru")
+    )
+    return {
+        "final_input_turns": len(inputs),
+        "spoken_replies": len(replies),
+        "table_recap_prefixes": sum(
+            any(marker in reply for marker in markers) for reply in replies
+        ),
     }
 
 

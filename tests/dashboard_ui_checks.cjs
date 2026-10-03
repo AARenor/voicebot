@@ -8,6 +8,7 @@ class Element {
   replaceChildren(...items){this.children=items;this.textContent='';}
   append(...items){this.children.push(...items);}
   appendChild(item){this.children.push(item);}
+  contains(item){return this===item || this.children.some(child=>child.contains?.(item));}
   pause(){}
   focus(){this.focused=true;}
   removeAttribute(){}
@@ -168,7 +169,7 @@ const run=s=>vm.runInContext(s,context);
      if(path.includes('/api/table-bookings'))return response({items:cancelled?[]:[{id:'table_'+'a'.repeat(32),table_name:'<img>',party_size:3,start_local:'2026-10-09 18:00:00',end_local:'2026-10-09 20:00:00',timezone:'Europe/Tallinn',time_state:'valid',status:'confirmed'}],fetched_at:'fixture',has_more:false});
     return response({calls:[]});
   };
-  await run(`sendTurn({text:'confirm'})`);
+  await run(`sendTurn({text:'confirm'})`); await flush();
   assert.equal(element('booking-date').value,'2026-10-09','did not select authoritative booked day');
    assert.equal(element('#bookings tbody').children[0].dataset.bookingId,'table_'+'a'.repeat(32));
   assert.equal(element('#bookings tbody').children[0].className,'highlight');
@@ -181,8 +182,8 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('demo-messages').children[0].className,'user-message');
   assert.equal(element('demo-messages').children[1].className,'assistant-message');
   const normalFetch=context.fetch;
-   context.fetch=async(path)=>path==='/api/turn'?response({text_heard:'fixture',reply:'Testbroneering on kinnitatud. Muu päring ebaõnnestus.',outcome:'tools_failed',booking_changes:[{id:'table_'+'a'.repeat(32),kind:'table',date:'2026-10-09',action:'confirmed'}]}):normalFetch(path);
-  await run("sendTurn({text:'fixture'})");
+  context.fetch=async(path)=>path==='/api/turn'?response({text_heard:'fixture',reply:'Testbroneering on kinnitatud. Muu päring ebaõnnestus.',outcome:'tools_failed',booking_changes:[{id:'table_'+'a'.repeat(32),kind:'table',date:'2026-10-09',action:'confirmed'}]}):normalFetch(path);
+  await run("sendTurn({text:'fixture'})"); await flush();
   assert(!element('demo-status').textContent.includes('edu ei ole kinnitatud'),'secondary read failure denied the completed write');
   context.fetch=normalFetch;
   const bookingCount=run('state.bookings.length');
@@ -193,7 +194,7 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('booking-status').className,'status booking-status stale');
   assert.equal(element('bookings').hidden,false,'stale rows were hidden');
   context.fetch=successfulFetch;
-  cancelled=true;await run(`sendTurn({text:'cancel'})`);
+  cancelled=true;await run(`sendTurn({text:'cancel'})`); await flush();
   assert.equal(element('#bookings tbody').children.length,0,'cancelled row did not disappear');
   assert.equal(element('bookings').hidden,true,'empty table shown after cancellation');
   assert.equal(element('booking-empty').hidden,false,'empty state missing after cancellation');
@@ -202,8 +203,8 @@ const run=s=>vm.runInContext(s,context);
      if(path.includes('/api/table-bookings'))return response({items:[],has_more:false,fetched_at:'fixture'});
     return response({calls:[]});
   };
-  await run("sendTurn({text:'fixture'})");
-   assert.equal(element('booking-date').value,'2026-10-09','archived stay receipt redirected the restaurant readback');
+  await run("sendTurn({text:'fixture'})"); await flush();
+  assert.equal(element('booking-date').value,'2026-10-09','archived stay receipt redirected the restaurant readback');
   let stopped=0;
   context.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[{stop(){stopped++;}}]})};
   context.window.AudioContext=class {constructor(){throw Error('fixture setup failure');}};
