@@ -3,7 +3,8 @@
 LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
 **1.6.0**. The dashboard reads actual provider bookings and offers a protected
 text/microphone demo, direct spa and room booking, and a public hotel pitch at
-`/hotel`. Room inventory is a finite, persistent fictional PMS; Easy!Appointments
+`https://meretuule.arleserver.cfd/`. Room inventory is a finite, persistent
+fictional PMS; Easy!Appointments
 continues to supply spa services, working plans and appointment availability.
 Only fictional guests and approved fictional FAQ data.
 Spoken writes require an owned hold, a delivered recap and subsequent explicit
@@ -98,6 +99,14 @@ they expose no guests or appointment records. `PUBLIC_PHONE_NUMBER` can specify
 the demo phone contact; otherwise the configured Twilio/SIP number is used.
 
 ## Website architecture
+
+The canonical guest website is [Meretuule](https://meretuule.arleserver.cfd/).
+The [operator dashboard](https://robot.arleserver.cfd/) retains booking and
+voice-demo workflows. The former public addresses
+`https://robot.arleserver.cfd/hotel` and `https://robot.arleserver.cfd/hotel/`
+are retired and return HTTP 410. Use the Meretuule root in guest-facing links;
+`/hotel` remains an internal proxy rewrite target and a local preview route.
+See the [Meretuule domain runbook](deploy/meretuule/README.md).
 
 `/api/bookings` and `/api/catalogue` read Easy REST through explicit allowlisted
 DTOs. `/api/demo/session` and `/api/turn` share native booking ownership/consent;

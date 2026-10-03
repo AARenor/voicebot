@@ -459,7 +459,7 @@ def create_app():
     if dashboard_api.router is not None:
         app.include_router(dashboard_api.router)
 
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
 
     from .booking_web import add_booking_routes
 
@@ -468,7 +468,12 @@ def create_app():
 
     @app.get("/hotel", include_in_schema=False)
     @app.get("/hotel/", include_in_schema=False)
-    def hotel_page():
+    def hotel_page(request: Request):
+        if (request.url.hostname or "").lower().rstrip(".") == "robot.arleserver.cfd":
+            return Response(
+                status_code=410,
+                headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
+            )
         return FileResponse(
             os.path.join(hotel_dir, "index.html"), media_type="text/html"
         )

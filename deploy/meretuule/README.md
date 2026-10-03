@@ -1,8 +1,11 @@
 # Meretuule public domain
 
-`https://meretuule.arleserver.cfd/` serves the existing fictional hotel website.
+`https://meretuule.arleserver.cfd/` is the canonical guest address for the
+fictional hotel website, including homepage links from local previews.
 `https://robot.arleserver.cfd/` remains the operator dashboard; booking and
 voice-demo links explicitly use that management domain.
+The former guest addresses `https://robot.arleserver.cfd/hotel` and
+`https://robot.arleserver.cfd/hotel/` are retired and return HTTP 410.
 
 ## Existing ingress
 
@@ -15,6 +18,8 @@ application's stable Docker-provider service. It rewrites only `/` to `/hotel`;
 CSS, JavaScript, fonts, illustrations, APIs, query strings and all other paths
 remain unchanged. Existing operator authorization still applies to private APIs.
 The route does not depend on a changing container name or IP address.
+The `/hotel` handler remains available for this internal rewrite and local
+previews; it is no longer a public guest entry point on the robot hostname.
 
 ## Install on the existing host
 
@@ -32,12 +37,15 @@ retains the same service name, so the separate router survives redeployments.
 
 ## Verify
 
-- Meretuule `/`, `/hotel`, versioned assets and `/api/public/*`: 200.
+- Meretuule `/`, versioned assets and `/api/public/*`: 200.
 - Root browser title: `Meretuule — hotelli ja spaa demo`, with live synthetic
-  room and spa catalogues. Follow each booking/demo link to the robot domain.
+  room and spa catalogues. Homepage links use the exact Meretuule root;
+  booking/demo links use the robot domain.
 - Robot `/` and `/health` remain healthy; private `/api/bookings` without
   authorization returns 403 with `Cache-Control: no-store` on both domains.
+- Robot `/hotel` and `/hotel/`: HTTP 410, with no redirect to another page.
 - Run `tests/meretuule_browser_checks.js` through a Node.js Playwright browser-code
-  runner for public HTTPS, asset hashes, catalogue and authorization checks.
+  runner for public HTTPS, canonical links, retired paths, asset hashes,
+  catalogue and authorization checks.
 - Run `tests/hotel_browser_checks.js` against the existing local browser fixture
   for selected-room links, mobile layout, unsafe provider text and API failures.

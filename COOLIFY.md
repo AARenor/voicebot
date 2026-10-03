@@ -20,7 +20,11 @@ port 8000. No secrets are baked into the image (see `.dockerignore`).
 
 The separate public Meretuule website uses `https://meretuule.arleserver.cfd/`
 through the [host-specific dynamic proxy route](deploy/meretuule/README.md).
-Keep the existing robot domain and application service unchanged.
+This is the canonical guest address. `https://robot.arleserver.cfd/` remains
+the operator dashboard and the destination for booking and voice-demo links.
+The former guest paths `https://robot.arleserver.cfd/hotel` and
+`https://robot.arleserver.cfd/hotel/` are retired with HTTP 410; `/hotel` remains
+only the internal proxy rewrite target and local preview route.
 
 ## 2. Environment (Coolify → Environment Variables)
 
@@ -62,7 +66,8 @@ volume. `STAY_DEMO_WRITES` follows `EASY_DEMO_WRITES` when absent; explicit `0`
 disables it. The native worker uses the identical room database path. The room
 inventory and receipts must survive replacement alongside the Easy journal;
 never initialize a different worker volume for this feature. Public hotel
-pitching content is served at `/hotel`; its contact number comes from
+pitching content is served at `https://meretuule.arleserver.cfd/`, using the
+internal `/hotel` handler; its contact number comes from
 `PUBLIC_PHONE_NUMBER`, or the configured Twilio/SIP number. The public DTOs
 contain catalogue/property information, and all booking writes retain operator
 authentication and call-owned confirmation rules.
@@ -116,6 +121,9 @@ the separately deployed telephone and booking services remain unchanged.
 - `https://robot.arleserver.cfd/health` → `{"ok": true}`
 - `https://robot.arleserver.cfd/` → disclosed fictional operator dashboard
   (provider-backed bookings, catalogue, text/microphone demo, technical calls).
+- `https://meretuule.arleserver.cfd/` → public fictional hotel and spa website;
+  its homepage links use this exact canonical root.
+- Robot `/hotel` and `/hotel/` → HTTP 410, including the trailing slash variant.
 - Confirm/cancel without or with a wrong client token → 403. 503 means
   the server itself has no `OPERATOR_TOKEN` configured — check Coolify env.
 

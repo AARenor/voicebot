@@ -14,6 +14,10 @@ async (page) => {
     require(/Meretuule/i.test(title), `Website title missing Meretuule: ${title}`);
     require(!/Vastuvõtulaud/i.test(title), 'Public domain served the operator dashboard');
     require(tab.url() === 'https://meretuule.arleserver.cfd/', 'Website root redirected elsewhere');
+    const homepageLinks = await tab.locator('a.wordmark, a.footer-brand').evaluateAll(elements =>
+      elements.map(el => el.getAttribute('href'))
+    );
+    require(homepageLinks.length === 2 && homepageLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Website homepage links did not use the exact canonical Meretuule root');
     const urls = await tab.locator('script[src], link[rel="stylesheet"][href], link[as="font"][href], img[src]').evaluateAll(elements =>
       [...new Set(elements.map(el => el.src || el.href))]
     );
@@ -44,13 +48,27 @@ async (page) => {
       require(denied.headers()['cache-control'] === 'no-store', `${host} cached an authorization failure`);
     }
     const robot = await tab.request.get('https://robot.arleserver.cfd/');
-    require(robot.status() === 200 && (await robot.text()).includes('<title>Vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
+    const robotHtml = await robot.text();
+    require(robot.status() === 200 && robotHtml.includes('<title>Vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
+    const dashboardHotelLinks = await tab.evaluate(html =>
+      [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.hotel-link, .heading-actions a.button:not(.primary)')].map(el => el.getAttribute('href')),
+    robotHtml);
+    require(dashboardHotelLinks.length === 2 && dashboardHotelLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Dashboard hotel links did not use the exact canonical Meretuule root');
+    const retiredRoutes = [];
+    for (const path of ['/hotel', '/hotel/']) {
+      const url = `https://robot.arleserver.cfd${path}`;
+      const retired = await tab.request.get(url, {maxRedirects: 0});
+      require(retired.status() === 410, `Retired guest address returned ${retired.status()}, expected 410: ${url}`);
+      require(!retired.headers().location, `Retired guest address redirected elsewhere: ${url}`);
+      retiredRoutes.push({url, status: retired.status()});
+    }
     const health = await tab.request.get('https://robot.arleserver.cfd/health');
     require(health.status() === 200 && (await health.json()).ok === true, 'Robot health check failed');
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,
       rooms: await tab.locator('.room-card').count(), services: await tab.locator('#service-list li').count(),
-      operatorLinks, privateRoutesDenied: true, robotHealthy: true, errors};
+      homepageLinks, dashboardHotelLinks, retiredRoutes, operatorLinks,
+      privateRoutesDenied: true, robotHealthy: true, errors};
   } finally {
     await tab.close();
   }
