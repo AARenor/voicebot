@@ -41,7 +41,7 @@ def test_native_empty_generation_produces_a_guarded_nonempty_reply(chunks, langu
         checked = await agent.checked_reply(reply())
         expected = {
             "et": (
-                "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?",
+                "Mis kuupäev sulle sobiks?",
                 "Edu ei ole kinnitatud. Kontrolli testbroneeringu tulemust taustsüsteemist.",
             ),
             "en": (
@@ -49,7 +49,7 @@ def test_native_empty_generation_produces_a_guarded_nonempty_reply(chunks, langu
                 "I couldn't verify that result. Please check the test booking in the booking system.",
             ),
             "ru": (
-                "На какую дату и время вы хотите сделать тестовое бронирование?",
+                "Какая дата вам подходит?",
                 "Успех операции не подтверждён. Проверьте результат тестового бронирования в системе.",
             ),
         }

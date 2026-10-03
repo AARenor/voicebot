@@ -797,7 +797,7 @@ class EasyAppointmentsAdapter(SlotAdapter):
             raise ProviderError(f"easy.search_slots: bad payload: {exc}") from exc
 
     async def _ensure_customer(self, guest: dict) -> int:
-        """Return customerId: reuse guest's, else create via /customers."""
+        """Use explicit ID or this adapter's verified exact-guest creation."""
         if guest.get("customerId") is not None:
             return _required_int(guest.get("customerId"), "customerId")
         body = {
@@ -806,6 +806,17 @@ class EasyAppointmentsAdapter(SlotAdapter):
             "email": guest.get("email", ""),
             "phone": guest.get("phone", ""),
         }
+        # Call-scoped email and all clean fields must match. Explicit IDs never
+        # seed this bounded, memory-only proof of our own successful creation.
+        customer_key = (
+            "created-customer:"
+            + hashlib.sha256(
+                json.dumps([self._base, body], sort_keys=True).encode()
+            ).hexdigest()
+        )
+        customer_id = self._holds.get_memo(customer_key, "created_customerId")
+        if customer_id is not None:
+            return customer_id
         try:
             response = await self._http.post(f"{self._base}/customers", json=body)
         except (httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:
@@ -819,7 +830,9 @@ class EasyAppointmentsAdapter(SlotAdapter):
             customer_id = response.json()["id"]
             if not _is_int_like(customer_id):
                 raise ValueError("invalid id")
-            return int(customer_id)
+            customer_id = int(customer_id)
+            self._holds.memo(customer_key, "created_customerId", customer_id)
+            return customer_id
         except (KeyError, ValueError, TypeError):
             # A malformed successful write may already have committed. Do not
             # persist a conversion error containing backend-controlled data.

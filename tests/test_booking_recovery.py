@@ -14,7 +14,7 @@ import pytest
 
 from app.booking.tools import Dispatcher
 from app.telephone import CONSENT_TEXT, UNKNOWN_REPLY, CallTools
-from tests.test_adversarial_adapter import Backend, adapter
+from tests.test_adversarial_adapter import GUEST, Backend, adapter, hold
 
 DAY = "2099-11-02"
 SEARCH = {"service": "6", "provider": "2", "date": DAY}
@@ -48,6 +48,29 @@ class FailingHTTP(Backend):
                     self.appointments.append({"id": 43, **body})
                     raise httpx.ReadTimeout("fixture timeout", request=request)
                 return httpx.Response(failure, text="PRIVATE-FIXTURE-BODY")
+        return super().__call__(request)
+
+
+class UniqueEmailHTTP(FailingHTTP):
+    """Keep customers after cancellation; duplicate email creation returns 500."""
+
+    def __init__(self):
+        super().__init__()
+        self.created_customers = {}
+
+    def __call__(self, request):
+        if (
+            request.method == "POST"
+            and request.url.path.endswith("/customers")
+            and ("POST", "/customers") not in self.failures
+        ):
+            body = json.loads(request.content)
+            self.calls.append((request.method, request.url.path, body))
+            if body["email"] in self.created_customers:
+                return httpx.Response(500, text="fixture duplicate email")
+            customer = {"id": len(self.created_customers) + 1, **body}
+            self.created_customers[body["email"]] = customer
+            return httpx.Response(201, json={"id": customer["id"]})
         return super().__call__(request)
 
 
@@ -537,5 +560,212 @@ def test_uncertain_committed_appointment_reconciles_read_only_but_call_stays_loc
             }
         finally:
             await api.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("fixture", ["guest-001", "guest-002"])
+def test_unique_email_same_call_rebooking_reuses_only_the_exact_guest(
+    tmp_path, fixture
+):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        state = CallTools(Dispatcher(slot=api))
+        try:
+            original = await owned_hold(state)
+            await prepare(state, original)
+            assert (await approve_and_confirm(state, original))["ok"]
+            state.observe_user_text(CANCEL)
+            assert (await state.dispatch("cancel_slot_booking", {"booking_id": "43"}))[
+                "ok"
+            ]
+            assert not backend.appointments and len(backend.created_customers) == 1
+
+            state.observe_user_text("Soovin sama aega uuesti broneerida.")
+            fresh = await owned_hold(state)
+            assert fresh != original
+            await prepare(state, fresh, fixture)
+            assert await state.dispatch("confirm_slot_booking", {"hold_id": fresh}) == {
+                "error": "consent_required"
+            }
+            assert backend.customers == backend.posts == 1
+            result = await approve_and_confirm(state, fresh)
+            assert result == {"ok": True, "booking": {"id": 44}}
+            assert not state.mutation_uncertain
+            assert backend.posts == 2
+            expected_customers = 1 if fixture == "guest-001" else 2
+            assert (
+                backend.customers
+                == len(backend.created_customers)
+                == expected_customers
+            )
+            assert backend.appointments[0]["customerId"] == expected_customers
+            assert [item["action"] for item in state.booking_receipts] == [
+                "confirmed",
+                "cancelled",
+                "confirmed",
+            ]
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("field", ["clean", "firstName", "lastName", "email", "phone"])
+def test_customer_reuse_requires_all_four_clean_guest_fields(tmp_path, field):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        try:
+            original = await hold(api)
+            assert (await api.confirm(original.hold_id, GUEST, "first"))["ok"]
+            assert (await api.cancel("43", "cancel"))["ok"]
+            changed = {key: " " + value + " " for key, value in GUEST.items()}
+            if field != "clean":
+                changed = {
+                    **GUEST,
+                    field: {
+                        "firstName": "Other",
+                        "lastName": "Other",
+                        "email": "other@example.invalid",
+                        "phone": "+37200000002",
+                    }[field],
+                }
+            fresh = await hold(api)
+            result = await api.confirm(fresh.hold_id, changed, "second")
+            if field in {"clean", "email"}:
+                assert result["ok"] and backend.posts == 2
+                assert backend.customers == (1 if field == "clean" else 2)
+                assert backend.appointments[0]["customerId"] == backend.customers
+            else:
+                assert result == {"ok": False, "error": "write_outcome_unknown"}
+                assert backend.customers == 2 and backend.posts == 1
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+def test_customer_reuse_is_not_shared_between_calls(tmp_path):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        first, second = CallTools(Dispatcher(slot=api)), CallTools(Dispatcher(slot=api))
+        try:
+            for state in (first, second):
+                selected = await owned_hold(state)
+                await prepare(state, selected)
+                result = await approve_and_confirm(state, selected)
+                assert result["ok"]
+                state.observe_user_text(CANCEL)
+                assert (
+                    await state.dispatch(
+                        "cancel_slot_booking",
+                        {"booking_id": str(result["booking"]["id"])},
+                    )
+                )["ok"]
+            assert backend.customers == backend.posts == 2
+            assert len(backend.created_customers) == 2
+            assert {record["id"] for record in backend.created_customers.values()} == {
+                1,
+                2,
+            }
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+def test_explicit_customer_id_does_not_seed_exact_guest_reuse(tmp_path):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        try:
+            original = await hold(api)
+            assert (
+                await api.confirm(
+                    original.hold_id, {**GUEST, "customerId": 99}, "first"
+                )
+            )["ok"]
+            assert backend.customers == 0
+            assert (await api.cancel("43", "cancel"))["ok"]
+            fresh = await hold(api)
+            assert (await api.confirm(fresh.hold_id, GUEST, "second"))["ok"]
+            assert backend.customers == 1
+            assert backend.appointments[0]["customerId"] == 1
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+def test_proven_customer_reuse_does_not_retry_a_known_failed_booking_key(tmp_path):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        try:
+            original = await hold(api)
+            backend.failures[("POST", "/appointments")] = 401
+            failure = await api.confirm(original.hold_id, GUEST, "failed")
+            assert failure == {"ok": False, "error": "confirm_failed"}
+            assert backend.customers == backend.posts == 1
+            backend.failures.clear()
+            before = len(backend.calls)
+            assert await api.confirm(original.hold_id, GUEST, "failed") == failure
+            assert len(backend.calls) == before
+            fresh = await hold(api)
+            assert (await api.confirm(fresh.hold_id, GUEST, "fresh"))["ok"]
+            assert backend.customers == 1 and backend.posts == 2
+            assert backend.appointments[0]["customerId"] == 1
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+def test_cached_customer_cannot_bypass_a_later_unknown_customer_write(tmp_path):
+    async def run():
+        backend = UniqueEmailHTTP()
+        api = adapter(backend, tmp_path / "writes.db")
+        try:
+            original = await hold(api)
+            assert (await api.confirm(original.hold_id, GUEST, "first"))["ok"]
+            assert (await api.cancel("43", "cancel"))["ok"]
+            fresh = await hold(api)
+            backend.failures[("POST", "/customers")] = 500
+            failure = await api.confirm(
+                fresh.hold_id, {**GUEST, "email": "other@example.invalid"}, "unknown"
+            )
+            assert failure == {"ok": False, "error": "write_outcome_unknown"}
+            backend.failures.clear()
+            before = len(backend.calls)
+            assert await api.confirm(fresh.hold_id, GUEST, "new-key") == failure
+            assert await api.confirm(fresh.hold_id, GUEST, "unknown") == failure
+            assert len(backend.calls) == before
+            assert backend.customers == 2 and backend.posts == 1
+        finally:
+            await api.close()
+
+    asyncio.run(run())
+
+
+def test_exact_guest_customer_proof_is_adapter_local(tmp_path):
+    async def run():
+        backends = [UniqueEmailHTTP(), UniqueEmailHTTP()]
+        apis = [
+            adapter(backend, tmp_path / f"writes-{index}.db")
+            for index, backend in enumerate(backends)
+        ]
+        try:
+            for api, backend in zip(apis, backends):
+                selected = await hold(api)
+                assert (await api.confirm(selected.hold_id, GUEST, "first"))["ok"]
+                assert backend.customers == 1
+                assert len(backend.created_customers) == 1
+            assert backends[0].created_customers == backends[1].created_customers
+        finally:
+            for api in apis:
+                await api.close()
 
     asyncio.run(run())

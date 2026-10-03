@@ -89,9 +89,9 @@ GREETING = (
     "Siin teeme ainult testbroneeringuid. Kuidas saan aidata?"
 )
 FALLBACK = "Vabandust, teenus ei ole praegu saadaval. Palun proovige hiljem uuesti."
-ASK_DATE_TIME = "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?"
-ASK_DATE = "Mis kuupäevaks soovid testbroneeringut?"
-ASK_TIME = "Mis kellaajaks soovid testbroneeringut?"
+ASK_DATE = QUESTIONS["et"]["date"][0]
+ASK_TIME = QUESTIONS["et"]["time"][0]
+ASK_DATE_TIME = ASK_DATE  # The legacy fallback now asks only the first missing detail.
 UNVERIFIED_REPLY = (
     "Edu ei ole kinnitatud. Kontrolli testbroneeringu tulemust taustsüsteemist."
 )
@@ -621,22 +621,7 @@ class CallTools:
     def language_instructions(self):
         if self.language != "ru":
             return ""
-        prompts = [
-            localize(text, "ru")
-            for text in (
-                ASK_DATE_TIME,
-                ASK_DATE,
-                ASK_TIME,
-                "Kas soovid broneerida spaahooldust või hotellituba?",
-                "Millist spaateenust soovid ja mis kuupäevaks?",
-                "Mis kellaaega eelistad?",
-                "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
-                "Millist toatüüpi eelistad?",
-                "Tere! Kuidas saan aidata?",
-                "Kas soovid veel midagi küsida?",
-                "Aitäh! Head päeva!",
-            )
-        ]
+        prompts = sorted(approved_dialogue("ru"))
         return (
             "\nCurrent caller language: Russian. Respond ONLY in Russian. "
             "This overrides earlier Estonian language/wording instructions. "
@@ -851,17 +836,32 @@ class CallTools:
         self.faq_entries = (
             match_question(text, selected) if not self.unsupported_language else ()
         )
-        if self.faq_entries and all(entry["id"] in {"booking-025", "booking-026"} for entry in self.faq_entries):
+        if self.faq_entries and all(
+            entry["id"] in {"booking-025", "booking-026"} for entry in self.faq_entries
+        ):
             self.conversation.focus = "hours"
-        self._faq_unmatched = bool(text.strip() and not self.faq_entries and self.conversation.intent is None)
-        self._legacy_faq_answer = next((
-            entry.get("answer_" + selected) for entry in self.demo["faq"]
-            if normalize_question(text) == normalize_question(entry.get("question_" + selected, ""))
-        ), None) if text.strip() and not self.faq_entries and not self.unsupported_language else None
+        self._faq_unmatched = bool(
+            text.strip() and not self.faq_entries and self.conversation.intent is None
+        )
+        self._legacy_faq_answer = (
+            next(
+                (
+                    entry.get("answer_" + selected)
+                    for entry in self.demo["faq"]
+                    if normalize_question(text)
+                    == normalize_question(entry.get("question_" + selected, ""))
+                ),
+                None,
+            )
+            if text.strip() and not self.faq_entries and not self.unsupported_language
+            else None
+        )
         self._booking_request = booking_input(text) or named_fixture
         self._faq_booking_kind = None
         if len(self.faq_entries) == 1 and self.faq_entries[0]["id"] == "booking-002":
-            stay = bool(re.search(r"\b(?:toa\w*|tuba\w*|room\w*|номер\w*)\b", text, re.I))
+            stay = bool(
+                re.search(r"\b(?:toa\w*|tuba\w*|room\w*|номер\w*)\b", text, re.I)
+            )
             spa = bool(re.search(r"\b(?:spa\w*|спа\w*)\b", text, re.I))
             if stay != spa:
                 self._faq_booking_kind = "stay" if stay else "slot"
@@ -873,7 +873,11 @@ class CallTools:
             text
         )
         self._booking_inquiry = (
-            _spa_inquiry_fields(text, self._booking_inquiry)
+            (
+                self._booking_inquiry
+                if self.conversation.intent in {"repeat", "frustrated"}
+                else _spa_inquiry_fields(text, self._booking_inquiry)
+            )
             if selected == "et"
             and not self.unsupported_language
             and not self._spa_hours_inquiry
@@ -972,15 +976,27 @@ class CallTools:
                     reply = QUESTIONS[self.language][key][0]
             elif route == "status":
                 if self.last_booking in self.bookings:
-                    status = "cancelled" if self.last_booking in self.cancelled_bookings else "confirmed"
-                    reply = ENGLISH[status] if self.language == "en" else self.say(MUTATION_REPLIES[status])
+                    status = (
+                        "cancelled"
+                        if self.last_booking in self.cancelled_bookings
+                        else "confirmed"
+                    )
+                    reply = (
+                        ENGLISH[status]
+                        if self.language == "en"
+                        else self.say(MUTATION_REPLIES[status])
+                    )
                 else:
                     reply = NO_BOOKING[self.language]
             else:
-                reply = next((
-                    speech for result in reversed(results)
-                    if (speech := render_catalogue((entry,), result, self.language))
-                ), None)
+                reply = next(
+                    (
+                        speech
+                        for result in reversed(results)
+                        if (speech := render_catalogue((entry,), result, self.language))
+                    ),
+                    None,
+                )
                 if reply is None:
                     return None
             if reply not in replies:
@@ -990,9 +1006,14 @@ class CallTools:
     def faq_response(self, *, allow_actions=True):
         """The shared native/HTTP shortcut cannot write or infer availability."""
         if (
-            not self.faq_entries or self.unsupported_language or self.clarification
-            or self.pending or self.cancel_approval or self.turn_mutation
-            or self.mutation_uncertain or self.outcome == "write_outcome_unknown"
+            not self.faq_entries
+            or self.unsupported_language
+            or self.clarification
+            or self.pending
+            or self.cancel_approval
+            or self.turn_mutation
+            or self.mutation_uncertain
+            or self.outcome == "write_outcome_unknown"
         ):
             return None
         reply = self.faq_reply()
@@ -1005,7 +1026,10 @@ class CallTools:
             if any(entry["route"] == route for entry in self.faq_entries):
                 # Even a malformed/error result counts as attempted: never loop
                 # a provider request or replace it with the saved FAQ snapshot.
-                attempted = any(key in result or result.get("error") or result.get("ok") is False for result in self.results)
+                attempted = any(
+                    key in result or result.get("error") or result.get("ok") is False
+                    for result in self.results
+                )
                 if not attempted and name in self.names and allow_actions:
                     return {"name": name, "arguments": {}}
         return {"content": self.guard_reply(MISSING_FACTS[self.language], self.results)}
@@ -1022,14 +1046,13 @@ class CallTools:
             or self.turn_mutation
             or self.mutation_uncertain
             or self.outcome == "write_outcome_unknown"
+            or self.conversation.intent in {"repeat", "frustrated"}
         ):
             return None
         day, start = (
             self._booking_inquiry.get("date"),
             self._booking_inquiry.get("start_time"),
         )
-        if not day and not start:
-            return ASK_DATE_TIME
         if not day:
             return ASK_DATE
         return ASK_TIME if not start else None
@@ -1137,7 +1160,9 @@ class CallTools:
         return True
 
     def guard_reply(self, text, results):
-        return self.say(self._guard_reply(text, results))
+        reply = self.say(self._guard_reply(text, results))
+        self.conversation.remember_reply(reply, self.language)
+        return reply
 
     def _guard_reply(self, text, results):
         english = self.language == "en"
@@ -1222,9 +1247,18 @@ class CallTools:
         clarification = self.inquiry_reply() if not results else None
         if clarification and _is_spa_clarification(text):
             return clarification
-        if text in {REPEAT_PROMPT[self.language], STT_UNAVAILABLE[self.language], TURN_UNAVAILABLE[self.language], self.fallback}:
+        if text in {
+            REPEAT_PROMPT[self.language],
+            STT_UNAVAILABLE[self.language],
+            TURN_UNAVAILABLE[self.language],
+            self.fallback,
+        }:
             return text
-        if self._faq_unmatched and not self._booking_request and not self.spa_hours_inquiry:
+        if (
+            self._faq_unmatched
+            and not self._booking_request
+            and not self.spa_hours_inquiry
+        ):
             if action_claim(text):
                 return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
             return FAQ_CLARIFY[self.language]
@@ -1259,7 +1293,12 @@ class CallTools:
             )
             if canonical:
                 return safe_speech(canonical, results, self.language)
-        if self._faq_unmatched and not results and not self.pending and not self._booking_request:
+        if (
+            self._faq_unmatched
+            and not results
+            and not self.pending
+            and not self._booking_request
+        ):
             if action_claim(text):
                 return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
             return FAQ_CLARIFY[self.language]

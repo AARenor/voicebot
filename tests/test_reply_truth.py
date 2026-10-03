@@ -35,7 +35,7 @@ UNKNOWN = (
     "Toimingu tulemus on ebaselge. Edu ei ole kinnitatud. "
     "Ära korda toimingut; kontrolli taustsüsteemi."
 )
-ASK_DATE_TIME = "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?"
+ASK_DATE = "Mis kuupäev sulle sobiks?"
 
 
 @pytest.mark.parametrize(
@@ -536,7 +536,7 @@ def test_malformed_mutation_response_is_unknown_not_safe_to_retry(name, result):
 
 def test_every_exact_approved_faq_and_static_greeting_remains_usable():
     state = CallTools(Slots())
-    for text in [GREETING, FALLBACK, "Tere!", ASK_DATE_TIME] + [
+    for text in [GREETING, FALLBACK, "Tere!", ASK_DATE] + [
         entry["answer_et"] for entry in state.demo["faq"]
     ]:
         assert state.guard_reply(text, []) == text
