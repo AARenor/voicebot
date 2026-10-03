@@ -11,6 +11,7 @@ import re
 from xml.sax.saxutils import quoteattr
 
 from ..languages import CONSENT
+from .speech_text import normalize_estonian_speech
 
 
 @dataclass(frozen=True)
@@ -77,8 +78,12 @@ def spoken_estonian_date(value: str) -> str:
     return f"{days[date.weekday()]}, {date.day}. {months[date.month - 1]} {date.year}"
 
 
+_CLOCK = r"(?:[01]?\d|2[0-3])(?::[0-5]\d)?"
 _PRONUNCIATION = re.compile(
-    r"(?<!\w)(?:\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?|kell \d{2}:\d{2}|ajavöönd Europe/Tallinn|Europe/Tallinn)(?!\w)"
+    r"(?<![\w:])(?:\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?|"
+    rf"(?:kell )?{_CLOCK} kuni kell {_CLOCK}|kell {_CLOCK}|"
+    r"ajavöönd Europe/Tallinn|Europe/Tallinn)(?![\w:])",
+    re.I,
 )
 
 
@@ -125,11 +130,13 @@ def _pronounced_text(text: str, language: str) -> str:
         parts.append(escape(text[end : match.start()], quote=False))
         original = match[0]
         try:
-            if "Europe/Tallinn" in original:
+            if "europe/tallinn" in original.casefold():
                 alias = "Tallinna aja järgi"
-            elif original.startswith("kell "):
-                hour, minute = map(int, original[5:].split(":"))
-                alias = "kell " + spoken_estonian_time(hour, minute)
+            elif " kuni kell " in original.casefold():
+                start, finish = original.casefold().removeprefix("kell ").split(" kuni kell ")
+                alias = "kell " + _spoken_clock(start) + " kuni kell " + _spoken_clock(finish)
+            elif original.casefold().startswith("kell "):
+                alias = "kell " + _spoken_clock(original[5:])
             else:
                 date = datetime.fromisoformat(original)
                 alias = spoken_estonian_date(original)
@@ -145,6 +152,11 @@ def _pronounced_text(text: str, language: str) -> str:
     return "".join(parts)
 
 
+def _spoken_clock(value: str) -> str:
+    hour, _, minute = value.partition(":")
+    return spoken_estonian_time(int(hour), int(minute or "0"))
+
+
 def speech_markup(
     text: str,
     voice: str,
@@ -155,6 +167,7 @@ def speech_markup(
 ) -> str:
     # All model/backend text is literal. Only this renderer can introduce tags.
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
+    text = normalize_estonian_speech(text, language)
     if delivery.mode == "neutral":
         return escape(text, quote=False)
     body = _pronounced_text(text, language)
@@ -163,4 +176,16 @@ def speech_markup(
     # Jenny's supported styles are documented; other voices keep their default.
     if voice == "en-US-JennyNeural" and language == "en-US":
         body = f'<mstts:express-as style="friendly" styledegree="0.8">{body}</mstts:express-as>'
+    if language == "et-EE":
+        # Apply the same pause preset to a whole HTTP reply and each native
+        # sentence, so separate synthesis requests do not add long silent tails.
+        pauses = {
+            "Leading-exact": 0,
+            "Tailing-exact": 240 if recap else 120,
+            "Sentenceboundary-exact": 320 if recap else 200,
+        }
+        body = "".join(
+            f'<mstts:silence type="{kind}" value="{duration}ms"/>'
+            for kind, duration in pauses.items()
+        ) + body
     return body

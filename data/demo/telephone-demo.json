@@ -122,7 +122,7 @@
     "entries": [
       {
         "question_et": "Kas Meretuule Köök on päris restoran?",
-        "answer_et": "Ei. Meretuule Köök on väljamõeldud restoranidemo. Broneeringud ei anna õigust päris teenusele.",
+        "answer_et": "Ei. Meretuule Köök on väljamõeldud restoranidemo.",
         "question_en": "Is Meretuule Kitchen a real restaurant?",
         "answer_en": "No. Meretuule Kitchen is a fictional restaurant demo. Test bookings do not entitle you to a real service.",
         "question_ru": "Meretuule Köök — это настоящий ресторан?",
@@ -130,7 +130,7 @@
       },
       {
         "question_et": "Kas saan laua siin päriselt broneerida?",
-        "answer_et": "Ei. See demo ei saada päris broneeringuid. Restoranilaudade taustsüsteem tuleb enne kasutust eraldi seadistada.",
+        "answer_et": "Selles demos ei saa veel lauda broneerida. Restorani lauabroneeringute süsteem pole seadistatud.",
         "question_en": "Can I make a real table reservation here?",
         "answer_en": "No. This demo does not send real reservations. A restaurant table backend must be configured before use.",
         "question_ru": "Здесь можно забронировать настоящий столик?",

@@ -818,6 +818,7 @@ class CallTools:
             return (
                 "Sa oled Meretuule Köögi restorani demoabiline. Päris restorani ega lauabroneerimise backend'i pole seadistatud. Ära väida saadavust, lahtiolekuaegu, päris menüüd, hindu, allergiainfo ega broneeringu loomist. Kasuta ainult kinnitatud demo KKK-d. Ära küsi päris kontakt- ega makseandmeid.\n"
                 + json.dumps(profile, ensure_ascii=False)
+                + "\n" + STYLE_INSTRUCTIONS[self.language]
                 + self.language_instructions
             )
         return (
@@ -832,7 +833,7 @@ class CallTools:
     @property
     def greeting(self):
         if self.business == "restaurant":
-            return {"et": "Tere! See on Meretuule Köögi restorani demo. Kuidas saan aidata?", "en": "Hello! This is the Meretuule Kitchen restaurant demo. How can I help?", "ru": "Здравствуйте! Это демонстрация ресторана Meretuule Köök. Чем могу помочь?"}[self.language]
+            return {"et": "Tere! Olen Meretuule Köögi virtuaalne abiline. Kuidas saan sind selles restoranidemos aidata?", "en": "Hello! This is the Meretuule Kitchen restaurant demo. How can I help?", "ru": "Здравствуйте! Это демонстрация ресторана Meretuule Köök. Чем могу помочь?"}[self.language]
         return ENGLISH["greeting"] if self.language == "en" else self.say(GREETING)
 
     @property
@@ -885,7 +886,7 @@ class CallTools:
             selected = self.language
         changed = selected != self.language
         self.language = selected
-        self.conversation.observe(text, selected)
+        self.conversation.observe(text, selected, business=self.business)
         self.unsupported_language = (
             unsupported and not named_fixture and requested_language(text) is None
         )
@@ -1286,7 +1287,9 @@ class CallTools:
             else {localize(reply, "ru") for reply in STATIC_REPLIES}
             if self.language == "ru"
             else STATIC_REPLIES | {ENGLISH_INVITATION}
-        ) | approved_dialogue(self.language)
+        ) | approved_dialogue(self.language, business=self.business)
+        if self.business == "restaurant":
+            static = approved_dialogue(self.language, business=self.business) | {self.greeting, ENGLISH_INVITATION}
         provider_prompts = (
             REPEAT_PROMPT[self.language],
             STT_UNAVAILABLE[self.language],

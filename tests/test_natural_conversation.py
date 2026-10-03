@@ -172,7 +172,7 @@ def test_authenticated_social_turns_need_no_model_or_booking_write(
     response = send(client, start(client), utterance, language=language).json()
     assert response["warnings"] == [] and response["outcome"] == "ok"
     assert response["booking_changes"] == []
-    assert response["reply"] in approved_dialogue(language)
+    assert response["reply"] in approved_dialogue(language, business="restaurant")
     assert response["timings_ms"]["llm"] == 0
     model.chat.assert_not_called()
 

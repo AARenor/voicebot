@@ -27,7 +27,6 @@ from .errors import (
     RetryableProviderError,
     raise_for_provider,
 )
-from .speech_text import normalize_estonian_speech
 from .modern_tts import (
     Mp3Audio,
     TOTAL_TIMEOUT,
@@ -68,7 +67,7 @@ def ssml(
 ) -> str:
     """Escape literal speech and apply shared voice-specific delivery."""
     body = speech_markup(
-        normalize_estonian_speech(text, lang),
+        text,
         voice,
         lang,
         delivery or SpeechDelivery(),

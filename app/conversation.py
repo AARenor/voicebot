@@ -197,6 +197,26 @@ REPLIES = {
     },
 }
 
+RESTAURANT_REPLIES = {
+    "et": {
+        "identity": (
+            "Olen Meretuule Köögi virtuaalne abiline. Vastan selle restoranidemo küsimustele.",
+        ),
+        "human": (
+            "Ma ei saa selles demos kõnet töötajale suunata. Saan aga vastata restoranidemo küsimustele.",
+        ),
+        "how_are_you": ("Aitäh küsimast! Olen valmis sind aitama. Mis sind huvitab?",),
+    },
+    "en": {
+        "identity": ("I'm Meretuule Kitchen's virtual assistant. I answer questions about this restaurant demo.",),
+        "human": ("I can't transfer calls to staff in this demo. I can answer questions about the restaurant demo.",),
+    },
+    "ru": {
+        "identity": ("Я виртуальный помощник Meretuule Köök. Отвечаю на вопросы об этой демонстрации ресторана.",),
+        "human": ("В этой демонстрации я не могу перевести звонок сотруднику. Могу ответить на вопросы о демонстрации ресторана.",),
+    },
+}
+
 # Alternatives are reviewed questions, not a permit to improvise booking facts.
 QUESTIONS = {
     "et": {
@@ -247,7 +267,7 @@ QUESTIONS = {
 }
 
 STYLE_INSTRUCTIONS = {
-    "et": "Räägi sõbraliku abilisena, lühikeste kõnelausete ja ühe küsimusega korraga. Vali puuduvate andmete küsimus natural_questions valikutest. Ära küsi uuesti juba antud detaili. Ära korda tervitust ega demo tutvustust igas voorus. Väldi bürokraatlikku sõnastust, loetelude ettelugemist, täitesõnu ja väljamõeldud naeru. Ära väida, et oled inimene. Vastused ja küsimused ei tohi lubada kinnitamata broneeringut, hinda, saadavust ega inimesele suunamist. Serveri kokkuvõte ja nõusoleku sõnad jäävad täpseks. Vali kõigepealt üks täpsustav küsimus; ära loe korraga kõiki puuduvate andmete küsimusi ette.",
+    "et": "Vasta korrektses ja loomulikus eesti keeles, nagu sõbralik vastuvõtja. Alusta vastusest küsitud küsimusele; vajadusel lisa üks lühike selgitus. Kasuta sidusaid täislauseid ja sina-vormi. Väldi ingliskeelseid sõnu, otsetõlkeid, tehnilist sõnavara ja hakitud lausekatkeid. Kasuta tavaliselt üht kuni kolme lühikest lauset. Vali puuduvate andmete küsimus natural_questions valikutest ja küsi üks detail korraga. Ära küsi uuesti juba antud detaili ega lisa iga vastuse lõppu uut küsimust. Ära korda tervitust ega demo tutvustust igas voorus. Väldi bürokraatlikku sõnastust, loetelude ettelugemist, täitesõnu ja väljamõeldud naeru. Ära väida, et oled inimene. Vastused ja küsimused ei tohi lubada kinnitamata broneeringut, hinda, saadavust ega inimesele suunamist. Kinnitatud KKK-vastused, serveri kokkuvõte ja nõusoleku sõnad jäävad täpseks.",
     "en": "Speak like a friendly assistant, with short spoken sentences and one question at a time. Choose missing-detail questions from natural_questions. Keep details the caller already supplied. Do not restart the greeting or repeat the demo disclosure every turn. Avoid bureaucratic wording, long lists, filler noises and invented laughter. Do not pretend to be human. Never add an unverified booking, price, availability or transfer claim. The server's recap and consent wording stay exact. Pick one clarification question; do not read out the whole list of missing details.",
     "ru": "Говори как дружелюбный помощник: короткими фразами и по одному вопросу за раз. Выбирай вопросы о недостающих данных из natural_questions. Сохраняй сведения, которые собеседник уже сообщил. Не начинай каждый ответ с приветствия и не повторяй описание демонстрации в каждом ходе. Избегай канцелярских оборотов, длинных списков, слов-паразитов и выдуманного смеха. Не выдавай себя за человека. Не обещай неподтверждённое бронирование, цену, наличие мест или перевод звонка сотруднику. Серверный текст итогов бронирования и слова согласия должны оставаться точными. Задавай один уточняющий вопрос, а не весь список вопросов о недостающих данных.",
 }
@@ -309,10 +329,14 @@ def read_focus(text: str) -> str | None:
     return None
 
 
-def approved_dialogue(language: str) -> set[str]:
+def approved_dialogue(language: str, *, business: str = "legacy") -> set[str]:
+    replies = REPLIES[language]
+    groups = (replies, QUESTIONS[language])
+    if business == "restaurant":
+        groups = ({**replies, **RESTAURANT_REPLIES[language]},)
     return {
         text
-        for group in (REPLIES[language], QUESTIONS[language])
+        for group in groups
         for variants in group.values()
         for text in variants
     }
@@ -327,12 +351,15 @@ class Conversation:
         self.focus: str | None = None
         self._counts: dict[tuple[str, str], int] = {}
 
-    def observe(self, text: str, language: str) -> None:
+    def observe(self, text: str, language: str, *, business: str = "legacy") -> None:
         self.intent = intent_for(text)
         self.focus = read_focus(text)
         self.reply = None
         if self.intent is not None:
-            choices = REPLIES[language][self.intent]
+            choices = (
+                RESTAURANT_REPLIES[language].get(self.intent, REPLIES[language][self.intent])
+                if business == "restaurant" else REPLIES[language][self.intent]
+            )
             key = (language, self.intent)
             count = self._counts.get(key, 0)
             self.reply = choices[count % len(choices)]

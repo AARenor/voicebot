@@ -21,7 +21,7 @@
         "Kas teil on allergiavaba menüü?",
         "Kas mul on siin tsöliaakiaga ohutu süüa?"
       ],
-      "answer_et": "Menüü ja allergeenide kohta ei ole demos kinnitatud infot. Konkreetset eritoitu ma lubada ei saa.",
+      "answer_et": "Mul pole kinnitatud infot menüü ega allergeenide kohta. Seetõttu ei saa ma eritoitu lubada.",
       "question_en": "What is on the menu?",
       "variants_en": [
         "What food do you serve?",
@@ -65,7 +65,7 @@
         "Teatage köögile mu pähkliallergiast.",
         "Märkige minu allergia üles."
       ],
-      "answer_et": "See demo ei salvesta erisoove ega saada köögile teateid. Allergiaohutust ma kinnitada ei saa.",
+      "answer_et": "Selles demos ei saa ma erisoove kirja panna ega köögile edasi anda. Toidu ohutust allergia korral ei saa ma kinnitada.",
       "question_en": "Can you tell the kitchen about my allergy?",
       "variants_en": [
         "Can you record an allergy note?",
@@ -93,7 +93,7 @@
         "Tellige mulle õhtusöök.",
         "Kas saan toitu tellida?"
       ],
-      "answer_et": "See demo ei võta vastu toidu-, kaasamüügi- ega kohaletoimetamise tellimusi. Saan aidata fiktiivse lauabroneeringuga.",
+      "answer_et": "See demo ei võta vastu toidutellimusi. Saan vastata restorani kohta käivatele küsimustele.",
       "question_en": "Can I order takeaway?",
       "variants_en": [
         "Can I order food delivery?",
@@ -101,7 +101,7 @@
         "Order dinner for me.",
         "Can I order food?"
       ],
-      "answer_en": "This demo doesn't take food, takeaway or delivery orders. I can help with a fictional table reservation.",
+      "answer_en": "This demo doesn't take food, takeaway or delivery orders. I can answer questions about the restaurant demo.",
       "question_ru": "Можно заказать еду навынос?",
       "variants_ru": [
         "Можно заказать доставку еды?",
@@ -109,7 +109,33 @@
         "Закажите мне ужин.",
         "Можно заказать еду?"
       ],
-      "answer_ru": "Эта демонстрация не принимает заказы еды, навынос или с доставкой. Я могу помочь с тестовым бронированием столика."
+      "answer_ru": "Эта демонстрация не принимает заказы еды, навынос или с доставкой. Я могу ответить на вопросы о демонстрации ресторана."
+    },
+    {
+      "id": "booking-103",
+      "route": "static",
+      "question_et": "Millal restoran avatud on?",
+      "variants_et": ["Mis on restorani lahtiolekuajad?", "Mis kell restoran avatakse?", "Mis kell restoran suletakse?", "Kas olete täna avatud?"],
+      "answer_et": "Restorani lahtiolekuaegu pole selles demos veel määratud.",
+      "question_en": "What are the restaurant opening hours?",
+      "variants_en": ["When is the restaurant open?", "What time does the restaurant open?", "What time does the restaurant close?", "Are you open today?"],
+      "answer_en": "Restaurant opening hours haven't been configured in this demo yet.",
+      "question_ru": "Каковы часы работы ресторана?",
+      "variants_ru": ["Когда открыт ресторан?", "Во сколько открывается ресторан?", "Во сколько закрывается ресторан?", "Вы сегодня открыты?"],
+      "answer_ru": "Часы работы ресторана в этой демонстрации пока не настроены."
+    },
+    {
+      "id": "booking-104",
+      "route": "static",
+      "question_et": "Kas saan restoranis laua broneerida?",
+      "variants_et": ["Kas saan siin päris lauda broneerida?", "Kas saan laua siin päriselt broneerida?", "Soovin broneerida laua restoranis.", "Kas lauabroneeringuid saab teha?"],
+      "answer_et": "Selles demos ei saa veel lauda broneerida. Restorani lauabroneeringute süsteem pole seadistatud.",
+      "question_en": "Can I book a table at the restaurant?",
+      "variants_en": ["Can I make a real table reservation here?", "Can I book a table here?", "I would like to book a table at the restaurant."],
+      "answer_en": "You can't book a table in this demo yet. The restaurant table reservation system hasn't been configured.",
+      "question_ru": "Можно забронировать столик в ресторане?",
+      "variants_ru": ["Здесь можно забронировать настоящий столик?", "Можно забронировать столик здесь?", "Хочу забронировать столик в ресторане."],
+      "answer_ru": "В этой демонстрации пока нельзя забронировать столик. Система бронирования столиков ресторана не настроена."
     }
   ]
 }
