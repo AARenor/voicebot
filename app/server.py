@@ -480,6 +480,44 @@ def create_app():
             "endpointing_ms": silence_ms if 300 <= silence_ms <= 2000 else 650,
         }
 
+    preview_slots = asyncio.Semaphore(2)
+
+    @app.post("/api/demo/voices/preview")
+    async def preview_voice(
+        request: Request, authorization: str | None = Header(default=None)
+    ):
+        import base64
+        from fastapi import HTTPException
+
+        from .hackathon import choose_speaker, read_session_settings, voice_metadata
+        from .turn import _speak
+
+        dashboard_api._require_operator(authorization)
+        language, voice_id = await read_session_settings(request)
+        language = "et" if language == "auto" else language
+        speaker = choose_speaker(app.state.stack, voice_id)
+        if callable(getattr_static(speaker, "for_language", None)):
+            speaker = speaker.for_language(language)
+        text = {
+            "et": "Tere! Aitan sul lauda leida ja restorani kohta küsida. Mis kell sulle sobiks?",
+            "en": "Hello! I can help you find a table and answer questions about the restaurant. What time works for you?",
+            "ru": "Здравствуйте! Помогу вам найти столик и отвечу на вопросы о ресторане. Какое время вам подходит?",
+        }[language]
+        if preview_slots.locked():
+            raise HTTPException(429, "voice_preview_busy", headers={"Retry-After": "2"})
+        # Fixed audition text never creates a session, calls the model or books.
+        async with preview_slots:
+            audio = await _speak(speaker, text)
+        if not audio:
+            raise HTTPException(503, "voice_preview_unavailable")
+        return {
+            "text": text,
+            "language": language,
+            "audio_b64": base64.b64encode(audio).decode(),
+            "audio_type": "audio/mpeg",
+            "voice": voice_metadata(speaker, language, voice_id),
+        }
+
     @app.post("/api/turn")
     async def voice_turn(
         request: Request, authorization: str | None = Header(default=None)
@@ -711,8 +749,7 @@ def create_app():
                 headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
             )
         return FileResponse(
-            os.path.join(hotel_dir, "index.html"),
-            media_type="text/html",
+            os.path.join(hotel_dir, "index.html"), media_type="text/html"
         )
 
     @app.get("/hotel.css", include_in_schema=False)

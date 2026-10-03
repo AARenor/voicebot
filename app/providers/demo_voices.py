@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import os
-from contextlib import closing, nullcontext
+from inspect import getattr_static
+from contextlib import contextmanager
+from collections.abc import Iterator
 
 from .modern_tts import (
     CartesiaTtsClient,
@@ -15,12 +17,15 @@ from .modern_tts import (
     provider_error,
     validate_text,
 )
+from .azure_tts import AZURE_PRESETS
 
 PROFILES = {
     "azure": ("Azure Neural", ("et", "en", "ru"), True),
     "elevenlabs": ("ElevenLabs v4 Turbo", ("et", "en", "ru"), True),
     "google": ("Google Chirp 3 HD", ("et", "en", "ru"), False),
     "cartesia": ("Cartesia Sonic 3.6", ("en", "ru"), True),
+    "azure-male": ("Kert / Guy / Dmitry", ("et", "en", "ru"), True),
+    "azure-calm": ("Anu / Jenny / Svetlana (calm)", ("et", "en", "ru"), True),
 }
 
 
@@ -32,12 +37,23 @@ def dependency_available(name):
         return False
 
 
+@contextmanager
+def managed_stream(iterator: Iterator[bytes]) -> Iterator[Iterator[bytes]]:
+    """Close cancellable streams while allowing buffered tuple iterators."""
+    try:
+        yield iterator
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+
+
 class DemoVoices:
     def __init__(self, clients=None, *, readiness=None):
         self._clients = {
             key: value
             for key, value in (clients or {}).items()
-            if key in PROFILES and key != "azure"
+            if key in PROFILES and key not in {"azure", *AZURE_PRESETS}
         }
         self._readiness = dict(readiness or {})
 
@@ -115,6 +131,8 @@ class DemoVoices:
             available = (
                 azure is not None if profile == "azure" else profile in self._clients
             )
+            if profile in AZURE_PRESETS:
+                available = callable(getattr_static(azure, "for_profile", None))
             configured, reason = self._readiness.get(
                 profile, (available, None if available else "not_configured")
             )
@@ -134,6 +152,10 @@ class DemoVoices:
     def choose(self, profile_id="azure", azure=None):
         if not isinstance(profile_id, str) or profile_id not in PROFILES:
             raise ValueError("unknown voice profile") from None
+        if profile_id in AZURE_PRESETS:
+            if azure is None or not callable(getattr_static(azure, "for_profile", None)):
+                raise ValueError("voice profile unavailable") from None
+            return _Choice(profile_id, azure.for_profile(profile_id), azure)
         if (profile_id == "azure" and azure is None) or (
             profile_id != "azure" and profile_id not in self._clients
         ):
@@ -232,12 +254,7 @@ class _Choice:
                     if callable(getattr(speaker, "stream", None))
                     else (speaker.synthesize(text),)
                 )
-                context = (
-                    closing(iterator)
-                    if callable(getattr(iterator, "close", None))
-                    else nullcontext(iterator)
-                )
-                with context:
+                with managed_stream(iterator):
                     for chunk in iterator:
                         if not isinstance(chunk, bytes):
                             raise provider_error()

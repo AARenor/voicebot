@@ -120,5 +120,18 @@ reservation list are retained; no reset or replacement of newer master occurred.
 - Updated private restaurant audio-harness self-test again passed 33 boundary
   cases and 12 restaurant inputs, zero providers called.
 
+Publication was again deferred, before any push/restart, when published master
+advanced to `408cee1`. Its native male/calm voice options, authenticated fixed
+auditions and restored operator-dashboard layout were merged normally without
+conflicts. The guest host retains its existing restaurant-demo presentation;
+the robot host gets the published operator layout rather than a new redesign.
+
+Final source verification after this merge: **3,181 passed; 36 subtests passed;
+4 private opt-in skips; 2 upstream warnings**, 66.23 seconds, basetemp
+`/tmp/opencode/restaurant-domain-current-408-final`. All nine isolated Chromium
+scenarios passed again, including operator layout and unchanged public demo.
+Both Codex-account reviewers rechecked this merged bank/domain compatibility
+and found no remaining scoped P0/P1/P2. Their inspection remains static only.
+
 Publication and fresh live source/storage/private-speech acceptance remain
 pending. Historical initial counts do not stand in for deployment evidence.
