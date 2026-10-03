@@ -4,3 +4,6 @@ app/dashboard/static/*.js text eol=lf
 app/hotel/static/*.html text eol=lf
 app/hotel/static/*.css text eol=lf
 app/hotel/static/*.js text eol=lf
+app/restaurant/static/*.html text eol=lf
+app/restaurant/static/*.css text eol=lf
+app/restaurant/static/*.js text eol=lf

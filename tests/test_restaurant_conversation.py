@@ -247,7 +247,7 @@ def test_vegan_answers_use_approved_diet_labels(make_state, language, question, 
     reply = state.inquiry_reply()
     assert absent not in reply
     assert state.restaurant["menu"][0]["name"][language] in reply
-    assert state.restaurant["allergy_notice"][language] in reply
+    assert state.restaurant["allergy_notice"][language] not in reply
 
 
 def test_specific_dish_allergens_and_kitchen_hours_are_grounded(make_state):
