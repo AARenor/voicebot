@@ -9,6 +9,8 @@ def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
         choose_room = bool(state.results and state.results[-1].get("needs_room_type"))
         if state.pending or state.turn_mutation or choose_room:
             return {"content": state.guard_reply("", state.results)}
+        if state.spa_hours_inquiry and state.results:
+            return {"content": state.guard_reply("", state.results)}
         return None
     if not allow_actions:
         return None
@@ -28,4 +30,6 @@ def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
     inquiry = state.inquiry_reply()
     if inquiry:
         return {"content": inquiry}
+    if state.spa_hours_inquiry and not state.results:
+        return {"name": "get_slot_catalogue", "arguments": {}}
     return None
