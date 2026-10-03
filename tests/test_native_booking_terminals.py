@@ -183,7 +183,7 @@ def test_native_speech_normalizes_hours_after_guard_without_replacing_history():
             "monday": {"start": "09:00", "end": "17:00", "breaks": []},
         }
         state = CallTools(Dispatcher(slot=backend))
-        state.observe_user_text("Mis on tööajad?")
+        state.observe_user_text("Mis on spaa tööajad?")
         assert not (await state.dispatch("get_slot_catalogue", {})).get("error")
         agent = TelephoneAgent(state)
         canonical = state.guard_reply("", state.results)
