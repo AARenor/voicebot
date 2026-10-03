@@ -12,7 +12,7 @@ from livekit import rtc
 from livekit.agents import llm
 
 from app.booking.tools import Dispatcher
-from app.telephone import CallTools, CONSENT_TEXT
+from app.telephone import ASK_DATE_TIME, CallTools, CONSENT_TEXT
 from app.worker import TelephoneAgent
 from tests.test_demo_plan import LiveSlots, REQUEST
 from tests.test_native_booking_terminals import finalized, tool_chunk
@@ -41,7 +41,7 @@ def test_native_empty_generation_produces_a_guarded_nonempty_reply(chunks, langu
         checked = await agent.checked_reply(reply())
         expected = {
             "et": (
-                "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?",
+                ASK_DATE_TIME,
                 "Edu ei ole kinnitatud. Kontrolli testbroneeringu tulemust taustsüsteemist.",
             ),
             "en": (

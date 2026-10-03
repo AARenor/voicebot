@@ -42,11 +42,11 @@ RUSSIAN = {
     "Tere": "Здравствуйте",
     "Vabandust, teenus ei ole praegu saadaval. Palun proovige hiljem uuesti.":
         "Извините, сервис сейчас недоступен. Попробуйте позже.",
-    "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?":
+    "Mis kuupäeval ja mis kell soovid tulla?":
         "На какую дату и время вы хотите сделать тестовое бронирование?",
-    "Mis kuupäevaks soovid testbroneeringut?":
+    "Mis kuupäeval soovid tulla?":
         "На какую дату вы хотите сделать тестовое бронирование?",
-    "Mis kellaajaks soovid testbroneeringut?":
+    "Mis kell soovid tulla?":
         "На какое время вы хотите сделать тестовое бронирование?",
     "Edu ei ole kinnitatud. Kontrolli testbroneeringu tulemust taustsüsteemist.":
         "Успех операции не подтверждён. Проверьте результат тестового бронирования в системе.",

@@ -10,7 +10,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -51,6 +51,10 @@ from .booking_faq import (
     render_catalogue,
 )
 from .russian import localize
+from .booking_dates import (
+    DATE_MENTIONS, ESTONIAN_DATE_PATTERN, MONTHS,
+    interpreted_dates, resolve_estonian_date,
+)
 from .languages import (
     AFFIRMATIONS_EN,
     AFFIRMATIONS_RU,
@@ -92,9 +96,9 @@ GREETING = (
     "Siin teeme ainult testbroneeringuid. Kuidas saan aidata?"
 )
 FALLBACK = "Vabandust, teenus ei ole praegu saadaval. Palun proovige hiljem uuesti."
-ASK_DATE_TIME = "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?"
-ASK_DATE = "Mis kuupäevaks soovid testbroneeringut?"
-ASK_TIME = "Mis kellaajaks soovid testbroneeringut?"
+ASK_DATE_TIME = "Mis kuupäeval ja mis kell soovid tulla?"
+ASK_DATE = "Mis kuupäeval soovid tulla?"
+ASK_TIME = "Mis kell soovid tulla?"
 UNVERIFIED_REPLY = (
     "Edu ei ole kinnitatud. Kontrolli testbroneeringu tulemust taustsüsteemist."
 )
@@ -181,7 +185,7 @@ CANCELLATIONS = {
 }
 
 
-def _spa_inquiry_fields(text, previous):
+def _spa_inquiry_fields(text, previous, *, today=None):
     """Extract booking preferences only; never infer consent or availability."""
     if not isinstance(text, str) or len(text) > 2000:
         return None
@@ -227,7 +231,7 @@ def _spa_inquiry_fields(text, previous):
     )
     hour = r"(?:\d{1,2}|" + "|".join(hour_words) + r")"
     clock = rf"(?:kell\s+)?{hour}(?:[:.]\d{{2}})?"
-    day = r"(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})"
+    day = ESTONIAN_DATE_PATTERN
     followup = bool(
         previous
         and re.fullmatch(
@@ -238,7 +242,7 @@ def _spa_inquiry_fields(text, previous):
     if not spa_request and not followup:
         return None
     fields = {"kind": "slot"} if spa_request else dict(previous)
-    date_tokens = re.findall(r"\b(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})\b", text)
+    date_tokens = [match[0] for match in DATE_MENTIONS.finditer(text)]
     if len(date_tokens) > 1 or words & {
         "või",
         "kuni",
@@ -249,19 +253,11 @@ def _spa_inquiry_fields(text, previous):
     }:
         return None
     if date_tokens:
-        token = date_tokens[0]
-        today = datetime.now(ZoneInfo(DEMO_TIMEZONE)).date()
-        try:
-            requested = (
-                today + timedelta(days={"täna": 0, "homme": 1, "ülehomme": 2}[token])
-                if token in {"täna", "homme", "ülehomme"}
-                else datetime.strptime(token, "%Y-%m-%d").date()
-            )
-        except ValueError:
+        today = today if today is not None else datetime.now(ZoneInfo(DEMO_TIMEZONE)).date()
+        requested = resolve_estonian_date(date_tokens[0], today)
+        if requested["status"] != "resolved":
             return None
-        if requested < today:
-            return None
-        fields["date"] = requested.isoformat()
+        fields["date"] = requested["date"]
     clock_matches = list(
         re.finditer(
             rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])",
@@ -614,6 +610,8 @@ class CallTools:
         self.booking_details = {}
         self.booking_receipts = []
         self._booking_inquiry = None
+        self._requested_dates = []
+        self._date_only = False
         self._spa_hours_inquiry = False
         self.faq_entries = ()
         self._faq_unmatched = False
@@ -737,6 +735,7 @@ class CallTools:
             "faq": self.demo["faq"],
             "natural_questions": {} if self.business == "restaurant" else QUESTIONS[self.language],
             "booking_inquiry": None if self.business == "restaurant" else self.booking_inquiry,
+            "requested_dates": self.requested_dates,
         }
         if self.language == "en":
             context["language"] = "en"
@@ -797,7 +796,7 @@ class CallTools:
         return (
             "Sa oled fiktiivse Meretuule hotelli ja spaademo sõbralik eestikeelne abiline. Ära luba päris teenust/inimüleandmist. Ära küsi päris kontakte ega makseandmeid.\n"
             "Spaale: kui kuupäev ja kellaaeg on teada ning teenuse ja teenindaja valik on ühene, kasuta esmalt plan_demo_booking(date,start_time) ühe tööriistakutsega. Mitme teenuse või teenindaja puhul kasuta get_slot_catalogue, search_slots, tagastatud slot_id-ga hold_slot ja prepare_demo_booking. get_slot_catalogue näitab andmebaasi teenuseid, teenindajaid ja tööaegu. Küsi kasutajalt puuduv teenus, kuupäev või kellaaeg.\n"
-            "Spaasoovi tavaline kirjaviga „bruneerida” tähendab broneerimise küsimust, mitte kinnitamist. booking_inquiry sisaldab ainult kasutaja soovitud kuupäeva/kellaaega, mitte saadavust; kasuta seda järgmise vastuse ajaga koos.\n"
+            "Spaasoovi tavaline kirjaviga „bruneerida” tähendab broneerimise küsimust, mitte kinnitamist. booking_inquiry sisaldab ainult kasutaja soovitud kuupäeva/kellaaega, mitte saadavust; kasuta seda järgmise vastuse ajaga koos. requested_dates sisaldab selle vooru kuupäevatõlgendusi. Kasuta resolved kuupäeva täpselt, ka saabumise või lahkumise vastuses. „Homme” tähendab järgmist päeva current_date järgi Tallinna ajas. Ilma aastata kuupäev tähendab järgmist selle kuupäeva saabumist. Ära küsi juba öeldud kuupäeva uuesti. Kui staatus on invalid või past, palu kuupäeva täpsustada; ära vali ise teist päeva. Mitme kuupäeva puhul selgita vestluse järgi, milline on saabumine ja milline lahkumine; ebaselge valiku korral küsi täpsustust. Kuupäev ei anna kinnitamiseks nõusolekut.\n"
             "Toale: get_stay_catalogue näitab toatüüpe ja mahutavust. Küsi saabumine, lahkumine, külaliste arv ja toatüüp. Kasuta ettevalmistamiseks plan_demo_stay(checkin,checkout,adults,children,room_type) ühe tööriistakutsega; see teeb kataloogi, search_availability, hold_offer ja prepare_demo_stay kontrollid. Kui toatüüp puudub või on ebaselge, küsi tagastatud valikutest kasutaja eelistust ja kutsu plan_demo_stay uuesti. Ära vali suvalist ega odavaimat tuba. Hinda ei tohi oletada. Kõik hinnad on fiktiivsed näidishinnad, makseid ei koguta.\n"
             "Kasuta vaikimisi guest-001. Loe serveri recap ette ja küsi: „"
             + CONSENT_TEXT
@@ -846,6 +845,8 @@ class CallTools:
             # Repeat/language-switch turns keep an owned proposal but revoke
             # its delivery. Reuse its canonical recap, not a model paraphrase.
             return self.guard_reply("", [])
+        if self.date_reply is not None:
+            return self.guard_reply(self.date_reply, [])
         if self.conversation.reply is None:
             return None
         return self.guard_reply(self.conversation.reply, [])
@@ -890,6 +891,16 @@ class CallTools:
         self.unsupported_language = (
             unsupported and not named_fixture and requested_language(text) is None
         )
+        today = datetime.now(ZoneInfo(DEMO_TIMEZONE)).date()
+        self._requested_dates = (
+            interpreted_dates(text, today)
+            if selected == "et" and not self.unsupported_language else []
+        )
+        self._date_only = bool(re.fullmatch(
+            rf"(?:palun\s+|tulen\s+|soovin tulla\s+)?{ESTONIAN_DATE_PATTERN}"
+            r"(?:\s+(?:palun|sobib))?[.!?]*",
+            text.strip(), re.I,
+        ))
         self.clarification = english_clarification(text) if selected == "en" else None
         self.results.clear()
         self._turn_serial += 1
@@ -921,7 +932,7 @@ class CallTools:
             text
         )
         self._booking_inquiry = (
-            _spa_inquiry_fields(text, self._booking_inquiry)
+            _spa_inquiry_fields(text, self._booking_inquiry, today=today)
             if selected == "et"
             and not self.unsupported_language
             and not self._spa_hours_inquiry
@@ -997,6 +1008,10 @@ class CallTools:
         )
 
     @property
+    def requested_dates(self):
+        return copy.deepcopy(self._requested_dates)
+
+    @property
     def booking_inquiry(self):
         """Parsed requested fields for the next turn; no transcript or backend IDs."""
         return (
@@ -1062,6 +1077,30 @@ class CallTools:
     @property
     def clarification_reply(self):
         return (RESTAURANT_CLARIFY if self.business == "restaurant" else FAQ_CLARIFY)[self.language]
+
+    @property
+    def date_reply(self):
+        """Acknowledge a standalone date without inventing a restaurant booking."""
+        if (
+            self.language != "et" or not self._date_only
+            or len(self._requested_dates) != 1 or self.unsupported_language
+            or self.results or self.pending or self.turn_mutation
+            or self.cancel_approval or self.mutation_uncertain
+            or self.outcome == "write_outcome_unknown"
+        ):
+            return None
+        requested = self._requested_dates[0]
+        if requested["status"] == "invalid":
+            return "Seda kuupäeva kalendris ei ole. Palun ütle kuupäev uuesti, näiteks „6. oktoober”."
+        if requested["status"] == "past":
+            return "See kuupäev on juba möödas. Mis kuupäeval soovid tulla?"
+        if self.business == "restaurant":
+            day = datetime.fromisoformat(requested["date"])
+            return (
+                f"Sain aru, soovid tulla {day.day}. {MONTHS[day.month - 1][1]} {day.year}. "
+                "Selles demos ei saa veel lauda broneerida."
+            )
+        return None
 
     def inquiry_reply(self):
         """Trusted clarification only, without a provider call or booking action."""
@@ -1249,6 +1288,8 @@ class CallTools:
         if not isinstance(text, str):
             self.invalidate_recap()
             return self.fallback
+        if self.date_reply is not None:
+            return self.date_reply
         if self._legacy_faq_answer and not self.pending and not self.turn_mutation:
             return safe_speech(self._legacy_faq_answer, results, self.language)
         if self.faq_entries and not self.pending and not self.turn_mutation:

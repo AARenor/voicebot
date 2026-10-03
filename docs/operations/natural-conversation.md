@@ -19,6 +19,31 @@ opening-hours and table-reservation questions use reviewed answers. Hours and
 restaurant bookings remain unconfigured; the assistant does not invent them.
 Legacy spa/stay integrations retain their separate catalogue and recap policy.
 
+### Estonian date answers
+
+Both transports interpret dates from each finalized caller turn using the
+current date in `Europe/Tallinn`. `homme` means tomorrow and `ülehomme` means
+the day after tomorrow. Month names accept both `6. oktoober` and `6. oktoobril`,
+with or without a year; common spoken ordinals such as `kuuendal oktoobril`
+are also recognized. A month/day without a year means its next real calendar
+occurrence, including today; 29 February resolves to the next leap year.
+An explicit year is preserved. Impossible dates and explicitly past dates
+receive a clarification rather than a guessed replacement.
+
+The current turn's normalized `requested_dates` reach HTTP planning instructions
+and the native model's current context. Spa date followups keep the requested
+date while asking for the missing time. Arrival answers such as `homme` and
+`6. oktoober` reach the planner as ISO dates instead of falling through to the
+generic FAQ clarification. Questions use “Mis kuupäeval soovid saabuda?” and
+“Mis kuupäeval soovid lahkuda?” to distinguish the two dates.
+
+The restaurant demo acknowledges a standalone visit date, while stating that
+table bookings remain unavailable. Parsing a date does not create availability,
+a reservation, playback delivery, or consent to a write. Only normalized fields
+are held for the current turn; partial transcripts do not update them.
+`tests/test_estonian_booking_dates.py` covers the parser, Tallinn midnight,
+year/leap-year boundaries, date/time followups, HTTP replies and native planning.
+
 Standalone greetings, thanks, goodbyes, declines, repeat requests, frustration,
 identity and human-transfer questions use reviewed replies in Estonian, English
 or Russian directly.

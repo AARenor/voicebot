@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from .languages import LANGUAGES, spoken_time
+from .booking_dates import ESTONIAN_DATE_PATTERN
 
 
 FAQ_PATH = Path(__file__).resolve().parents[1] / "data/demo/booking-faq.json"
@@ -163,6 +164,10 @@ def booking_input(text):
     value = normalize(text)
     if not value:
         return False
+    # Month names are common short answers to a date question, including ASR
+    # ordinals such as "kuuendal oktoobril". Preserve them for planning.
+    if re.fullmatch(rf"(?:palun\s+)?{ESTONIAN_DATE_PATTERN}(?:\s+(?:palun|sobib))?", value, re.I):
+        return True
     if re.search(r"\b(?:broneeri\w*|bruneeri\w*|book|reserve|reserving|заброниру\w*)\b", value):
         return True
     desire = re.search(

@@ -35,7 +35,7 @@ UNKNOWN = (
     "Toimingu tulemus on ebaselge. Edu ei ole kinnitatud. "
     "Ära korda toimingut; kontrolli taustsüsteemi."
 )
-ASK_DATE_TIME = "Mis kuupäevaks ja kellaajaks soovid testbroneeringut?"
+ASK_DATE_TIME = "Mis kuupäeval ja mis kell soovid tulla?"
 
 
 @pytest.mark.parametrize(
