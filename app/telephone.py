@@ -10,7 +10,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -156,6 +156,118 @@ CANCELLATIONS = {
     "tühista see testbroneering",
     "jah tühista see testbroneering",
 }
+
+
+def _spa_inquiry_fields(text, previous):
+    """Extract booking preferences only; never infer consent or availability."""
+    if not isinstance(text, str) or len(text) > 2000:
+        return None
+    text = text.casefold().strip().rstrip("?!.")
+    words = set(re.findall(r"\w+", text))
+    if words & {"ei", "ära", "ärge", "mitte", "ignoreeri", "unusta"} or re.search(
+        r"\b(?:kinnit\w*|tühist\w*|hotell\w*|spaahotell\w*|toa\w*|tuba\w*|sviit\w*|suite)\b", text
+    ):
+        return None
+    # A few common ASR spellings are tolerated only for a request, never for
+    # the exact confirmation/cancellation phrases that authorize a write.
+    spa_request = bool(
+        re.search(r"\b(?:spaa\w*|spa)\b", text)
+        and re.search(
+            r"\b(?:(?:broneeri|bruneeri|brooneeri|reserveeri)(?:da|ksin|ks|me)?|"
+            r"soovin|sooviksin|sooviks|tahaksin|tahaks|tahan)\b", text
+        )
+    )
+    hour_words = (
+        "null", "üks", "kaks", "kolm", "neli", "viis", "kuus", "seitse",
+        "kaheksa", "üheksa", "kümme", "üksteist", "kaksteist", "kolmteist",
+        "neliteist", "viisteist", "kuusteist", "seitseteist", "kaheksateist",
+        "üheksateist", "kakskümmend",
+    )
+    hour = r"(?:\d{1,2}|" + "|".join(hour_words) + r")"
+    clock = rf"(?:kell\s+)?{hour}(?:[:.]\d{{2}})?"
+    day = r"(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})"
+    followup = bool(previous and re.fullmatch(
+        rf"(?:palun\s+)?(?:{day}(?:[,\s]+{clock})?|{clock})(?:\s+(?:palun|sobib))?",
+        text,
+    ))
+    if not spa_request and not followup:
+        return None
+    fields = {"kind": "slot"} if spa_request else dict(previous)
+    date_tokens = re.findall(r"\b(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})\b", text)
+    if len(date_tokens) > 1 or words & {"või", "kuni", "vahel", "umbes", "paiku", "asemel"}:
+        return None
+    if date_tokens:
+        token = date_tokens[0]
+        today = datetime.now(ZoneInfo(DEMO_TIMEZONE)).date()
+        try:
+            requested = (
+                today + timedelta(days={"täna": 0, "homme": 1, "ülehomme": 2}[token])
+                if token in {"täna", "homme", "ülehomme"}
+                else datetime.strptime(token, "%Y-%m-%d").date()
+            )
+        except ValueError:
+            return None
+        if requested < today:
+            return None
+        fields["date"] = requested.isoformat()
+    clock_matches = list(re.finditer(
+        rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])", text,
+    ))
+    clocks = [matched.groups() for matched in clock_matches]
+    remaining = re.sub(rf"\b{day}\b", "", text).strip(" ,")
+    if not clocks and followup:
+        matched = re.fullmatch(
+            rf"(?:palun\s+)?({hour})(?:[:.](\d{{2}}))?(?:\s+(?:palun|sobib))?",
+            remaining,
+        )
+        if matched:
+            clocks = [matched.groups()]
+    if len(clocks) > 1 or ("kell" in words and not clocks):
+        return None
+    if clocks:
+        if clock_matches:
+            # Do not consume a valid prefix of "kell 20 üks", malformed
+            # minutes or multiple alternatives with only one "kell".
+            remaining = text
+            for matched in reversed(clock_matches):
+                remaining = remaining[:matched.start()] + remaining[matched.end():]
+            remaining = re.sub(rf"\b{day}\b", "", remaining)
+            if re.search(rf"\b(?:\d+|{'|'.join(hour_words)})\b", remaining):
+                return None
+        if words & {"minutit", "tundi"}:
+            return None
+        hour_text, minute_text = clocks[0]
+        hours = int(hour_text) if hour_text.isdigit() else hour_words.index(hour_text)
+        minutes = int(minute_text or "0")
+        if hours > 23 or minutes > 59:
+            return None
+        fields["start_time"] = f"{hours:02d}:{minutes:02d}"
+    return fields
+
+
+def _is_spa_clarification(text):
+    """Recognize question paraphrases; speak a server question, never this text."""
+    question = re.sub(r"^tere[!.,]?\s+", "", text.strip().casefold())
+    if not re.fullmatch(r"[a-zõäöüšž\s,-]+\?", question):
+        return False
+    words = re.findall(r"[a-zõäöüšž]+", question)
+    allowed = {
+        "mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal",
+        "kuupäev", "kuupäeva", "kuupäevaks", "kuupäeval", "päev", "päeval", "päevaks",
+        "kell", "kellaajal", "kellaajaks", "kellaaega", "kellaaeg", "aega", "ajaks",
+        "ajale", "ajal", "soovid", "soovite", "sooviksid", "tahad", "tahaksid",
+        "eelistad", "eelistate", "broneerida", "testbroneeringut", "demo", "spaa",
+        "spaad", "spaasse", "spaahooldust", "spaateenust", "teenust", "konsultatsiooni",
+        "spaakonsultatsiooni", "homme", "täna", "ja", "või", "ning", "endale",
+        "sulle", "teile", "palun", "tulla",
+    }
+    return bool(
+        words
+        and words[0] in {"mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal"}
+        and set(words) <= allowed
+    )
+
+
 DEMO_PROFILE_TOOL = {
     "name": "get_demo_profile",
     "description": (
@@ -396,6 +508,7 @@ class CallTools:
         self.history_enabled = False
         self.booking_details = {}
         self.booking_receipts = []
+        self._booking_inquiry = None
 
     def available_tools(self):
         """OpenAI/Groq HTTP wire shape; the native SDK uses the same schemas."""
@@ -470,6 +583,7 @@ class CallTools:
             },
             "faq": self.demo["faq"],
             "natural_questions": QUESTIONS[self.language],
+            "booking_inquiry": self.booking_inquiry,
         }
         if self.language == "en":
             context["language"] = "en"
@@ -512,6 +626,7 @@ class CallTools:
         return (
             "Sa oled fiktiivse Meretuule hotelli ja spaademo sõbralik eestikeelne abiline. Ära luba päris teenust/inimüleandmist. Ära küsi päris kontakte ega makseandmeid.\n"
             "Spaale: kui kuupäev ja kellaaeg on teada ning teenuse ja teenindaja valik on ühene, kasuta esmalt plan_demo_booking(date,start_time) ühe tööriistakutsega. Mitme teenuse või teenindaja puhul kasuta get_slot_catalogue, search_slots, tagastatud slot_id-ga hold_slot ja prepare_demo_booking. get_slot_catalogue näitab andmebaasi teenuseid, teenindajaid ja tööaegu. Küsi kasutajalt puuduv teenus, kuupäev või kellaaeg.\n"
+            "Spaasoovi tavaline kirjaviga „bruneerida” tähendab broneerimise küsimust, mitte kinnitamist. booking_inquiry sisaldab ainult kasutaja soovitud kuupäeva/kellaaega, mitte saadavust; kasuta seda järgmise vastuse ajaga koos.\n"
             "Toale: get_stay_catalogue näitab toatüüpe ja mahutavust. Küsi saabumine, lahkumine, külaliste arv ja toatüüp. Kasuta ettevalmistamiseks plan_demo_stay(checkin,checkout,adults,children,room_type) ühe tööriistakutsega; see teeb kataloogi, search_availability, hold_offer ja prepare_demo_stay kontrollid. Kui toatüüp puudub või on ebaselge, küsi tagastatud valikutest kasutaja eelistust ja kutsu plan_demo_stay uuesti. Ära vali suvalist ega odavaimat tuba. Hinda ei tohi oletada. Kõik hinnad on fiktiivsed näidishinnad, makseid ei koguta.\n"
             "Kasuta vaikimisi guest-001. Loe serveri recap ette ja küsi: „"
             + CONSENT_TEXT
@@ -586,8 +701,14 @@ class CallTools:
         self.turn_mutation = None
         self.cancel_approval = None
         if self.mutation_uncertain:
+            self._booking_inquiry = None
             self.invalidate_recap()
             return
+        self._booking_inquiry = (
+            _spa_inquiry_fields(text, self._booking_inquiry)
+            if selected == "et" and not self.unsupported_language
+            else None
+        )
         normalized = (
             " ".join(re.sub(r"[.,!]", " ", text.casefold()).split())
             if isinstance(text, str)
@@ -627,6 +748,31 @@ class CallTools:
                 "booking_id": self.last_booking,
                 "expires_at": now + CONSENT_TIMEOUT_SECONDS,
             }
+
+    @property
+    def booking_inquiry(self):
+        """Parsed requested fields for the next turn; no transcript or backend IDs."""
+        return (
+            dict(self._booking_inquiry)
+            if self.language == "et" and not self.unsupported_language and self._booking_inquiry
+            else None
+        )
+
+    def inquiry_reply(self):
+        """Trusted clarification only, without a provider call or booking action."""
+        if (
+            self.language != "et" or self.unsupported_language
+            or not self._booking_inquiry or self.results or self.pending
+            or self.cancel_approval or self.turn_mutation or self.mutation_uncertain
+            or self.outcome == "write_outcome_unknown"
+        ):
+            return None
+        day, start = self._booking_inquiry.get("date"), self._booking_inquiry.get("start_time")
+        if not day and not start:
+            return ASK_DATE_TIME
+        if not day:
+            return ASK_DATE
+        return ASK_TIME if not start else None
 
     def invalidate_recap(self):
         self.pending = None
@@ -779,6 +925,9 @@ class CallTools:
             return reply
         if self.turn_mutation:
             return mutation_replies[self.turn_mutation]
+        clarification = self.inquiry_reply() if not results else None
+        if clarification and _is_spa_clarification(text):
+            return clarification
         static = (
             ENGLISH_STATIC if english else STATIC_REPLIES | {ENGLISH_INVITATION}
         ) | approved_dialogue(self.language)

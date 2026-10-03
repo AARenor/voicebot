@@ -321,16 +321,20 @@ def test_http_retry_keeps_the_same_voice_markup_and_recap_rate():
 def test_native_social_reply_uses_public_llm_node_without_model_request():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit.agents import llm
+    from livekit.agents.voice.agent import ModelSettings
 
     async def run():
         state = CallTools(Slots(), language="en")
-        state.observe_user_text("Thank you")
         agent = TelephoneAgent(state)
+        message = llm.ChatMessage(role="user", content=["Thank you"])
+        context = llm.ChatContext(items=[message])
+        await agent.on_user_turn_completed(context.copy(), message)
         with patch(
             "livekit.agents.Agent.default.llm_node",
             side_effect=AssertionError("Provider called"),
         ):
-            assert [chunk async for chunk in agent.llm_node(None, [], None)] == [
+            assert [chunk async for chunk in agent.llm_node(context, [], ModelSettings())] == [
                 state.direct_reply
             ]
 
@@ -340,17 +344,23 @@ def test_native_social_reply_uses_public_llm_node_without_model_request():
 def test_native_booking_request_still_uses_provider_planning():
     pytest.importorskip("livekit.agents")
     from app.worker import TelephoneAgent
+    from livekit.agents import llm
+    from livekit.agents.voice.agent import ModelSettings
 
     async def run():
         state = CallTools(Slots(), language="en")
-        state.observe_user_text("Book a spa treatment tomorrow at 10 AM")
         agent = TelephoneAgent(state)
+        message = llm.ChatMessage(
+            role="user", content=["Book a spa treatment tomorrow at 10 AM"]
+        )
+        context = llm.ChatContext(items=[message])
+        await agent.on_user_turn_completed(context.copy(), message)
 
         async def plan(*args):
             yield "provider planning"
 
         with patch("livekit.agents.Agent.default.llm_node", plan):
-            assert [chunk async for chunk in agent.llm_node(None, [], None)] == [
+            assert [chunk async for chunk in agent.llm_node(context, [], ModelSettings())] == [
                 "provider planning"
             ]
 

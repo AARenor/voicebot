@@ -52,8 +52,20 @@ hangup. Verify both spa and room flows and clean up fictional test bookings.
 Synthetic audio and private SDK tests do not establish a successful PSTN call.
 
 On `robot.arleserver.cfd`, verify Demovestlus with typed text and the physical
-microphone, including reply playback. The identified live conversation failure
-is Groq HTTP 429; usage limits are shared across the provider organization.
+microphone, including reply playback. Test the reported request “Tere, tahaks
+homme bruneerida spaad?”, then supply a time and verify that no booking is
+created before the complete recap and later consent. Opening hours should be
+spoken as “9 kuni kell 17” rather than a dash-separated range.
+HTTP voice preparation now returns a one-use `recap_delivery_id`. A scripted
+positive check must explicitly read or complete playback of that exact recap,
+then include its ID with the subsequent consent turn in the same session.
+Returning synthesized bytes alone does not authorize confirmation. The browser
+tracks completed playback or explicit reading; test stale, interrupted and
+foreign recap assertions as rejection cases.
+One identified live conversation failure was Groq HTTP 429; usage limits are
+shared across the provider organization. A separate clarification fault
+rejected harmless questions with an unverified-success warning; the patch
+supplies canonical missing-field questions from trusted user inquiry state.
 Compact planning and canonical server replies reduce requests. Check the
 provider's actual account limits if throttling remains under normal use.
 

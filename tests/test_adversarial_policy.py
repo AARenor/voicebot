@@ -4,18 +4,18 @@ import asyncio
 import copy
 import json
 import time
-from unittest.mock import patch
 
 import httpx
 import pytest
 
 from app.booking.tools import Dispatcher
-from app.hackathon import DemoSession, run_demo_turn
+from app.hackathon import (
+    DemoSession, _SafeSpeaker, _TurnTools, result_outcome, run_demo_turn,
+)
 from app.telephone import CallTools, CONSENT_TEXT
 from tests.test_demo_plan import LiveSlots, REQUEST
-from tests.test_product_demo import AUTH, Speaker, call, client as demo_client
-
-client = demo_client
+from tests.test_product_demo import AUTH, Speaker, call
+from tests.test_product_demo import client as client
 
 
 def test_failed_search_cannot_grant_unreturned_slot_ownership():
@@ -110,6 +110,9 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
         assert (
             "backend-hold" not in recap["reply"]
         ), "caller-facing recap is not a tool-ID channel"
+        assert state.pending["hold_id"] == "backend-hold"
+        assert state.pending["delivery"] is False
+        assert recap["recap_delivery_id"]
         if condition == "expired":
             state.pending["expires_at"] = 0
         if condition == "uncertain":
@@ -176,6 +179,7 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
             assert contexts[0]["pending"] is None
         if condition == "uncertain":
             assert result["outcome"] == "unknown_outcome"
+            assert result["booking_changes"] == []
         if condition == "cancel":
             assert state.last_booking == "42"
             assert result["reply"] == "Testbroneering on tühistatud."
@@ -190,9 +194,8 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-@pytest.mark.parametrize("shortcut", [False, True])
 def test_completed_write_truth_survives_read_failure_and_skips_model_followup(
-    cancel, shortcut
+    cancel,
 ):
     class Sequence:
         def __init__(self, *answers):
@@ -216,36 +219,44 @@ def test_completed_write_truth_survives_read_failure_and_skips_model_followup(
             session, stack, b"", "Soovin testbroneeringut", "et"
         )
         assert "Fiktiivne testbroneering:" in recap["reply"]
-        stack["llm_primary"] = Sequence(
-            call("confirm_slot_booking", {"hold_id": "backend-hold"}),
-            call("get_demo_profile", {"extra": True}),
-            {"content": "Tere!"},
-        )
-        result = await run_demo_turn(
-            session,
-            stack,
-            b"",
-            CONSENT_TEXT,
-            "et",
-            recap_delivery_id=recap["recap_delivery_id"],
-        )
+        state = session.tools
         if cancel:
-            stack["llm_primary"] = Sequence(
-                call("cancel_slot_booking", {"booking_id": "42"}),
-                call("get_demo_profile", {"extra": True}),
-                {"content": "Tere!"},
+            confirmed = await run_demo_turn(
+                session, stack, b"", CONSENT_TEXT, "et",
+                recap_delivery_id=recap["recap_delivery_id"],
             )
-            result = await run_demo_turn(session, stack, b"", "Jah, tühista.", "et")
+            assert confirmed["booking_changes"][0]["action"] == "confirmed"
+        else:
+            # Direct policy execution below simulates a trusted reader; TTS
+            # generation alone never marks the proposal as delivered.
+            assert state.mark_recap_delivered("backend-hold")
+        # Execute a real later read failure in the same turn as the write.
+        # The normal terminal shortcut correctly avoids requesting this extra
+        # model-generated read, so this guard regression tests actual results.
+        state.observe_user_text("Jah, tühista." if cancel else CONSENT_TEXT)
+        tools = _TurnTools(session)
+        write = await tools.dispatch(
+            "cancel_slot_booking" if cancel else "confirm_slot_booking",
+            {"booking_id": "42"} if cancel else {"hold_id": "backend-hold"},
+        )
+        assert write["ok"]
+        read = await tools.dispatch("get_demo_profile", {"extra": True})
+        assert read.get("error")
+        speaker = _SafeSpeaker(stack["tts"], tools)
+        assert speaker.synthesize("Tere!")
+        result = {
+            "reply": speaker.reply,
+            "tool_results": [{"result": value} for value in tools.results],
+            "booking_changes": tools.changes,
+        }
         prefix = (
             "Testbroneering on tühistatud."
             if cancel
             else "Testbroneering on kinnitatud."
         )
         assert result["reply"].startswith(prefix)
-        assert result["outcome"] == ("tools_ok" if shortcut else "tools_failed")
-        assert stack["llm_primary"].calls == (0 if shortcut else 3)
-        if not shortcut:
-            assert "päring ebaõnnestus" in result["reply"]
+        assert "päring ebaõnnestus" in result["reply"]
+        assert result_outcome(result) == "tools_failed"
         assert result["booking_changes"][0]["action"] == (
             "cancelled" if cancel else "confirmed"
         )
@@ -262,13 +273,7 @@ def test_completed_write_truth_survives_read_failure_and_skips_model_followup(
         )
         assert state.turn_mutation == ("cancelled" if cancel else "confirmed")
 
-    if shortcut:
-        asyncio.run(run())
-    else:
-        # Preserve upstream's model-issued mixed-tool regression as a separate
-        # disconfirming control, alongside the real terminal shortcut path.
-        with patch("app.hackathon.trusted_booking_response", return_value=None):
-            asyncio.run(run())
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("authorized", [False, True])

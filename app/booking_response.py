@@ -25,4 +25,7 @@ def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
             "name": "cancel_booking" if state.booking_kinds.get(booking_id) == "stay" else "cancel_slot_booking",
             "arguments": {"booking_id": booking_id},
         }
+    inquiry = state.inquiry_reply()
+    if inquiry:
+        return {"content": inquiry}
     return None

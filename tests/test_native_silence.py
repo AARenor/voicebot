@@ -226,7 +226,7 @@ def test_empty_recovery_preserves_guarded_outcome(state_kind):
 
         agent = TelephoneAgent(state)
         with patch("livekit.agents.Agent.default.llm_node", empty):
-            parts = [p async for p in agent.llm_node(None, [], None)]
+            parts = [p async for p in agent.llm_node(llm.ChatContext(), [], None)]
         assert parts == [ASK_DATE_TIME]
 
         async def text():
@@ -247,7 +247,7 @@ def test_empty_recovery_propagates_failure_and_cancellation(error):
 
         agent = TelephoneAgent(CallTools(Dispatcher()))
         with patch("livekit.agents.Agent.default.llm_node", fail), pytest.raises(error):
-            [p async for p in agent.llm_node(None, [], None)]
+            [p async for p in agent.llm_node(llm.ChatContext(), [], None)]
 
     asyncio.run(run())
 
@@ -271,7 +271,7 @@ def test_tool_chunk_is_preserved_without_spurious_question():
 
         agent = TelephoneAgent(CallTools(Dispatcher()))
         with patch("livekit.agents.Agent.default.llm_node", tools):
-            assert [p async for p in agent.llm_node(None, [], None)] == [tool]
+            assert [p async for p in agent.llm_node(llm.ChatContext(), [], None)] == [tool]
 
     asyncio.run(run())
 

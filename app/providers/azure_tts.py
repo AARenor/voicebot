@@ -26,6 +26,7 @@ from .errors import (
     RetryableProviderError,
     raise_for_provider,
 )
+from .speech_text import normalize_estonian_speech
 
 TOKEN_TTL_SECONDS = 9 * 60
 
@@ -45,7 +46,11 @@ def ssml(
 ) -> str:
     """Escape literal speech and apply shared voice-specific delivery."""
     body = speech_markup(
-        text, voice, lang, delivery or SpeechDelivery(), recap=is_recap(text)
+        normalize_estonian_speech(text, lang),
+        voice,
+        lang,
+        delivery or SpeechDelivery(),
+        recap=is_recap(text),
     )
     return (
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
