@@ -41,6 +41,14 @@ more slowly, and Estonian dates/times have pronunciation aliases. See the
 settings, neutral rollback and listening checks, and the
 [local verification report](docs/evidence/2026-10-03-natural-conversation.md).
 
+On `robot.arleserver.cfd`, choose **English** in the **Conversation language**
+selector under **Proovi kõneabilist** before starting. The demo opens with an
+English greeting and uses English recognition, replies and audio for text and
+microphone turns. Its controls, examples and confirmation guidance switch to
+English. End the current conversation to select another language. **Auto** keeps
+the existing automatic language behavior. See the
+[browser English verification](docs/evidence/2026-10-03-browser-english.md).
+
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
 records the earlier defects and live speech failures. The

@@ -13,9 +13,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
-from .telephone import GREETING, CallTools
+from .telephone import CallTools
+from .languages import LANGUAGES
 from .booking_response import trusted_booking_response
 from .providers.azure_tts import AzureTtsClient
 from . import call_history, callslog
@@ -80,7 +81,7 @@ class DemoSessions:
             else:
                 self._remove(key, expired=True)
 
-    def create(self, dispatcher, owner):
+    def create(self, dispatcher, owner, *, language: str = "et"):
         with self.lock:
             self._prune()
             if len(self.sessions) >= MAX_SESSIONS:
@@ -90,19 +91,29 @@ class DemoSessions:
             key = uuid.uuid4().hex
             try:
                 session = DemoSession(
-                    owner, CallTools(dispatcher), time.monotonic() + SESSION_TTL
+                    owner,
+                    CallTools(
+                        dispatcher, language="et" if language == "auto" else language
+                    ),
+                    time.monotonic() + SESSION_TTL,
                 )
             except Exception:
                 raise HTTPException(503, "demo_profile_unavailable") from None
             self.sessions[key] = session
-            callslog.history_safe(call_history.start, session.tools.call_id, "browser")
+            callslog.history_safe(
+                call_history.start,
+                session.tools.call_id,
+                "browser",
+                session.tools.language,
+            )
             session.expiry = asyncio.get_running_loop().call_later(
                 SESSION_TTL, self._expire, key
             )
             return {
                 "session_id": key,
                 "call_id": session.tools.call_id,
-                "greeting": GREETING,
+                "greeting": session.tools.greeting,
+                "language": session.tools.language,
                 "synthetic": True,
                 "transport": "http_not_telephone",
                 "expires_in_s": SESSION_TTL,
@@ -153,6 +164,27 @@ class DemoSessions:
         with self.lock:
             for key in list(self.sessions):
                 self._remove(key, interrupted=True)
+
+
+async def read_session_language(request: Request) -> str:
+    """Optional bounded session settings; routes authenticate before parsing."""
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 1024:
+            raise HTTPException(413, "demo_session_arguments_too_large")
+        body.extend(chunk)
+    if not body:
+        return "auto"  # Preserve existing clients that send no JSON body.
+    try:
+        data = json.loads(body)
+    except (ValueError, UnicodeError, RecursionError):
+        raise HTTPException(400, "demo_session_arguments_invalid") from None
+    if not isinstance(data, dict) or set(data) - {"language"}:
+        raise HTTPException(400, "demo_session_arguments_invalid")
+    language = data.get("language", "auto")
+    if not isinstance(language, str) or language not in ("auto", *LANGUAGES):
+        raise HTTPException(400, "demo_session_language_invalid")
+    return language
 
 
 async def read_turn_body(request):
@@ -352,10 +384,19 @@ class _TrustedLlm:
         if response is not None:
             if "content" in response:
                 return response
-            return {"content": None, "tool_calls": [{
-                "id": "call_" + uuid.uuid4().hex, "type": "function",
-                "function": {"name": response["name"], "arguments": json.dumps(response["arguments"])},
-            }]}
+            return {
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_" + uuid.uuid4().hex,
+                        "type": "function",
+                        "function": {
+                            "name": response["name"],
+                            "arguments": json.dumps(response["arguments"]),
+                        },
+                    }
+                ],
+            }
         # Standalone greetings/FAQs use approved text, not model paraphrases
         # that the shared speech guard would reject. Mixed requests use tools.
         if messages and messages[-1].get("role") == "user":
@@ -365,12 +406,20 @@ class _TrustedLlm:
             question = messages[-1].get("content")
             if isinstance(question, str):
                 question = " ".join(question.strip().rstrip("?!.").casefold().split())
-                if state.language == "en" and question in {"hello", "hi", "hello there"}:
+                if state.language == "en" and question in {
+                    "hello",
+                    "hi",
+                    "hello there",
+                }:
                     return {"content": "Hello! How can I help you?"}
                 if state.language == "et" and question == "tere":
                     return {"content": "Tere! Kuidas saan aidata?"}
                 if state.language == "ru" and question in {
-                    "привет", "здравствуйте", "добрый день", "доброе утро", "добрый вечер",
+                    "привет",
+                    "здравствуйте",
+                    "добрый день",
+                    "доброе утро",
+                    "добрый вечер",
                 }:
                     return {"content": "Здравствуйте! Чем могу помочь?"}
                 suffix = state.language
@@ -488,7 +537,9 @@ async def run_demo_turn(
         session.tools.mark_recap_delivered(receipt["pending"]["hold_id"])
     # The server observes the final transcript before any LLM-generated tool call.
     session.tools.observe_user_text(
-        text, is_final=True, language=None if language == "auto" else language,
+        text,
+        is_final=True,
+        language=None if language == "auto" else language,
     )
     language = session.tools.language
     callslog.history_safe(
@@ -599,7 +650,7 @@ async def run_demo_turn(
         "booking_changes": tools.changes,
         "warnings": warnings,
         "timings_ms": timings,
-        "recap_delivery_id": session.recap_delivery["id"]
-        if session.recap_delivery
-        else None,
+        "recap_delivery_id": (
+            session.recap_delivery["id"] if session.recap_delivery else None
+        ),
     }

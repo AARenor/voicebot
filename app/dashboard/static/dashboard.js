@@ -1,7 +1,97 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, mic:null, micStarting:false, micEpoch:0, recapDeliveryId:null, awaitingRecapId:null};
+const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, mic:null, micStarting:false, micEpoch:0, recapDeliveryId:null, awaitingRecapId:null, demoLanguage:"auto", replyLanguage:"et", demoModels:null};
 const bookingUi = {kind:"slot", sessionId:null, busy:false, uncertain:false, holdId:null, acknowledged:false, selected:null, confirmed:null, services:[], providers:[], roomTypes:[], roomPresetApplied:false, stays:[], staysFetched:false, staysBusy:false, epoch:0};
+const DEMO_COPY = {
+  et: {
+    title:"Proovi kõneabilist", subtitle:"Kirjuta sõnum või räägi mikrofoniga",
+    languageLabel:"Vestluse keel / Conversation language", languageHelp:"Vali keel enne vestlust. Keele muutmiseks lõpeta vestlus ja alusta uut.",
+    introTitle:"Üks vestlus. Lihtsam vastuvõtt.", intro:"Küsi teenuste kohta, leia sobiv aeg ja proovi broneerimist fiktiivse külalisena.",
+    start:"Alusta demovestlust", end:"Lõpeta vestlus", history:"Vaata vestluse ajalugu", messageLabel:"Sõnum demoabilisele", send:"Saada sõnum",
+    placeholder:"Näiteks: soovin homme massaaži", micLevel:"Mikrofoni helitase", speakNaturally:"Räägi loomulikult.",
+    micHelp:"Ühenda esmalt operaatori tunnusega. Häälvestluse nupp alustab vestluse ja küsib mikrofoni luba. Kõnepaus saadab heli automaatselt; teine vajutus saadab kohe. Üks salvestis kestab kuni 15 sekundit.",
+    recapRead:"Olen kokkuvõtte läbi lugenud", guidanceTitle:"Kuidas demovestlus töötab?",
+    guidance:"Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.",
+    examplesLabel:"Vestluse alustamise näited", transcriptLabel:"Selle lehe demovestlus", audioLabel:"Demoabilise vastus",
+    examples:{hours:["Lahtiolekuajad","Millal spaa avatud on?"], spa:["Spaa aeg","Soovin broneerida spaakonsultatsiooni."], room:["Hotellituba","Soovin leida vaba hotellitoa."]},
+    signIn:"Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.", ready:"Alusta demovestlust või vajuta „Alusta häälvestlust”. Vestlus aegub 10 minutiga.",
+    started:"Fiktiivne vestlus alustatud. Kuula tervitust, seejärel vajuta mikrofoni ja räägi.", greetingFailed:"Tervituse heli pole saadaval. Tekst on alles; jätkamiseks vajuta mikrofoni või kirjuta.",
+    responding:"Demoabiline vastab… Ära saada sama kinnitust uuesti.", you:"Sina", assistant:"Demoabiline", heardFailed:"Kõnetuvastus ei olnud saadaval", heardNothing:"Kõnet ei tuvastatud",
+    micStart:"Alusta häälvestlust", micReady:"Luba mikrofon ja räägi", micStop:"Lõpeta ja saada heli", micPermission:"Ootan mikrofoni luba…",
+    micListening:"Kuulan… Räägi kuni 15 sekundit. Vastus tuleb kõnepausi järel; kohe saatmiseks vajuta uuesti.", micDenied:"Mikrofon ei avanenud. Luba brauseris mikrofon või saada tekstsõnum.",
+    micSilent:"Mikrofonist ei saabunud helisignaali. Kontrolli valitud mikrofoni ja proovi uuesti.", micEmpty:"Mikrofonist ei saabunud heli. Proovi uuesti.", micEncoding:"Heliproovi ei saanud ette valmistada.",
+    micQuiet:"Heli on vaikne. Kontrolli, kas valitud on õige mikrofon.", micSignal:"Heli jõuab mikrofonist kohale. Lõpetamiseks vajuta uuesti.",
+    replyPlayed:"Vastus esitatud. Jätkamiseks vajuta mikrofoni või kirjuta sõnum.", audioError:"Vastuse heli ei saa esitada. Loe vastust tekstina; toimingut ei korrata automaatselt.", audioInvalid:"Vastuse heli on vigane. Loe vastust tekstina; toimingut ei korrata automaatselt.", autoplay:"Brauser ei lubanud heli automaatselt esitada. Vajuta helimängijas „Esita” või loe vastust tekstina.",
+    ended:"Vestlus lõpetatud. Broneeringuid see automaatselt ei tühista.", expired:"Vestlus ei ole enam aktiivne. Alusta uut vestlust; ebaselge broneerimise või tühistamise tulemust kontrolli esmalt taustsüsteemist. Broneeringuid see automaatselt ei tühista.",
+    noRetry:"Toimingut ei korrata automaatselt. Ebaselge tulemuse korral kontrolli broneeringute tabelit.", textFallback:"Heli pole saadaval; loe vastust tekstina.",
+    sttFailed:"Kõnetuvastuse teenus ebaõnnestus. Proovi hetke pärast uuesti või kirjuta sõnum. Kõneajalugu sisaldab vea olekut.", noSpeech:"Kõnet ei tuvastatud. Kontrolli mikrofoni helitaset ja räägi pärast mikrofoni avanemist.",
+    outcome:{ok:"Vastus valmis.", tools_ok:"Taustsüsteemi tööriistad vastasid.", tools_failed:"Mõni toiming ebaõnnestus — edu ei ole kinnitatud.", secondaryFailed:"Muu päring ebaõnnestus. Vaata vastust ja kontrolli taustsüsteemi.", unknown_outcome:"Kirjutuse tulemus on ebaselge. Ära korda broneerimist; kontrolli taustsüsteemi.", fallback:"Kasutati varuvastust.", tts_failed:"Kõnesüntees ebaõnnestus; tekst on alles."},
+  },
+  en: {
+    title:"Try the voice assistant", subtitle:"Type a message or speak into your microphone",
+    languageLabel:"Conversation language / Vestluse keel", languageHelp:"Choose a language before starting. To change it, end this conversation and start a new one.",
+    introTitle:"One conversation. A simpler reception.", intro:"Ask about services, find a suitable time and try a booking with a fictional guest.",
+    start:"Start demo conversation", end:"End conversation", history:"View conversation history", messageLabel:"Message the demo assistant", send:"Send message",
+    placeholder:"For example: I'd like a massage tomorrow", micLevel:"Microphone level", speakNaturally:"Speak naturally.",
+    micHelp:"Connect with your operator token first. The voice button starts a conversation and asks for microphone permission. A pause sends your audio automatically; press again to send immediately. Each recording lasts up to 15 seconds.",
+    recapRead:"I have read the recap", guidanceTitle:"How does the demo work?",
+    guidance:"The assistant uses a fictional guest for this conversation. After hearing the recap, say: “Yes, I confirm.” To cancel, say: “Please cancel this test booking.” Do not enter real contact details. Recordings are not kept in your browser. This is a fictional web voice demo, not a telephone call or a real hotel service.",
+    examplesLabel:"Conversation examples", transcriptLabel:"This page's demo conversation", audioLabel:"Demo assistant's reply",
+    examples:{hours:["Opening hours","What are the spa opening hours?"], spa:["Spa appointment","I would like to book a spa consultation."], room:["Hotel room","I would like to find an available hotel room."]},
+    signIn:"To start, enter your operator token and press “Ühenda” (Connect).", ready:"Start a demo conversation or press “Start voice conversation”. The session lasts 10 minutes.",
+    started:"Fictional conversation started. Listen to the greeting, then press the microphone button and speak.", greetingFailed:"Greeting audio is unavailable. The text is still here; continue with the microphone or type a message.",
+    responding:"The demo assistant is replying… Do not send the same confirmation again.", you:"You", assistant:"Demo assistant", heardFailed:"Speech recognition was unavailable", heardNothing:"No speech detected",
+    micStart:"Start voice conversation", micReady:"Enable microphone and speak", micStop:"Stop and send audio", micPermission:"Waiting for microphone permission…",
+    micListening:"Listening… Speak for up to 15 seconds. A pause sends your audio; press again to send immediately.", micDenied:"The microphone could not be opened. Allow microphone access in your browser or type a message.",
+    micSilent:"No microphone signal was received. Check the selected microphone and try again.", micEmpty:"No microphone audio was received. Please try again.", micEncoding:"The audio sample could not be prepared.",
+    micQuiet:"Audio is quiet. Check that the correct microphone is selected.", micSignal:"Microphone audio is being received. Press again to finish.",
+    replyPlayed:"Reply played. Press the microphone button or type a message to continue.", audioError:"Reply audio could not be played. Read the reply as text; the action will not be retried automatically.", audioInvalid:"Reply audio is invalid. Read the reply as text; the action will not be retried automatically.", autoplay:"Your browser blocked automatic playback. Press Play in the audio player or read the reply as text.",
+    ended:"Conversation ended. This does not cancel any bookings.", expired:"This conversation is no longer active. Start a new one; check any uncertain booking or cancellation in the booking system first. Bookings are not cancelled automatically.",
+    noRetry:"The action will not be retried automatically. Check the booking table if the outcome is uncertain.", textFallback:"Audio is unavailable; read the reply as text.",
+    sttFailed:"Speech recognition failed. Try again shortly or type a message. The call history records the error status.", noSpeech:"No speech was detected. Check the microphone level and speak after the microphone opens.",
+    outcome:{ok:"Reply ready.", tools_ok:"The booking system responded.", tools_failed:"An action failed; success is not confirmed.", secondaryFailed:"Another request failed. Read the reply and check the booking system.", unknown_outcome:"The write outcome is uncertain. Do not repeat the booking; check the booking system.", fallback:"A fallback reply was used.", tts_failed:"Speech synthesis failed; the text is still available."},
+  },
+};
+function demoCopy() { return DEMO_COPY[state.demoLanguage === "en" ? "en" : "et"]; }
+function localizeDemo() {
+  const copy=demoCopy();
+  $("demo-language").value=state.demoLanguage;
+  $("demo-section").setAttribute("lang", state.demoLanguage === "en" ? "en" : "et");
+  for (const node of document.querySelectorAll?.("[data-demo-copy]") || []) node.textContent=copy[node.dataset.demoCopy];
+  for (const button of document.querySelectorAll?.("[data-demo-example]") || []) {
+    const example=copy.examples[button.dataset.demoExample]; button.textContent=example[0]; button.dataset.message=example[1];
+  }
+  $("demo-text").placeholder=copy.placeholder;
+  $("demo-examples").setAttribute("aria-label", copy.examplesLabel);
+  $("demo-messages").setAttribute("aria-label", copy.transcriptLabel);
+  $("demo-audio").setAttribute("aria-label", copy.audioLabel);
+  renderDemoModels();
+}
+function renderDemoModels() {
+  const models=state.demoModels?.models;
+  if (!models) { $("demo-models").textContent=state.demoLanguage === "en" ? "Checking the server's speech configuration." : "Mudelite seadistust kontrollitakse serverist."; return; }
+  const voice=state.demoLanguage === "en" ? state.demoModels.englishVoice : models.tts?.voice;
+  $("demo-models").textContent=state.demoLanguage === "en" ? `Configured: transcription ${models.stt?.model || "unavailable"}; replies ${models.llm?.model || "unavailable"}; voice ${voice || "unavailable"}. Configuration does not prove a successful telephone call.` : `Seadistatud: transkriptsioon ${models.stt?.model || "puudub"}; vastused ${models.llm?.model || "puudub"}; hääl ${voice || "puudub"}. Seadistus ei tõenda edukat telefonikõnet.`;
+}
+function changeDemoLanguage() {
+  if (state.sessionId || state.turnBusy || state.mic || state.micStarting) { $("demo-language").value=state.demoLanguage; return; }
+  const selected=$("demo-language").value;
+  state.demoLanguage=["auto","et","en"].includes(selected) ? selected : "auto";
+  $("demo-language").value=state.demoLanguage;
+  localizeDemo();
+  $("demo-warning").hidden=true; $("demo-warning").textContent=""; $("demo-timings").hidden=true;
+  status("demo-status", state.connected ? demoCopy().ready : demoCopy().signIn);
+  controls();
+}
+function recapPlayedMessage() {
+  const words={et:"Jah, kinnitan.", en:"Yes, I confirm.", ru:"Да, подтверждаю."}[state.replyLanguage] || "Jah, kinnitan.";
+  return state.demoLanguage === "en" ? `Recap delivered. To confirm, say “${words}” or type it. Make a new request to change the proposal.` : `Kokkuvõte esitatud. Kinnitamiseks ütle „${words}” või kirjuta see. Muudatuseks tee uus soov.`;
+}
+function demoError(error) {
+  if (state.demoLanguage !== "en") return error.message;
+  const known={voice_stack_not_configured:"The voice demo is not configured on the server.", demo_sessions_full:"All demo conversations are busy. Please try again shortly.", demo_session_language_invalid:"Choose a supported conversation language.", stt_not_configured:"Speech recognition is not configured. Please type a message."};
+  return known[error.code] || ({401:"The operator token is missing or invalid. Connect again.",403:"The operator token is missing or invalid. Connect again.",404:demoCopy().expired,410:demoCopy().expired,409:"The conversation is processing the previous message. Wait for its reply.",413:"The message or recording is too long. Try a shorter sample.",400:"Check the message or language selection."})[error.status] || "The request failed or timed out. Check the booking system before repeating a confirmation or cancellation.";
+}
 // Retire the old sessionStorage stopgap; never persist a new credential.
 try { sessionStorage.removeItem("voicebot.operatorToken"); localStorage.removeItem("voicebot.operatorToken"); } catch (_) {}
 
@@ -68,16 +158,16 @@ function playReply(data) {
     audio.onended=()=>{
       if (!current() || url!==state.audioUrl) return;
       if (receipt) { state.recapDeliveryId=receipt; $("demo-recap-read").hidden=true; }
-      status("demo-status", resultStatus + " " + (receipt ? "Kokkuvõte esitatud. Kinnitamiseks ütle „Jah, kinnitan.” või kirjuta see. Muudatuseks tee uus soov." : "Vastus esitatud. Jätkamiseks vajuta mikrofoni või kirjuta sõnum."), resultError ? "error" : "");
+      status("demo-status", resultStatus + " " + (receipt ? recapPlayedMessage() : demoCopy().replyPlayed), resultError ? "error" : "");
     };
     audio.onerror=()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " Vastuse heli ei saa esitada. Loe vastust tekstina; toimingut ei korrata automaatselt.", "error");
+      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().audioError, "error");
     };
     audio.play().catch(()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " Brauser ei lubanud heli automaatselt esitada. Vajuta helimängijas „Esita” või loe vastust tekstina.", "error");
+      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().autoplay, "error");
     });
   } catch (_) {
-    if (current()) status("demo-status", resultStatus + " Vastuse heli on vigane. Loe vastust tekstina; toimingut ei korrata automaatselt.", "error");
+    if (current()) status("demo-status", resultStatus + " " + demoCopy().audioInvalid, "error");
   }
 }
 function stopMic() {
@@ -89,7 +179,7 @@ function stopMic() {
   mic.stream.getTracks().forEach(track => track.stop());
   mic.processor.disconnect(); mic.source.disconnect(); mic.gain.disconnect();
   mic.context.close().catch(() => {});
-  $("demo-mic").textContent = "Luba mikrofon ja räägi";
+  $("demo-mic").textContent = demoCopy().micReady;
   controls();
   return mic;
 }
@@ -98,11 +188,12 @@ function controls() {
   $("connect").disabled = !!state.credential;
   $("refresh").disabled = !state.connected || state.readBusy;
   const connecting = !!state.credential && !state.connected;
+  $("demo-language").disabled = connecting || !!state.sessionId || state.turnBusy || !!state.mic || state.micStarting;
   $("demo-start").disabled = connecting || !!state.sessionId || state.turnBusy;
   $("demo-end").disabled = !state.sessionId || state.turnBusy;
   for (const id of ["demo-text", "demo-send"]) $(id).disabled = !state.sessionId || state.turnBusy || state.micStarting;
   $("demo-mic").disabled = connecting || state.turnBusy || state.micStarting;
-  if (!state.mic) $("demo-mic").textContent = state.sessionId ? "Luba mikrofon ja räägi" : "Alusta häälvestlust";
+  if (!state.mic) $("demo-mic").textContent = state.sessionId ? demoCopy().micReady : demoCopy().micStart;
   $("demo-history").hidden=!state.callId;
   $("demo-history").disabled=!state.connected;
   $("demo-recap-read").disabled = !state.awaitingRecapId || state.turnBusy;
@@ -128,7 +219,7 @@ function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata
   status("booking-status", "Andmed on privaatsed. Ühenda esmalt.");
   status("catalogue-status", "Ühenda teenuste vaatamiseks.");
   status("calls-status", "Ühenda päeviku vaatamiseks.");
-  status("demo-status", "Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.");
+  status("demo-status", demoCopy().signIn);
   resetHistory();
   controls();
 }
@@ -151,6 +242,7 @@ async function api(path, opts={}) {
       const message=explanations[problem.detail || problem.error] || (response.status === 403 || response.status === 401 ? "Tunnus puudub või on vale. Ühenda uuesti." : response.status === 410 ? "Vestlus aegus. Alusta uut vestlust; ära korda ebaselget broneerimist." : response.status === 409 ? (path.startsWith("/api/booking/")?"Pakkumine muutus, aegus või toiming ei ole selles seansis võimalik. Kontrolli valikut ja otsi saadavust uuesti.":"Vestlus töötleb eelmist sõnumit. Oota vastus ära.") : response.status === 413 ? "Sõnum või helisalvestis on liiga pikk. Tee lühem proov." : response.status === 400 ? "Kontrolli kuupäeva või sõnumi vormingut." : "Teenus ei ole praegu saadaval. Kontrolli seadistust või proovi hiljem uuesti.");
       const error = new Error(message);
       error.status = response.status;
+      error.code = problem.detail || problem.error;
       if (isPrivate && (response.status === 403 || response.status === 401)) logout(error.message, "error");
       throw error;
     }
@@ -174,7 +266,7 @@ async function connect() {
     state.connected = true; $("token").value = "";
     renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus.");
     status("new-booking-status",bookingUi.kind==="slot"?"Vali teenus ja kuupäev. Vabad ajad tulevad broneerimissüsteemist.":"Vali peatumise kuupäevad ja kontrolli demotubade saadavust.");
-    status("demo-status", "Alusta demovestlust või vajuta „Alusta häälvestlust”. Vestlus aegub 10 minutiga."); controls();
+    status("demo-status", demoCopy().ready); controls();
     await Promise.allSettled([loadBookings(true), loadCatalogue(), loadRooms(), loadHistory(), loadStays(), loadStatus()]);
   } catch (error) {
     if (error.name !== "AbortError") logout(error.message, "error");
@@ -273,19 +365,20 @@ async function loadStatus(path="/api/status") {
     $("telephone").textContent = telephone.public_ingress_verified && telephone.carrier_call_verified ? "Telefonikõne: tõendatud" : "Telefonikõne: kinnitamata";
     $("mode").textContent = cap.text_turn_ready ? "HTTP kõneproov: kõnepakkujad seadistatud" : "HTTP kõneproov: kõnepakkujad seadistamata";
     $("overview-voice").textContent = cap.text_turn_ready ? "Proovi abilist" : "Seadistamata";
-    const models=data.models || {};
-    if(models.stt || models.llm || models.tts) $("demo-models").textContent=`Seadistatud: transkriptsioon ${models.stt?.model || "puudub"}; vastused ${models.llm?.model || "puudub"}; hääl ${models.tts?.voice || "puudub"}. Seadistus ei tõenda edukat telefonikõnet.`;
+    state.demoModels={models:data.models || {},englishVoice:telephone.english_voice};
+    renderDemoModels();
   } catch (_) { $("mode").textContent="HTTP kõneproov: olek kontrollimata"; $("overview-voice").textContent="Kontrollimata"; for(const id of ["stack-stt","stack-llm","stack-tts","stack-booking"]) { $(id).textContent="Kontrollimata"; $(id).className=""; } }
 }
 function addMessage(label, text) {
   const item=document.createElement("li"), author=document.createElement("strong"), content=document.createElement("span");
-  item.className=label === "Sina" ? "user-message" : "assistant-message";
+  item.className=["Sina","You"].includes(label) ? "user-message" : "assistant-message";
+  item.setAttribute("lang", state.replyLanguage);
   author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item);
   $("demo-messages").scrollTop=$("demo-messages").scrollHeight;
 }
 function requireDemoConnection() {
   if (state.connected) return true;
-  status("demo-status", "Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.");
+  status("demo-status", demoCopy().signIn);
   $("token").focus();
   return false;
 }
@@ -293,46 +386,59 @@ async function startDemo() {
   if (state.turnBusy || state.sessionId || !requireDemoConnection()) return;
   state.turnBusy=true; controls();
   const generation=state.generation;
-  try { const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); if(generation!==state.generation || !state.connected) return; state.sessionId=data.session_id; state.callId=/^[a-f0-9]{32}$/.test(data.call_id || "") ? data.call_id : null; $("demo-messages").replaceChildren(); addMessage("Demoabiline", data.greeting); status("demo-status", data.tts_failed ? "Tervituse heli pole saadaval. Tekst on alles; jätkamiseks vajuta mikrofoni või kirjuta." : "Fiktiivne vestlus alustatud. Kuula tervitust, seejärel vajuta mikrofoni ja räägi.", data.tts_failed ? "error" : ""); stopAudio(); playReply(data); await loadHistory(); }
-  catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", error.message, "error"); }
+  try {
+    const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({language:state.demoLanguage})});
+    if(generation!==state.generation || !state.connected) return;
+    state.sessionId=data.session_id;
+    state.replyLanguage=["et","en","ru"].includes(data.language) ? data.language : state.demoLanguage === "en" ? "en" : "et";
+    state.callId=/^[a-f0-9]{32}$/.test(data.call_id || "") ? data.call_id : null;
+    $("demo-messages").replaceChildren();
+    addMessage(demoCopy().assistant, data.greeting);
+    status("demo-status", data.tts_failed ? demoCopy().greetingFailed : demoCopy().started, data.tts_failed ? "error" : "");
+    stopAudio(); playReply(data); await loadHistory();
+  }
+  catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", demoError(error), "error"); }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
 }
 async function sendTurn(input) {
   if (!state.sessionId || state.turnBusy || state.micStarting || !state.connected) return;
   const generation=state.generation;
   const receipt=state.recapDeliveryId;
-  state.turnBusy=true; controls(); stopAudio(); status("demo-status", "Demoabiline vastab… Ära saada sama kinnitust uuesti.");
+  state.turnBusy=true; controls(); stopAudio(); status("demo-status", demoCopy().responding);
   try {
-    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, language:"auto", ...input, ...(receipt ? {recap_delivery_id:receipt} : {})})});
+    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, ...input, language:state.demoLanguage, ...(receipt ? {recap_delivery_id:receipt} : {})})});
     if(generation!==state.generation || !state.connected) return;
-    addMessage("Sina", data.text_heard || (data.input_status === "stt_unavailable" ? "Kõnetuvastus ei olnud saadaval" : "Kõnet ei tuvastatud")); addMessage("Demoabiline", data.reply);
+    if (["et","en","ru"].includes(data.language)) state.replyLanguage=data.language;
+    addMessage(demoCopy().you, data.text_heard || (data.input_status === "stt_unavailable" ? demoCopy().heardFailed : demoCopy().heardNothing)); addMessage(demoCopy().assistant, data.reply);
     renderTurnDiagnostics(data);
     $("demo-text").value="";
     const completedWrite=(data.booking_changes || []).some(change=>["confirmed","cancelled"].includes(change.action));
-    const outcome={ok:"Vastus valmis.", tools_ok:"Taustsüsteemi tööriistad vastasid.", tools_failed:completedWrite?"Muu päring ebaõnnestus. Vaata vastust ja kontrolli taustsüsteemi.":"Mõni toiming ebaõnnestus — edu ei ole kinnitatud.", unknown_outcome:"Kirjutuse tulemus on ebaselge. Ära korda broneerimist; kontrolli taustsüsteemi.", fallback:"Kasutati varuvastust.", tts_failed:"Kõnesüntees ebaõnnestus; tekst on alles."};
-    status("demo-status", (outcome[data.outcome] || "Vastus valmis.") + (data.tts_failed ? " Heli pole saadaval; loe vastust tekstina." : "") + ` Voor ${data.turn_count || 1}; vestlus aegub ${data.expires_in_s || 0} s pärast.`, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
-    if (data.input_status === "stt_unavailable") status("demo-status", "Kõnetuvastuse teenus ebaõnnestus. Proovi hetke pärast uuesti või kirjuta sõnum. Kõneajalugu sisaldab vea olekut.","error");
-    else if (data.input_status === "no_speech") status("demo-status", "Kõnet ei tuvastatud. Kontrolli mikrofoni helitaset ja räägi pärast mikrofoni avanemist.","stale");
+    const copy=demoCopy(), outcome=copy.outcome;
+    const result=data.outcome === "tools_failed" && completedWrite ? outcome.secondaryFailed : outcome[data.outcome] || outcome.ok;
+    const expiry=state.demoLanguage === "en" ? ` Turn ${data.turn_count || 1}; conversation expires in ${data.expires_in_s || 0} s.` : ` Voor ${data.turn_count || 1}; vestlus aegub ${data.expires_in_s || 0} s pärast.`;
+    status("demo-status", result + (data.tts_failed ? " " + copy.textFallback : "") + expiry, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
+    if (data.input_status === "stt_unavailable") status("demo-status", copy.sttFailed,"error");
+    else if (data.input_status === "no_speech") status("demo-status", copy.noSpeech,"stale");
     playReply(data);
     const change=(data.booking_changes || []).find(item=>["confirmed","cancelled"].includes(item.action) && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && (/^[1-9]\d*$/.test(item.id) || (item.kind==="stay" && /^stay_[a-f0-9]{32}$/.test(item.id))));
     if(change) { $("booking-date").value=change.date; await changeView(1,change.action==="confirmed" && change.kind!=="stay" ? change.id : null); }
     else await Promise.allSettled([loadBookings(true),loadStays()]);
     await loadCalls();
   } catch(error) {
-    if(error.name!=="AbortError" && state.connected) { status("demo-status", error.message + " Toimingut ei korrata automaatselt. Ebaselge tulemuse korral kontrolli broneeringute tabelit.", "error"); if(error.status===410 || error.status===404) state.sessionId=null; }
+    if(error.name!=="AbortError" && state.connected) { status("demo-status", demoError(error) + " " + demoCopy().noRetry, "error"); if(error.status===410 || error.status===404) state.sessionId=null; }
   } finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
 }
 async function endDemo() {
   if(!state.sessionId || state.turnBusy) return;
   stopMic(); stopAudio(); state.micStarting=false;
   const id=state.sessionId, generation=state.generation; state.turnBusy=true; controls();
-  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", "Vestlus lõpetatud. Broneeringuid see automaatselt ei tühista."); await loadHistory(); }
+  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", demoCopy().ended); await loadHistory(); }
   catch(error) {
     if(error.name!=="AbortError" && generation===state.generation && state.connected) {
       if(error.status===410 || error.status===404) {
         state.sessionId=null;
-        status("demo-status", "Vestlus ei ole enam aktiivne. Alusta uut vestlust; ebaselge broneerimise või tühistamise tulemust kontrolli esmalt taustsüsteemist. Broneeringuid see automaatselt ei tühista.", "error");
-      } else status("demo-status", error.message,"error");
+        status("demo-status", demoCopy().expired, "error");
+      } else status("demo-status", demoError(error),"error");
     }
   }
   finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
@@ -351,7 +457,7 @@ async function wav(mic) {
   // Let the browser resample with its audio filter; dropping every third
   // sample aliases higher frequencies into the speech band at 48 kHz.
   const frames=Math.min(240000, Math.floor(count*16000/mic.context.sampleRate));
-  if (!frames) throw new Error("Mikrofonist ei saabunud heli. Proovi uuesti.");
+  if (!frames) throw new Error(demoCopy().micEmpty);
   const Offline=window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const offline=new Offline(1,frames,16000), buffer=offline.createBuffer(1,count,mic.context.sampleRate);
   buffer.copyToChannel(input,0);
@@ -361,10 +467,10 @@ async function wav(mic) {
 async function toggleMic() {
   if(state.mic) {
     const mic=stopMic(), generation=state.generation, session=state.sessionId, micEpoch=state.micEpoch;
-    if (!mic.frames || mic.peak < 0.00001) { status("demo-status", "Mikrofonist ei saabunud helisignaali. Kontrolli valitud mikrofoni ja proovi uuesti.","error"); return; }
+    if (!mic.frames || mic.peak < 0.00001) { status("demo-status", demoCopy().micSilent,"error"); return; }
     state.micStarting=true; controls();
     try { const audio=await wav(mic); if(generation===state.generation && session===state.sessionId && micEpoch===state.micEpoch && state.connected) { state.micStarting=false; await sendTurn({audio_b64:audio}); } }
-    catch(error) { if(generation===state.generation && micEpoch===state.micEpoch) status("demo-status", "Heliproovi ei saanud ette valmistada. " + error.message,"error"); }
+    catch(error) { if(generation===state.generation && micEpoch===state.micEpoch) status("demo-status", demoCopy().micEncoding + " " + error.message,"error"); }
     finally { if(generation===state.generation && micEpoch===state.micEpoch) { state.micStarting=false; controls(); } }
     return;
   }
@@ -374,7 +480,7 @@ async function toggleMic() {
   if(generation!==state.generation || micEpoch!==state.micEpoch || !state.connected || !state.sessionId || state.turnBusy || state.micStarting || document.hidden) return;
   const session=state.sessionId;
   let stream=null, context=null;
-  state.micStarting=true; controls(); $("demo-audio").pause(); status("demo-status", "Ootan mikrofoni luba…");
+  state.micStarting=true; controls(); $("demo-audio").pause(); status("demo-status", demoCopy().micPermission);
   try {
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     if(generation!==state.generation || session!==state.sessionId || micEpoch!==state.micEpoch || state.mic || state.turnBusy || document.hidden) { stream.getTracks().forEach(track=>track.stop()); return; }
@@ -389,20 +495,20 @@ async function toggleMic() {
       mic.chunks.push(new Float32Array(kept)); mic.frames+=kept.length;
       let energy=0; for(const sample of kept) { energy+=sample*sample; mic.peak=Math.max(mic.peak,Math.abs(sample)); }
       const rms=Math.sqrt(energy/Math.max(1,kept.length)), level=Math.min(1,rms*5); $("mic-level").value=level;
-      $("mic-feedback-text").textContent=`${Math.floor(mic.frames/context.sampleRate)} / 15 s. ` + (level < .005 ? "Heli on vaikne. Kontrolli, kas valitud on õige mikrofon." : "Heli jõuab mikrofonist kohale. Lõpetamiseks vajuta uuesti.");
+      $("mic-feedback-text").textContent=`${Math.floor(mic.frames/context.sampleRate)} / 15 s. ` + (level < .005 ? demoCopy().micQuiet : demoCopy().micSignal);
       if(rms>=.008) { mic.speechFrames+=kept.length; mic.silenceFrames=0; } else mic.silenceFrames+=kept.length;
       if(mic.frames>=Math.floor(context.sampleRate*15) || (mic.speechFrames>=context.sampleRate*.2 && mic.silenceFrames>=context.sampleRate*1.5)) toggleMic();
     };
     source.connect(processor); processor.connect(gain); gain.connect(context.destination); await context.resume();
     if(generation!==state.generation || micEpoch!==state.micEpoch || state.mic!==mic) return;
     mic.timer=setTimeout(()=>{if(state.mic===mic)toggleMic();},15000);
-    $("demo-mic").textContent="Lõpeta ja saada heli"; status("demo-status", "Kuulan… Räägi kuni 15 sekundit. Vastus tuleb kõnepausi järel; kohe saatmiseks vajuta uuesti.");
+    $("demo-mic").textContent=demoCopy().micStop; status("demo-status", demoCopy().micListening);
     presentation();
   } catch(_) {
     const current=generation===state.generation && micEpoch===state.micEpoch;
     if(state.mic?.stream===stream) stopMic();
     else { stream?.getTracks().forEach(track=>track.stop()); context?.close().catch(()=>{}); }
-    if(current) status("demo-status", "Mikrofon ei avanenud. Luba brauseris mikrofon või saada tekstsõnum.","error");
+    if(current) status("demo-status", demoCopy().micDenied,"error");
   } finally {
     if(generation===state.generation && session===state.sessionId && micEpoch===state.micEpoch) { state.micStarting=false; controls(); }
   }
@@ -422,13 +528,14 @@ $("booking-date").addEventListener("change",()=>changeView());
 $("booking-prev").addEventListener("click",()=>{if(state.page>1)changeView(state.page-1);});
 $("booking-next").addEventListener("click",()=>{if(state.hasMore && state.page<100)changeView(state.page+1);});
 $("demo-start").addEventListener("click",startDemo); $("demo-end").addEventListener("click",endDemo);
+$("demo-language").addEventListener("change",changeDemoLanguage);
 $("demo-form").addEventListener("submit", event=>{event.preventDefault(); const text=$("demo-text").value.trim(); if(text) { stopMic(); sendTurn({text}); }});
 $("demo-mic").addEventListener("click",toggleMic);
 $("demo-history").addEventListener("click",async()=>{const id=state.callId; if(!state.connected || !id)return; location.hash="calls-section"; await loadHistory(); if(state.connected) await selectHistory(id);});
 $("demo-recap-read").addEventListener("click",()=>{
   if(!state.awaitingRecapId || state.turnBusy) return;
   state.recapDeliveryId=state.awaitingRecapId; $("demo-recap-read").hidden=true;
-  status("demo-status", "Kokkuvõte loetud. Kinnitamiseks ütle või kirjuta „Jah, kinnitan.” Muudatuseks tee uus soov.");
+  status("demo-status", recapPlayedMessage());
 });
 window.addEventListener?.("pagehide",()=>logout());
 document.addEventListener("visibilitychange",()=>{if(document.hidden)stopMic(); else poll();});
@@ -447,16 +554,17 @@ $("booking-auth-link").addEventListener("click", event => { event.preventDefault
 $("today-label").textContent = new Intl.DateTimeFormat("et-EE", {timeZone:"Europe/Tallinn", day:"numeric", month:"long", year:"numeric"}).format(new Date());
 $("today-label").setAttribute("datetime", tallinnDay());
 initializeHistory();
+localizeDemo();
 controls();
 
 function dayAfter(day, days=1) { return new Date(Date.parse(day+"T12:00:00Z")+days*86400000).toISOString().slice(0,10); }
 function renderTurnDiagnostics(data) {
-  const messages={transcription_unavailable:"Heli transkriptsioon ei ole praegu saadaval. Proovi tekstiga või kontrolli kõnetuvastuse seadistust.",reply_provider_unavailable:"Vastuse mudel ei vastanud. Kasutati varuvastust; kontrolli serveri mudeliseadistust.",reply_provider_fallback:"Vastuseks kasutati varumudelit.",reply_audio_unavailable:"Vastuse heli ei saanud luua. Vastus on tekstina alles; kontrolli kõnesünteesi seadistust."};
-  const causes={rate_limited:"Vastuse mudeli kasutuslimiit sai täis. Kontrolli mudeliteenuse limiite; ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",request_rejected:"Mudeliteenus lükkas vastusepäringu tagasi. Kontrolli serveri mudeliseadistust.",transport_error:"Ühendus vastuse mudeliga ebaõnnestus. Kontrolli serveri ühendust mudeliteenusega.",completion_incomplete:"Mudeli vastus jäi pooleli. Ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",invalid_response:"Mudeliteenus tagastas vigase vastuse. Broneeringu edu ei saa selle vastuse põhjal kinnitada."};
+  const messages=state.demoLanguage === "en" ? {transcription_unavailable:"Speech recognition is unavailable. Type a message or check the speech service.",reply_provider_unavailable:"The reply service did not respond. A fallback reply was used; check the server configuration.",reply_provider_fallback:"A fallback reply service was used.",reply_audio_unavailable:"Reply audio could not be created. The text is still here; check the speech service."} : {transcription_unavailable:"Heli transkriptsioon ei ole praegu saadaval. Proovi tekstiga või kontrolli kõnetuvastuse seadistust.",reply_provider_unavailable:"Vastuse mudel ei vastanud. Kasutati varuvastust; kontrolli serveri mudeliseadistust.",reply_provider_fallback:"Vastuseks kasutati varumudelit.",reply_audio_unavailable:"Vastuse heli ei saanud luua. Vastus on tekstina alles; kontrolli kõnesünteesi seadistust."};
+  const causes=state.demoLanguage === "en" ? {rate_limited:"The reply service reached its usage limit. Check the limits; do not repeat booking confirmation before checking the booking system.",request_rejected:"The reply service rejected the request. Check the server configuration.",transport_error:"The reply service could not be reached. Check the server connection.",completion_incomplete:"The reply was incomplete. Do not repeat confirmation before checking the booking system.",invalid_response:"The reply service returned an invalid response. This does not confirm booking success."} : {rate_limited:"Vastuse mudeli kasutuslimiit sai täis. Kontrolli mudeliteenuse limiite; ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",request_rejected:"Mudeliteenus lükkas vastusepäringu tagasi. Kontrolli serveri mudeliseadistust.",transport_error:"Ühendus vastuse mudeliga ebaõnnestus. Kontrolli serveri ühendust mudeliteenusega.",completion_incomplete:"Mudeli vastus jäi pooleli. Ära korda broneeringu kinnitust enne taustsüsteemi kontrolli.",invalid_response:"Mudeliteenus tagastas vigase vastuse. Broneeringu edu ei saa selle vastuse põhjal kinnitada."};
   const warnings=(data.warnings || []).map(item=>item.stage==="llm" && item.code==="reply_provider_unavailable" ? causes[item.cause] || messages[item.code] : messages[item.code]).filter(Boolean);
   if(data.tts_failed && !warnings.some(item=>item===messages.reply_audio_unavailable)) warnings.push(messages.reply_audio_unavailable);
   $("demo-warning").textContent=warnings.join(" "); $("demo-warning").hidden=warnings.length===0;
-  const timings=data.timings_ms || {}, labels={stt:"Kõnetuvastus",llm:"Vastus",tools:"Broneerimistööriistad",tts:"Kõnesüntees",total:"Kokku"};
+  const timings=data.timings_ms || {}, labels=state.demoLanguage === "en" ? {stt:"Speech recognition",llm:"Reply",tools:"Booking tools",tts:"Speech synthesis",total:"Total"} : {stt:"Kõnetuvastus",llm:"Vastus",tools:"Broneerimistööriistad",tts:"Kõnesüntees",total:"Kokku"};
   const values=Object.entries(labels).filter(([key])=>Number.isFinite(timings[key])).map(([key,label])=>`${label}: ${(timings[key]/1000).toFixed(1)} s`);
   $("demo-timings").textContent=values.join(" · "); $("demo-timings").hidden=values.length===0;
 }

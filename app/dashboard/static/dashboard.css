@@ -143,6 +143,10 @@ tr.highlight { background: var(--wash); }
 .conversation-intro h3 { font-size: 19px; }
 .conversation-intro p { max-width: 40ch; margin: 6px auto 0; color: var(--muted); font-size: 12px; }
 .demo-actions { justify-content: center; }
+.demo-language { max-width: 360px; margin: 0 auto 20px; }
+.demo-language select { width: 100%; min-height: 44px; }
+.demo-language .sub { margin-top: 6px; line-height: 1.5; }
+.demo-language select:disabled { opacity: .7; cursor: not-allowed; }
 .demo-panel .status { margin-top: 14px; }
 .transcript { list-style: none; max-height: 400px; margin: 16px 0; padding: 0 3px; overflow: auto; }
 .transcript:empty { display: none; }
