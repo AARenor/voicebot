@@ -6,12 +6,14 @@ import copy
 import json
 import re
 import time
+import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
 from .languages import CONSENT, spoken_date, spoken_time
 from .restaurant_data import DAYS, restaurant_demo_profile
+from .restaurant_dates import ESTONIAN_COUNTS, resolve_restaurant_date
 from .telephone import CallTools, UNKNOWN_MUTATION_ERRORS
 from .turn import REPEAT_PROMPT, STT_UNAVAILABLE, TURN_UNAVAILABLE
 
@@ -19,6 +21,9 @@ COPY: dict[str, dict[str, str]] = {
     "et": {
         "greeting": "Tere! Olen restorani AI-abiline. Siin saad proovida lauabroneeringut; päris lauda demo ei broneeri. Kuidas saan aidata?",
         "date": "Mis kuupäevaks soovid lauda?",
+        "date_invalid": "Seda kuupäeva kalendris ei ole. Mis päeva ja kuud mõtled?",
+        "date_ambiguous": "Millist kuupäeva mõtled? Ütle üks päev ja kuu.",
+        "date_incomplete": "Mis kuupäeva mõtled? Ütle ka päev ja kuu.",
         "time": "Mis kell soovid tulla?",
         "party": "Mitu teid tuleb, koos lastega?",
         "unavailable": "Soovitud ajal sobivat lauda ei ole. Kas soovid teist kellaaega või kuupäeva?",
@@ -40,6 +45,9 @@ COPY: dict[str, dict[str, str]] = {
     "en": {
         "greeting": "Hello! I'm the restaurant's AI assistant. You can try a table reservation here; this demo won't reserve a real table. How can I help?",
         "date": "What date would you like a table?",
+        "date_invalid": "That date isn't in the calendar. What day and month do you mean?",
+        "date_ambiguous": "Which date do you mean? Please give one day and month.",
+        "date_incomplete": "What date do you mean? Please include the day and month.",
         "time": "What time would you like to come?",
         "party": "How many of you are coming, including children?",
         "unavailable": "There is no suitable table at that time. Would you like another time or date?",
@@ -61,6 +69,9 @@ COPY: dict[str, dict[str, str]] = {
     "ru": {
         "greeting": "Здравствуйте! Я ИИ-помощник ресторана. Здесь можно попробовать забронировать столик; демонстрация не бронирует настоящий столик. Чем могу помочь?",
         "date": "На какую дату нужен столик?",
+        "date_invalid": "Такой даты нет в календаре. Какой день и месяц вы имеете в виду?",
+        "date_ambiguous": "Какую дату вы имеете в виду? Назовите один день и месяц.",
+        "date_incomplete": "Какую дату вы имеете в виду? Назовите день и месяц.",
         "time": "Во сколько хотите прийти?",
         "party": "Сколько вас будет, вместе с детьми?",
         "unavailable": "На это время подходящего столика нет. Вы хотите другое время или дату?",
@@ -157,6 +168,7 @@ NUMBER_WORDS = {
     "четыре": 4,
     "пять": 5,
     "шесть": 6,
+    **ESTONIAN_COUNTS,
 }
 
 
@@ -232,69 +244,33 @@ RESERVATION_TOOL = _schema(
 
 def parse_restaurant_request(text, previous=None, *, now=None):
     """Parse requested details only: never infer availability, contacts or consent."""
-    text = " ".join(text.casefold().split())
+    if not isinstance(text, str) or len(text) > 2000:
+        return None
+    text = " ".join(unicodedata.normalize("NFC", text.casefold()).split())
     inquiry = dict(previous or {})
     active = previous is not None or bool(
         re.search(
-            r"\b(table|reserve|reservation|book|laud|lauda|laua|broneer\w*|брон\w*|столик\w*)\b",
+            r"\b(table|reserve|reservation|book|lau(?:d|da|a(?:le|ks|ga|s|st)?)|broneer\w*|брон\w*|столик\w*)\b",
             text,
         )
     )
     if not active:
         return None
     now = now or datetime.now(ZoneInfo("Europe/Tallinn"))
-    relative = (
-        ("ülehomme", "day after tomorrow", "послезавтра"),
-        ("homme", "tomorrow", "завтра"),
-        ("täna", "today", "сегодня"),
-    )
-    for offset, words in zip((2, 1, 0), relative):
-        if any(re.search(r"\b" + re.escape(word) + r"\b", text) for word in words):
-            inquiry["date"] = (now.date() + timedelta(days=offset)).isoformat()
-            break
-    if "date" not in inquiry:
-        weekdays = {
-            "monday": 0,
-            "esmaspäev": 0,
-            "понедельник": 0,
-            "tuesday": 1,
-            "teisipäev": 1,
-            "вторник": 1,
-            "wednesday": 2,
-            "kolmapäev": 2,
-            "сред": 2,
-            "thursday": 3,
-            "neljapäev": 3,
-            "четверг": 3,
-            "friday": 4,
-            "reede": 4,
-            "пятниц": 4,
-            "saturday": 5,
-            "laupäev": 5,
-            "суббот": 5,
-            "sunday": 6,
-            "pühapäev": 6,
-            "воскресенье": 6,
-        }
-        for word, weekday in weekdays.items():
-            if re.search(r"\b" + word + r"\w*\b", text):
-                offset = (weekday - now.weekday()) % 7 or 7
-                inquiry["date"] = (now.date() + timedelta(days=offset)).isoformat()
-                break
-    explicit_date = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
-    if explicit_date:
-        inquiry["date"] = explicit_date[1]
-    local_date = re.search(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", text)
-    if local_date:
-        inquiry["date"] = (
-            f"{local_date[3]}-{int(local_date[2]):02d}-{int(local_date[1]):02d}"
-        )
+    resolved = resolve_restaurant_date(text, now)
+    if resolved.issue:
+        inquiry.pop("date", None)
+        inquiry["date_issue"] = resolved.issue
+    elif resolved.value:
+        inquiry["date"] = resolved.value
+        inquiry.pop("date_issue", None)
+    # Date words/numerals must not become a time or a guest count, especially
+    # when a caller uses the wrong case: "neljale oktoobrile" is still a date.
+    text = " ".join(resolved.remaining_text.split())
     clock = re.search(
         r"\b(\d{1,2})[:.](\d{2})(?:\s*(a\.?m\.?|p\.?m\.?))?(?!\d|\.\d)", text
     )
-    if clock and not (
-        local_date and local_date.start() <= clock.start() < local_date.end()
-    ):
+    if clock:
         hour, minute = int(clock[1]), int(clock[2])
         suffix = (clock[3] or "").replace(".", "")
         if suffix and 1 <= hour <= 12:
@@ -319,7 +295,7 @@ def parse_restaurant_request(text, previous=None, *, now=None):
     party = party or re.search(
         r"\b"
         + number
-        + r"\s+(?:people|persons|guests|inimest\w*|külalist\w*|человек\w*|гост\w*)\b",
+        + r"\s+(?:people|persons|guests|inimes\w*|külalis\w*|külalist\w*|человек\w*|гост\w*)\b",
         text,
     )
     party = party or re.search(
@@ -496,8 +472,11 @@ class RestaurantCallTools(CallTools):
         elif re.search(r"\b(price|cost|hind|hinnad|maksab|цен|стоим)\w*", text):
             self._restaurant_focus = "price"
         elif re.search(
-            r"\b(staff|human|transfer|callback|personali|inimese|teenindaja|персонал|сотрудник|оператор|перевед)\w*",
+            r"\b(staff|human|transfer|callback|personali|teenindaja|персонал|сотрудник|оператор|перевед)\w*",
             text,
+        ) or (
+            re.search(r"\binimese\w*\b", text)
+            and re.search(r"\b(?:rääk|ühend|suun|kõnel|vestel)\w*\b", text)
         ):
             self._restaurant_focus = "staff"
         elif re.search(
@@ -535,6 +514,8 @@ class RestaurantCallTools(CallTools):
             return self.information_reply(self._restaurant_focus)
         inquiry = self._restaurant_inquiry
         if inquiry is not None:
+            if inquiry.get("date_issue"):
+                return COPY[self.language][inquiry["date_issue"]]
             for field, key in (
                 ("date", "date"),
                 ("start_time", "time"),
@@ -668,6 +649,12 @@ class RestaurantCallTools(CallTools):
         if self.mutation_uncertain:
             return self._unknown_mutation(name)
         if self.clarification or self.unsupported_language:
+            return {"error": "clarification_required"}
+        if (
+            name == "plan_restaurant_reservation"
+            and self._restaurant_inquiry
+            and self._restaurant_inquiry.get("date_issue")
+        ):
             return {"error": "clarification_required"}
         if isinstance(args, str):
             try:
@@ -866,6 +853,12 @@ class RestaurantCallTools(CallTools):
             return super().guard_reply(text, results)
         if errors:
             self.invalidate_recap()
+            if (
+                "clarification_required" in errors
+                and self._restaurant_inquiry
+                and self._restaurant_inquiry.get("date_issue")
+            ):
+                return copybook[self._restaurant_inquiry["date_issue"]]
             if self.turn_mutation:
                 return copybook[self.turn_mutation] + " " + copybook["failed"]
             if "restaurant_party_size_invalid" in errors:

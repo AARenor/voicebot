@@ -282,6 +282,95 @@ def test_asr_confirmation_without_delivery_receipt_never_reaches_the_calendar(cl
     )
 
 
+def spoken_tomorrow():
+    from tests.test_restaurant_dates import DAY_WORDS
+    from app.restaurant_call import DATE_MONTHS
+
+    day = datetime.fromisoformat(tomorrow())
+    return f"{DAY_WORDS[day.day - 1]} {DATE_MONTHS['et'][day.month - 1]}"
+
+
+@pytest.mark.parametrize("date_text", ["homseks", "homsele", "hommeks", "named"])
+@pytest.mark.parametrize("channel", ["text", "audio"])
+def test_case_forms_and_spoken_dates_prepare_then_save_visible_booking(
+    client, date_text, channel
+):
+    session = start(client, "et")["session_id"]
+    if date_text == "named":
+        date_text = spoken_tomorrow()
+    request_text = f"Soovin lauaks {date_text} kell 14.00 nelja inimesega"
+    body = {"session_id": session, "language": "auto"}
+    if channel == "audio":
+        client.provider.transcript = request_text
+        body["audio_b64"] = base64.b64encode(b"RIFF-synthetic-date-fixture").decode()
+    else:
+        body["text"] = request_text
+    response = client.post("/api/turn", json=body, headers=AUTH)
+    assert response.status_code == 200, response.text
+    proposal = response.json()
+    assert proposal["text_heard"] == request_text
+    assert proposal["recap_delivery_id"]
+    assert proposal["booking_changes"] == []
+    tools = client.app.state.demo_sessions.sessions[session].tools
+    assert tools.pending["recap"]["date"] == tomorrow()
+    assert tools.pending["recap"]["party_size"] == 4
+    result = turn(
+        client,
+        session,
+        "ja kinnitää",
+        language="et",
+        receipt=proposal["recap_delivery_id"],
+    )
+    assert result["booking_changes"][0]["date"] == tomorrow()
+    rows = client.get("/api/bookings?date=" + tomorrow(), headers=AUTH).json()["items"]
+    assert (
+        len(rows) == 1
+        and rows[0]["service_id"] == 4
+        and rows[0]["status"] == "confirmed"
+    )
+
+
+def test_followup_case_forms_keep_previously_supplied_details(client):
+    session = start(client, "et")["session_id"]
+    assert (
+        turn(client, session, "Soovin lauda", language="et")["reply"]
+        == COPY["et"]["date"]
+    )
+    assert (
+        turn(client, session, "homseks", language="et")["reply"] == COPY["et"]["time"]
+    )
+    assert (
+        turn(client, session, "kell 14", language="et")["reply"] == COPY["et"]["party"]
+    )
+    proposal = turn(client, session, "nelja inimesega", language="et")
+    assert proposal["recap_delivery_id"]
+    recap = client.app.state.demo_sessions.sessions[session].tools.pending["recap"]
+    assert recap["date"] == tomorrow() and recap["party_size"] == 4
+
+
+@pytest.mark.parametrize(
+    "text,issue",
+    [
+        ("31 veebruar", "date_invalid"),
+        ("homseks või ülehomseks", "date_ambiguous"),
+        ("oktoobriks", "date_incomplete"),
+    ],
+)
+def test_bad_dates_clarify_without_a_hold_and_can_be_corrected(client, text, issue):
+    session = start(client, "et")["session_id"]
+    answer = turn(
+        client, session, f"Soovin lauda {text} kell 14.00 kahele", language="et"
+    )
+    assert answer["reply"] == COPY["et"][issue]
+    assert answer["booking_changes"] == [] and not answer.get("recap_delivery_id")
+    tools = client.app.state.demo_sessions.sessions[session].tools
+    assert not tools.holds and not tools.bookings
+    fixed = turn(client, session, "homseks", language="et")
+    assert fixed["recap_delivery_id"]
+    assert tools.pending["recap"]["date"] == tomorrow()
+    assert tools.pending["recap"]["party_size"] == 2
+
+
 def test_audio_language_is_sent_to_recognition_and_restaurant_reply(client):
     session = start(client, "en")["session_id"]
     response = client.post(
