@@ -247,10 +247,21 @@ language switching, numeric follow-ups, selected voice, actual cached fallback
 bytes/history and real SDK spa/room confirmation and cancellation. Dedicated
 modules passed 19 native terminal, 26 Russian and 29 deployment tests; these
 overlapping checks are not added together as unique coverage.
-The complete pinned media suite then passed 1298 tests, with 5 skipped and
+Before the subsequent browser-English integration, the complete pinned media
+suite passed 1298 tests, with 5 skipped and
 36 subtests passed, in 87.25 seconds. Skips remain the opt-in installed backend
 checks and unavailable Docker Compose parser. Ruff and the whitespace diff
 check passed. No server deployment or carrier call was performed from Windows.
+
+The concurrent browser-English release `ec2d6c9` was then preserved in native
+handoff commit `3478ce6`. Its focused compatibility suite passed 98 tests, and
+the complete pinned media suite passed 1318 tests, with 5 skipped and 36 subtests,
+in 91.92 seconds. A fresh live Chrome microphone check again recognized the
+exact reported typo phrase, returned the time question with zero warnings,
+model calls or booking changes, and completed greeting/reply playback. Its
+API turn took 1055 ms. Capture, test session and credential were cleaned up and
+the browser closed. The audio input device remained synthetic; this is still
+not an incoming telephone call.
 
 | Requested requirement | Current evidence | Release state |
 | --- | --- | --- |
