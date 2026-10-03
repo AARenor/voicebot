@@ -9,6 +9,7 @@ class Element {
   append(...items){this.children.push(...items);}
   appendChild(item){this.children.push(item);}
   pause(){}
+  focus(){this.focused=true;}
   removeAttribute(){}
   load(){}
 }
@@ -26,6 +27,7 @@ const context=vm.createContext({console,Headers,URL,URLSearchParams,AbortControl
     if(path==='/api/status')return response({wired:{},capabilities:{}});
     if(path==='/api/calls')return response({calls:[]});
     if(path==='/api/catalogue')return response({services:[],providers:[]});
+    if(path==='/api/demo/session')return response({session_id:'fixture-session',call_id:'a'.repeat(32),greeting:'Fiktiivne demovestlus',expires_in_s:600});
     if(path.includes('/api/bookings'))return response({items:[],has_more:false,fetched_at:'2026-10-02T10:00:00Z'});
     return response({ok:true});}
 });
@@ -41,6 +43,15 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('booking-placeholder').hidden,false,'signed-out guidance missing');
   assert.equal(element('token-field').hidden,false,'sign-in field missing');
   assert.equal(element('logout').hidden,true,'signed-out logout should be hidden');
+  assert.equal(element('demo-start').disabled,false,'signed-out demo start cannot explain the sign-in prerequisite');
+  assert.equal(element('demo-mic').disabled,false,'signed-out voice button cannot explain the sign-in prerequisite');
+  await element('demo-start').listeners.click();
+  assert.equal(element('token').focused,true,'demo start did not focus operator sign-in');
+  assert(element('demo-status').textContent.includes('tunnus'),'demo start did not explain operator sign-in');
+  element('token').focused=false;
+  await element('demo-mic').listeners.click();
+  assert.equal(element('token').focused,true,'voice button did not focus operator sign-in');
+  assert(requests.every(r=>r.path==='/api/status'),'signed-out demo click sent a private request');
   element('token').value='fixture-operator';
   await run('connect()'); await flush();
   assert(requests.some(r=>r.path.includes('/api/bookings')),'no provider schedule');
@@ -49,6 +60,27 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('logout').hidden,false,'connected logout missing');
   assert.equal(element('booking-empty').hidden,false,'successful empty state missing');
   assert.equal(element('booking-placeholder').hidden,true,'empty schedule presented as locked');
+  assert.equal(element('demo-mic').disabled,false,'connected voice button requires an unexplained separate session start');
+  let microphoneAttempts=0;
+  context.navigator.mediaDevices={getUserMedia:async()=>{microphoneAttempts++;throw new DOMException('Fixture permission denied','NotAllowedError');}};
+  const readyFetch=context.fetch;
+  context.fetch=async(path,opts)=>path==='/api/demo/session'?response({},503):readyFetch(path,opts);
+  await element('demo-mic').listeners.click();
+  assert.equal(run('state.sessionId'),null,'failed demo start produced a usable session');
+  assert.equal(microphoneAttempts,0,'microphone opened before a demo session existed');
+  assert.equal(element('demo-mic').disabled,false,'failed demo start trapped the voice button');
+  context.fetch=readyFetch;
+  const startsBefore=requests.filter(r=>r.path==='/api/demo/session').length;
+  await element('demo-mic').listeners.click();
+  assert.equal(run('state.sessionId'),'fixture-session','voice click did not start its demo session');
+  assert.equal(microphoneAttempts,1,'voice click did not reach the microphone permission request');
+  assert.equal(element('demo-status').className,'status error','microphone denial was silent');
+  assert(element('demo-status').textContent.includes('Mikrofon'),'microphone denial did not explain recovery');
+  assert.equal(element('demo-text').disabled,false,'microphone denial blocked text fallback');
+  await element('demo-mic').listeners.click();
+  assert.equal(requests.filter(r=>r.path==='/api/demo/session').length,startsBefore+1,'microphone retry created a second conversation');
+  assert.equal(requests.filter(r=>r.path==='/api/turn').length,0,'denied microphone sent a conversation turn');
+  await run('endDemo()');
   await run(`api('/api/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})`);
   const post=requests.find(r=>r.path==='/api/turn');
   assert.equal(post.opts.headers.get('Content-Type'),'application/json');
@@ -125,9 +157,11 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(run('state.connected'),false,'403 did not sign out');
   assert.equal(run('state.bookings.length'),0);
   assert.equal(element('auth-status').className,'status error','auth error not visibly identified');
+  let permissionAfterLogout=0;
+  context.navigator.mediaDevices={getUserMedia:async()=>{permissionAfterLogout++;throw new DOMException('Fixture denied','NotAllowedError');}};
   context.fetch=async(path)=>response(path==='/api/calls'?{calls:[{at:'PRIVATE',lang:'et',outcome:'ok'}]}:path==='/api/catalogue'?{services:[{id:1,name:'PRIVATE',duration:30}],providers:[]}:path==='/api/demo/session'?{session_id:'PRIVATE',greeting:'PRIVATE'}:path==='/api/turn'?{text_heard:'PRIVATE',reply:'PRIVATE',audio_b64:''}:{items:[{id:42,service_name:'PRIVATE'}],fetched_at:'fixture',has_more:false});
   run(`const originalApi=api; let logoutAfter=null; api=async(path,options)=>{const data=await originalApi(path,options); if(logoutAfter && path.startsWith(logoutAfter)) logout(); return data;};`);
-  for (const [call,path] of [['loadBookings(true)','/api/bookings'],['loadCatalogue()','/api/catalogue'],['loadCalls()','/api/calls'],['startDemo()','/api/demo/session'],["sendTurn({text:'fixture'})",'/api/turn']]) {
+  for (const [call,path] of [['loadBookings(true)','/api/bookings'],['loadCatalogue()','/api/catalogue'],['loadCalls()','/api/calls'],['startDemo()','/api/demo/session'],['toggleMic()','/api/demo/session'],["sendTurn({text:'fixture'})",'/api/turn']]) {
     run('logoutAfter=null');element('token').value='fixture-operator';await run('connect()');
     if(path==='/api/turn')run("state.sessionId='fixture-session'");
     run(`logoutAfter=${JSON.stringify(path)}`);await run(call);await flush();
@@ -136,6 +170,7 @@ const run=s=>vm.runInContext(s,context);
     for(const id of ['#bookings tbody','catalogue','calls','demo-messages']) assert.equal(element(id).children.length,0,call+' restored '+id);
     assert.equal(run('state.sessionId'),null,call+' restored session');
   }
+  assert.equal(permissionAfterLogout,0,'late session start opened the microphone after logout');
   run("logoutAfter='/api/calls'");element('token').value='fixture-operator';await run('connect()');
   assert.equal(run('state.connected'),false,'connect restored auth after logout');
   // A lost connection must release the UI; a write timeout must not retry.

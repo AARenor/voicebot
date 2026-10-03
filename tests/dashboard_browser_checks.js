@@ -78,7 +78,16 @@ async (page) => {
   assert(linkFailures.length===0,`invalid booking links reached the UI: ${JSON.stringify(linkFailures)}`);
   await page.goto('http://127.0.0.1:8765/');
   await page.evaluate(()=>document.fonts.ready);
+  assert(await page.locator('#demo-start').isEnabled(),'signed-out demo start cannot explain operator sign-in');
+  assert(await page.locator('#demo-mic').isEnabled(),'signed-out voice button cannot explain operator sign-in');
+  await page.locator('#demo-mic').click();
+  assert(await page.locator('#token').evaluate(el=>el===document.activeElement),'voice button did not focus operator sign-in');
+  assert((await page.locator('#demo-status').textContent()).includes('tunnus'),'voice button did not explain operator sign-in');
+  await page.locator('#demo-start').click();
+  assert(await page.locator('#token').evaluate(el=>el===document.activeElement),'demo start did not focus operator sign-in');
   assert(requests.every(path=>path==='/api/status'),'signed-out page requested private data');
+  await page.goto('http://127.0.0.1:8765/');
+  await page.evaluate(()=>document.fonts.ready);
   await page.screenshot({path:'output/playwright/after-desktop.png',fullPage:true});
   await page.keyboard.press('Tab');
   assert(await page.locator('.skip').evaluate(el=>el===document.activeElement),'skip link is not first keyboard target');
@@ -146,7 +155,10 @@ async (page) => {
   mode='loaded';
   await page.locator('#refresh').click();
   await page.waitForFunction(()=>document.querySelectorAll('#bookings tbody tr').length===3);
-  await page.locator('#demo-start').click();
+  await page.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Fixture microphone permission denied','NotAllowedError');};});
+  await page.locator('#demo-mic').click();
+  await page.waitForFunction(()=>state.sessionId && !state.micStarting && document.getElementById('demo-status').classList.contains('error'));
+  assert(requests.filter(path=>path==='/api/demo/session').length===1,'direct microphone start did not create exactly one demo session');
   await page.waitForFunction(()=>!document.getElementById('demo-text').disabled);
   await page.locator('#demo-text').fill('Kui kaua massaaž kestab?');
   await page.locator('#demo-send').click();
@@ -232,7 +244,8 @@ async (page) => {
       assert(ended.sessionId===null,`session end ${code} retained the inactive session`);
       assert(await page.locator('#demo-start').isEnabled(),`session end ${code} trapped the restart button`);
       assert(await page.locator('#demo-end').isDisabled(),`session end ${code} retained the end button`);
-      for(const id of ['demo-text','demo-send','demo-mic']) assert(await page.locator('#'+id).isDisabled(),`session end ${code} retained ${id}`);
+      for(const id of ['demo-text','demo-send']) assert(await page.locator('#'+id).isDisabled(),`session end ${code} retained ${id}`);
+      assert(await page.locator('#demo-mic').isEnabled(),`session end ${code} trapped the manual voice restart button`);
       const message=await page.locator('#demo-status').textContent();
       assert(message.includes('Alusta uut vestlust') && message.includes('taustsüsteemist') && message.includes('automaatselt ei tühista'),`session end ${code} omitted restart or booking-result guidance`);
       await page.locator('#demo-start').click();

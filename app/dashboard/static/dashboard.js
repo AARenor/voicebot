@@ -64,10 +64,12 @@ function controls() {
   $("logout").disabled = !state.connected;
   $("connect").disabled = !!state.credential;
   $("refresh").disabled = !state.connected || state.readBusy;
-  $("demo-start").disabled = !state.connected || !!state.sessionId || state.turnBusy;
+  const connecting = !!state.credential && !state.connected;
+  $("demo-start").disabled = connecting || !!state.sessionId || state.turnBusy;
   $("demo-end").disabled = !state.sessionId || state.turnBusy;
-  for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy || (id !== "demo-mic" && state.micStarting);
-  $("demo-mic").disabled ||= state.micStarting;
+  for (const id of ["demo-text", "demo-send"]) $(id).disabled = !state.sessionId || state.turnBusy || state.micStarting;
+  $("demo-mic").disabled = connecting || state.turnBusy || state.micStarting;
+  if (!state.mic) $("demo-mic").textContent = state.sessionId ? "Luba mikrofon ja räägi" : "Alusta häälvestlust";
   $("demo-history").hidden=!state.callId;
   $("demo-history").disabled=!state.connected;
   $("booking-prev").disabled = !state.connected || state.readBusy || state.page <= 1;
@@ -92,7 +94,7 @@ function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata
   status("booking-status", "Andmed on privaatsed. Ühenda esmalt.");
   status("catalogue-status", "Ühenda teenuste vaatamiseks.");
   status("calls-status", "Ühenda päeviku vaatamiseks.");
-  status("demo-status", "Ühenda esmalt. Vestlus aegub 10 minutiga.");
+  status("demo-status", "Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.");
   resetHistory();
   controls();
 }
@@ -138,7 +140,7 @@ async function connect() {
     state.connected = true; $("token").value = "";
     renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus.");
     status("new-booking-status",bookingUi.kind==="slot"?"Vali teenus ja kuupäev. Vabad ajad tulevad broneerimissüsteemist.":"Vali peatumise kuupäevad ja kontrolli demotubade saadavust.");
-    status("demo-status", "Alusta demovestlust. Vestlus aegub 10 minutiga."); controls();
+    status("demo-status", "Alusta demovestlust või vajuta „Alusta häälvestlust”. Vestlus aegub 10 minutiga."); controls();
     await Promise.allSettled([loadBookings(true), loadCatalogue(), loadRooms(), loadHistory(), loadStays(), loadStatus()]);
   } catch (error) {
     if (error.name !== "AbortError") logout(error.message, "error");
@@ -247,8 +249,14 @@ function addMessage(label, text) {
   author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item);
   $("demo-messages").scrollTop=$("demo-messages").scrollHeight;
 }
+function requireDemoConnection() {
+  if (state.connected) return true;
+  status("demo-status", "Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.");
+  $("token").focus();
+  return false;
+}
 async function startDemo() {
-  if (!state.connected || state.turnBusy || state.sessionId) return;
+  if (state.turnBusy || state.sessionId || !requireDemoConnection()) return;
   state.turnBusy=true; controls();
   const generation=state.generation;
   try { const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); if(generation!==state.generation || !state.connected) return; state.sessionId=data.session_id; state.callId=/^[a-f0-9]{32}$/.test(data.call_id || "") ? data.call_id : null; $("demo-messages").replaceChildren(); addMessage("Demoabiline", data.greeting); status("demo-status", "Fiktiivne vestlus alustatud. Saadavus ja kirjutused kontrollitakse taustsüsteemist."); await loadHistory(); }
@@ -329,8 +337,11 @@ async function toggleMic() {
     finally { if(generation===state.generation) { state.micStarting=false; controls(); } }
     return;
   }
-  if(!state.sessionId || state.turnBusy || state.micStarting) return;
-  const generation=state.generation, session=state.sessionId;
+  if(state.turnBusy || state.micStarting || !requireDemoConnection()) return;
+  const generation=state.generation;
+  if(!state.sessionId) await startDemo();
+  if(generation!==state.generation || !state.connected || !state.sessionId || state.turnBusy || state.micStarting) return;
+  const session=state.sessionId;
   let stream=null, context=null;
   state.micStarting=true; controls(); status("demo-status", "Ootan mikrofoni luba…");
   try {

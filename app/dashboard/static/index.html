@@ -94,15 +94,15 @@
           <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg></span><div><h2 id="demo-title">Proovi kõneabilist</h2><p>Kirjuta sõnum või räägi mikrofoniga</p></div></div><span class="demo-badge">HTTP demo</span></div>
           <div class="panel-body">
             <div class="conversation-intro" id="demo-placeholder"><div class="voice-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><h3>Üks vestlus. Lihtsam vastuvõtt.</h3><p>Küsi teenuste kohta, leia sobiv aeg ja proovi broneerimist fiktiivse külalisena.</p></div>
-            <div class="controls demo-actions"><button class="button primary" id="demo-start" type="button" disabled>Alusta demovestlust<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="button" id="demo-end" type="button" disabled>Lõpeta vestlus</button></div>
-            <p class="status" id="demo-status" role="status" aria-live="polite">Ühenda esmalt. Vestlus aegub 10 minutiga.</p>
+            <div class="controls demo-actions"><button class="button primary" id="demo-start" type="button" aria-describedby="demo-status" disabled>Alusta demovestlust<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="button" id="demo-end" type="button" disabled>Lõpeta vestlus</button></div>
+            <p class="status" id="demo-status" role="status" aria-live="polite">Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.</p>
             <p class="demo-warning" id="demo-warning" role="status" aria-live="polite" hidden></p><p class="sub" id="demo-timings" hidden></p>
             <div class="demo-examples" role="group" aria-label="Vestluse alustamise näited"><button class="example-button" type="button" data-message="Millal spaa avatud on?" disabled>Lahtiolekuajad</button><button class="example-button" type="button" data-message="Soovin broneerida spaakonsultatsiooni." disabled>Spaa aeg</button><button class="example-button" type="button" data-message="Soovin leida vaba hotellitoa." disabled>Hotellituba</button></div>
             <button class="button compact" id="demo-history" type="button" hidden>Vaata vestluse ajalugu</button>
             <ol class="transcript" id="demo-messages" aria-label="Selle lehe demovestlus" aria-live="polite" aria-relevant="additions"></ol>
-            <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" placeholder="Näiteks: soovin homme massaaži" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button mic-button" id="demo-mic" type="button" disabled>Luba mikrofon ja räägi</button></form>
+            <form class="demo-form" id="demo-form"><div class="field"><label for="demo-text">Sõnum demoabilisele</label><input id="demo-text" name="message" type="text" maxlength="500" placeholder="Näiteks: soovin homme massaaži" autocomplete="off" disabled></div><button class="button primary" id="demo-send" type="submit" disabled>Saada sõnum</button><button class="button mic-button" id="demo-mic" type="button" aria-describedby="demo-status" disabled>Alusta häälvestlust</button></form>
             <div class="mic-feedback" id="mic-feedback" hidden><label for="mic-level">Mikrofoni helitase</label><meter id="mic-level" min="0" max="1" value="0">0</meter><span id="mic-feedback-text">Räägi loomulikult.</span></div>
-            <p class="sub mic-note"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Mikrofon avaneb nupuvajutusel, kuni 15 sekundiks. Teine vajutus saadab heli.</p>
+            <p class="sub mic-note"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Ühenda esmalt operaatori tunnusega. Häälvestluse nupp alustab vestluse ja küsib mikrofoni luba. Salvestus kestab kuni 15 sekundit; teine vajutus saadab heli.</p>
             <audio id="demo-audio" controls preload="none" aria-label="Demoabilise vastus" hidden></audio>
             <details class="demo-guidance"><summary>Kuidas demovestlus töötab?</summary><p>Abiline kasutab selle vestluse fiktiivset külalist. Kinnitamiseks ütle pärast kokkuvõtet: „Jah, kinnitan.” Tühistamiseks: „Jah, tühista.” Ära sisesta päris kontaktandmeid. Salvestis ei jää brauserisse. See on fiktiivne HTTP kõneproov, mitte telefonikõne ega päris hotelli teenus.</p><p id="demo-models">Mudelite seadistust kontrollitakse serverist.</p></details>
           </div>
@@ -114,7 +114,7 @@
     </main>
   </div>
   <script src="/call-history.js?v=963f8b649643" defer></script>
-  <script src="/dashboard.js?v=3c0d020a1192" defer></script>
+  <script src="/dashboard.js?v=0fe7728b8490" defer></script>
   <script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
 </body>
 </html>
