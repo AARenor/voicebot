@@ -15,7 +15,7 @@ function renderHotelRooms(rooms){
     card.className="room-card";art.className="room-art palette-"+(index%3);art.setAttribute("aria-hidden","true");windowArt.className="room-window";bed.className="room-bed";caption.className="room-art-caption";caption.textContent="FIKTIIVSE TOA ILLUSTRATSIOON";art.append(windowArt,bed,caption);
     content.className="room-content";title.textContent=room.name;description.textContent=room.description;amenities.className="room-amenities";
     for(const name of room.amenities || []){const item=document.createElement("li");item.textContent=name;amenities.append(item);}
-    bottom.className="room-bottom";capacity.textContent="Kuni "+room.capacity+" külalist";link.className="text-link";link.href="/?"+new URLSearchParams({book:"stay",room:String(room.id)});link.textContent="Kontrolli saadavust ↗";link.setAttribute("aria-label",room.name+": kontrolli demo saadavust");bottom.append(capacity,link);content.append(title,description,amenities,bottom);card.append(art,content);hotelElement("room-grid").append(card);
+    bottom.className="room-bottom";capacity.textContent="Kuni "+room.capacity+" külalist";link.className="text-link";link.href="https://robot.arleserver.cfd/?"+new URLSearchParams({book:"stay",room:String(room.id)});link.textContent="Kontrolli saadavust ↗";link.setAttribute("aria-label",room.name+": kontrolli demo saadavust");bottom.append(capacity,link);content.append(title,description,amenities,bottom);card.append(art,content);hotelElement("room-grid").append(card);
   });
   hotelStatus("rooms-status",items.length?"Toatüübid sünteetilisest hotellikataloogist. Pildid on illustratsioonid.":"Demotubade kataloog pole praegu saadaval.",!items.length);
 }

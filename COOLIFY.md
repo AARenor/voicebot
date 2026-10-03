@@ -18,6 +18,10 @@ port 8000. No secrets are baked into the image (see `.dockerignore`).
 3. Port: **8000**. Health check path: **/health**.
 4. Domains → add `https://robot.arleserver.cfd` (TLS on, force HTTPS on).
 
+The separate public Meretuule website uses `https://meretuule.arleserver.cfd/`
+through the [host-specific dynamic proxy route](deploy/meretuule/README.md).
+Keep the existing robot domain and application service unchanged.
+
 ## 2. Environment (Coolify → Environment Variables)
 
 Minimum (demo runs without providers):

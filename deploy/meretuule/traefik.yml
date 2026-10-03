@@ -1,0 +1,15 @@
+# Installed at /data/coolify/proxy/dynamic/meretuule.yml.
+# Reuse the Coolify application's stable service across web deployments.
+http:
+  routers:
+    meretuule:
+      rule: "Host(`meretuule.arleserver.cfd`)"
+      entryPoints: [https]
+      service: https-0-zs7s830dsrlo4j81s0ohgpgc@docker
+      middlewares: [meretuule-root]
+      tls: {}
+  middlewares:
+    meretuule-root:
+      replacePathRegex:
+        regex: "^/$"
+        replacement: "/hotel"

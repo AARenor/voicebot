@@ -34,7 +34,7 @@ async (page) => {
   await page.waitForFunction(()=>!document.getElementById('phone-number').hidden);
   assert(await page.locator('#phone-number').getAttribute('href')==='tel:+12025550109','configured number not linked');
   const link=await page.locator('.room-card .text-link').getAttribute('href');
-  assert(link==='/?book=stay&room=fixture-room','room booking did not preserve the selected room');
+  assert(link==='https://robot.arleserver.cfd/?book=stay&room=fixture-room','room booking did not preserve the management domain and selected room');
   catalogueFails=true;await page.reload();
   await page.waitForFunction(()=>document.getElementById('rooms-status').classList.contains('error'));
   assert(await page.locator('.room-card').count()===0,'failed provider read invented room inventory');
