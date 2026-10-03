@@ -32,6 +32,7 @@ const state = {
   audioReady: false,
   bookingReady: false,
   bookingView: 0,
+  latestBooking: null,
 };
 const reservation = {
   sessionId: null,
@@ -258,10 +259,11 @@ const TEXT = {
     "Бронирования столиков",
   ],
   bookingsHelp: [
-    "Broneerimissüsteemist loetud valitud päeva lauad.",
-    "Reservations read from the booking system for the selected date.",
-    "Бронирования из системы на выбранную дату.",
+    "Demo kõnes ja siin kinnitatud lauad ilmuvad sellesse loendisse.",
+    "Tables confirmed in the demo conversation or here appear in this list.",
+    "Столики, подтверждённые в демонстрационном разговоре или здесь, появляются в этом списке.",
   ],
+  viewBooking: ["Vaata broneeringut", "View reservation", "Посмотреть бронь"],
   refresh: ["Uuenda", "Refresh", "Обновить"],
   private: [
     "Andmed on privaatsed. Ühenda esmalt.",
@@ -317,9 +319,9 @@ const TEXT = {
     "Разговор готов. Напишите или говорите в микрофон.",
   ],
   responding: [
-    "Abiline vastab… ära kinnita sama broneeringut uuesti.",
-    "The assistant is replying… do not confirm the same reservation again.",
-    "Помощник отвечает… не подтверждайте бронирование повторно.",
+    "Abiline vastab…",
+    "The assistant is replying…",
+    "Помощник отвечает…",
   ],
   you: ["Sina", "You", "Вы"],
   assistant: [
@@ -348,13 +350,13 @@ const TEXT = {
     "Итог прочитан. Теперь можно отдельно подтвердить.",
   ],
   confirmed: [
-    "Fiktiivne lauabroneering kinnitatud.",
-    "Fictional table reservation confirmed.",
+    "Testbroneering kinnitatud.",
+    "Test reservation confirmed.",
     "Тестовое бронирование столика подтверждено.",
   ],
   cancelled: [
-    "Fiktiivne lauabroneering tühistatud.",
-    "Fictional table reservation cancelled.",
+    "Testbroneering tühistatud.",
+    "Test reservation cancelled.",
     "Тестовое бронирование столика отменено.",
   ],
   unknown: [
@@ -780,6 +782,7 @@ function logout() {
   state.turnBusy = state.readBusy = state.previewBusy = false;
   state.page = 1;
   state.hasMore = false;
+  state.latestBooking = null;
   state.demoVoice = "azure";
   state.voiceCatalog = null;
   clearReservation();
@@ -839,6 +842,41 @@ function addMessage(label, text) {
   $("demo-messages").append(element);
   element.scrollIntoView({ block: "nearest" });
   return element;
+}
+function selectBooking(change) {
+  if (
+    !change ||
+    !["confirmed", "cancelled"].includes(change.action) ||
+    !/^[1-9]\d*$/.test(String(change.id)) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(change.date)
+  )
+    return false;
+  state.latestBooking = { id: String(change.id), date: change.date };
+  $("booking-date").value = change.date;
+  state.page = 1;
+  state.hasMore = false;
+  return true;
+}
+function appendBookingLink(container, change) {
+  if (!selectBooking(change)) return;
+  const generation = state.generation;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary booking-link";
+  button.textContent = `${demoCopy().viewBooking} #${change.id}`;
+  button.addEventListener("click", async () => {
+    if (generation !== state.generation || !state.connected) return;
+    selectBooking(change);
+    await loadBookings();
+    if (generation !== state.generation || !state.connected) return;
+    const row = Array.from($("bookings").children).find(
+      (element) => element.dataset.bookingId === String(change.id),
+    );
+    const target = row || $("bookings-title");
+    target.scrollIntoView({ block: "center" });
+    target.focus({ preventScroll: true });
+  });
+  container.append(button);
 }
 function recapPlayedMessage() {
   return {
@@ -936,10 +974,8 @@ async function sendTurn(input) {
     if (data._stream) finishStreamPlayback(data, recap);
     else playReply(data, recap);
     renderVoiceResult(data);
-    const change = (data.booking_changes || []).find((change) =>
-      /^\d{4}-\d{2}-\d{2}$/.test(change.date),
-    );
-    if (change) $("booking-date").value = change.date;
+    const change = (data.booking_changes || []).at(-1);
+    if (change) appendBookingLink(message, change);
     await Promise.allSettled([loadBookings(), loadHistory()]);
   } catch (error) {
     if (generation === state.generation) {
@@ -1105,7 +1141,12 @@ async function mutateReservation(cancel = false) {
       cancel ? demoCopy().cancelled : demoCopy().confirmed,
       "success",
     );
-    $("booking-date").value = reservation.date;
+    const identifier = cancel ? data.booking_id : data.booking.id;
+    appendBookingLink($("reservation-status"), {
+      id: identifier,
+      date: reservation.date,
+      action: cancel ? "cancelled" : "confirmed",
+    });
     await Promise.allSettled([loadBookings(), loadHistory()]);
   } catch (error) {
     if (generation === state.generation) {
@@ -1143,6 +1184,13 @@ async function loadBookings() {
     for (const row of data.items) {
       const element = document.createElement("div");
       element.className = "booking-row";
+      element.dataset.bookingId = String(row.id);
+      element.tabIndex = -1;
+      if (
+        state.latestBooking?.date === day &&
+        state.latestBooking.id === String(row.id)
+      )
+        element.classList.add("booking-recent");
       const label = document.createElement("strong");
       label.textContent = `${row.start_local.slice(11, 16)}–${row.end_local.slice(11, 16)} · ${row.provider_name}`;
       const detail = document.createElement("span");

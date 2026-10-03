@@ -49,6 +49,7 @@ from .booking_faq import (
 )
 from .russian import localize
 from .languages import (
+    AFFIRMATIONS_ET,
     AFFIRMATIONS_EN,
     AFFIRMATIONS_RU,
     CANCELLATIONS_RU,
@@ -163,11 +164,7 @@ UNKNOWN_MUTATION_ERRORS = {
     "cancel_outcome_unknown",
     "mutation_outcome_unknown",
 }
-AFFIRMATIONS = {
-    "jah kinnitan",
-    "jah kinnitan selle testbroneeringu",
-    "jah kinnitan testbroneeringu",
-}
+AFFIRMATIONS = AFFIRMATIONS_ET
 CANCELLATIONS = {
     "jah tühista",
     "palun tühista broneering mille just selles kõnes tegime",
@@ -189,8 +186,8 @@ def _spa_inquiry_fields(text, previous):
         text,
     ):
         return None
-    # A few common ASR spellings are tolerated only for a request, never for
-    # the exact confirmation/cancellation phrases that authorize a write.
+    # Request spelling tolerance is separate from the closed confirmation
+    # vocabulary that authorizes a write after a delivered recap.
     spa_request = bool(
         re.search(r"\b(?:spaa\w*|spa)\b", text)
         and re.search(

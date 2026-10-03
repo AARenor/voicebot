@@ -124,14 +124,23 @@ small,
   top: 12px;
 }
 .site-header {
-  height: 80px;
+  min-height: 80px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 0 max(24px, calc((100vw - 1180px) / 2));
+  padding: 12px max(24px, calc((100vw - 1180px) / 2));
   background: white;
   border-bottom: 1px solid var(--line);
   gap: 16px;
+}
+.demo-website-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 0.35em;
+  font-size: 0.9rem;
+  font-weight: 650;
 }
 .brand {
   font-size: 1.65rem;
@@ -395,6 +404,15 @@ audio {
   color: var(--muted);
   text-align: right;
 }
+.booking-recent {
+  background: #eef6f0;
+  border-radius: 7px;
+  padding: 13px 12px;
+}
+.booking-link {
+  display: block;
+  margin-top: 10px;
+}
 .information {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -452,7 +470,7 @@ footer {
     grid-template-columns: 1fr;
   }
   .site-header {
-    padding: 0 20px;
+    padding: 12px 20px;
   }
   .panel {
     padding: 20px;
@@ -482,7 +500,7 @@ footer {
     flex: 1;
   }
   .site-header {
-    height: 68px;
+    min-height: 68px;
   }
   .booking-row {
     flex-direction: column;
