@@ -72,6 +72,8 @@ def test_actual_catalog_matches_browser_envelope_and_bounds_endpointing(
         "elevenlabs",
         "google",
         "cartesia",
+        "azure-male",
+        "azure-calm",
     ]
     assert data["voices"][0]["available"] is True
     assert all(not row["available"] for row in data["voices"][1:])

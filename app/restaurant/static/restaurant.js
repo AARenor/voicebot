@@ -15,6 +15,7 @@ const state = {
   recap: null,
   demoVoice: "azure",
   voiceCatalog: null,
+  previewBusy: false,
   endpointingMs: 650,
   mic: null,
   micStarting: false,
@@ -44,10 +45,18 @@ const reservation = {
 };
 const TEXT = {
   voice: ["Abilise hääl", "Assistant voice", "Голос помощника"],
+  voicePreview: ["Kuula häält", "Listen to voice", "Послушать голос"],
+  voicePreviewLoading: ["Valmistan hääleproovi…", "Preparing voice sample…", "Готовлю образец голоса…"],
+  voicePreviewReady: ["Hääleproov on valmis.", "Voice sample is ready.", "Образец голоса готов."],
+  voicePreviewFailed: [
+    "Hääleproovi ei saanud luua. Proovi uuesti või vali teine hääl.",
+    "Could not prepare the voice sample. Try again or choose another voice.",
+    "Не удалось подготовить образец. Попробуйте ещё раз или выберите другой голос.",
+  ],
   voiceSelectorHelp: [
-    "Vali hääl enne vestlust. Saadaval on ainult seadistatud hääled.",
-    "Choose before starting. Only configured voices are available.",
-    "Выберите до начала разговора. Доступны только настроенные голоса.",
+    "Vali ja kuula häält enne vestlust. Rahulik variant räägib aeglasemalt.",
+    "Choose and listen before starting. The calm option speaks more slowly.",
+    "Выберите и послушайте голос до начала разговора. Спокойный вариант говорит медленнее.",
   ],
   voiceFallback: [
     "Kasutati varuhäält",
@@ -506,7 +515,7 @@ function localize() {
   controls();
 }
 function controls() {
-  const locked = state.turnBusy || state.micStarting;
+  const locked = state.turnBusy || state.micStarting || state.previewBusy;
   $("connect").disabled = !!state.credential;
   $("logout").disabled = !state.connected;
   $("demo-language").disabled =
@@ -520,6 +529,12 @@ function controls() {
   $("demo-end").disabled = !state.sessionId || locked;
   $("demo-voice").disabled =
     !state.connected || !!state.sessionId || locked || !!state.mic;
+  $("demo-voice-preview").disabled =
+    $("demo-voice").disabled || !Array.from($("demo-voice").options).some(
+      option => option.value === state.demoVoice && !option.disabled,
+    );
+  $("demo-voice-preview").textContent = state.previewBusy
+    ? demoCopy().voicePreviewLoading : demoCopy().voicePreview;
   for (const id of ["demo-text", "demo-send"])
     $(id).disabled = !state.sessionId || locked;
   $("demo-mic").disabled = !state.connected || !state.audioReady || locked;
@@ -563,21 +578,26 @@ function requireDemoConnection() {
   return false;
 }
 const VOICE_LABELS = {
-  azure: "Azure Neural",
-  elevenlabs: "ElevenLabs",
-  google: "Google Chirp",
-  cartesia: "Cartesia Sonic",
+  azure: ["Loomulik hääl", "Natural voice", "Естественный голос"],
+  "azure-male": ["Kert · meeshääl", "Guy · male voice", "Дмитрий · мужской голос"],
+  "azure-calm": ["Anu · rahulik", "Jenny · calm", "Светлана · спокойный"],
+  elevenlabs: ["ElevenLabs", "ElevenLabs", "ElevenLabs"],
+  google: ["Google Chirp", "Google Chirp", "Google Chirp"],
+  cartesia: ["Cartesia Sonic", "Cartesia Sonic", "Cartesia Sonic"],
 };
+function voiceLabel(id) {
+  return VOICE_LABELS[id]?.[["et", "en", "ru"].indexOf(uiLanguage())] || "";
+}
 function renderVoices() {
   const select = $("demo-voice");
   select.replaceChildren();
   const catalog = state.voiceCatalog || [
     { id: "azure", available: state.voiceReady, languages: ["et", "en", "ru"] },
   ];
-  for (const profile of catalog) {
+  for (const profile of [...catalog].sort((a, b) => Number(b.available) - Number(a.available))) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = VOICE_LABELS[profile.id];
+    option.textContent = voiceLabel(profile.id);
     option.disabled =
       !profile.available || !profile.languages.includes(uiLanguage());
     select.append(option);
@@ -599,7 +619,7 @@ async function loadVoices() {
     const ids = new Set();
     if (
       !Array.isArray(data.voices) ||
-      data.voices.length > 4 ||
+      data.voices.length > Object.keys(VOICE_LABELS).length ||
       data.voices.some(
         (profile) =>
           !profile ||
@@ -635,7 +655,7 @@ function renderVoiceResult(data) {
     !data.tts_failed && Object.hasOwn(VOICE_LABELS, profile)
       ? demoCopy().voice +
         ": " +
-        VOICE_LABELS[profile] +
+        voiceLabel(profile) +
         (data.voice.fallback ? " · " + demoCopy().voiceFallback : "")
       : "";
 }
@@ -644,6 +664,7 @@ $("demo-voice").addEventListener("change", () => {
     !state.connected ||
     state.sessionId ||
     state.turnBusy ||
+    state.previewBusy ||
     state.micStarting ||
     state.mic
   ) {
@@ -656,9 +677,37 @@ $("demo-voice").addEventListener("change", () => {
   if (selected) {
     stopAudio();
     state.demoVoice = selected.value;
+    $("demo-voice-result").textContent = "";
   }
   renderVoices();
 });
+async function previewVoice() {
+  if ($("demo-voice-preview").disabled) return;
+  const generation = state.generation;
+  state.previewBusy = true;
+  stopAudio();
+  controls();
+  status("demo-status", demoCopy().voicePreviewLoading);
+  try {
+    const data = await post("/api/demo/voices/preview", {
+      language: state.demoLanguage,
+      voice: state.demoVoice,
+    });
+    if (generation !== state.generation || !state.connected) return;
+    status("demo-status", demoCopy().voicePreviewReady);
+    playReply(data);
+    renderVoiceResult(data);
+  } catch (_) {
+    if (generation === state.generation)
+      status("demo-status", demoCopy().voicePreviewFailed, "error");
+  } finally {
+    if (generation === state.generation) {
+      state.previewBusy = false;
+      controls();
+    }
+  }
+}
+$("demo-voice-preview").addEventListener("click", previewVoice);
 async function api(path, options = {}) {
   const generation = state.generation;
   const controller = new AbortController();
@@ -730,7 +779,7 @@ function logout() {
   state.credential = "";
   state.connected = false;
   state.sessionId = state.callId = null;
-  state.turnBusy = state.readBusy = false;
+  state.turnBusy = state.readBusy = state.previewBusy = false;
   state.page = 1;
   state.hasMore = false;
   state.latestBooking = null;
@@ -841,11 +890,13 @@ async function startDemo() {
     !requireDemoConnection() ||
     !state.voiceReady ||
     state.sessionId ||
-    state.turnBusy
+    state.turnBusy ||
+    state.previewBusy
   )
     return;
   const generation = state.generation;
   state.turnBusy = true;
+  stopAudio();
   controls();
   try {
     const data = await post("/api/demo/session", {
@@ -1282,6 +1333,7 @@ $("demo-language").addEventListener("change", () => {
   if (
     state.sessionId ||
     state.turnBusy ||
+    state.previewBusy ||
     state.micStarting ||
     reservation.busy ||
     reservation.sessionId
@@ -1289,7 +1341,9 @@ $("demo-language").addEventListener("change", () => {
     $("demo-language").value = state.demoLanguage;
     return;
   }
+  stopAudio();
   state.demoLanguage = $("demo-language").value;
+  $("demo-voice-result").textContent = "";
   localize();
   status("demo-status", state.connected ? demoCopy().ready : demoCopy().signIn);
   status(
