@@ -48,6 +48,27 @@ The default hold lasts 120 seconds, dining lasts 90 minutes, starts are every
 operator configuration, checked again before a held table is confirmed. Children
 count toward capacity. Ambiguous component counts prompt for the total.
 
+## Natural conversation and visible demo reservations
+
+The assistant uses short questions in all three languages and speaks recap
+dates with month names. Estonian confirmation accepts a closed list of explicit
+whole-turn phrases, including `Jah, kinnitan.`, `kinnitan`, `jah palun kinnita`
+and the known recognition spelling `ja kinnitää`. These variants also guide
+language selection when recognition metadata is wrong. This is transcript
+handling, not speech-model training or a measured change in recognition accuracy.
+Questions, quoted examples, declines and mixed changes are not consent. A
+current owned recap must still have been delivered before a later final turn;
+partial recognition and expired or interrupted recaps cannot confirm a table.
+
+Successful demo confirmations and cancellations refresh the website's
+authenticated reservation list, select the actual reservation date, reset its
+page and mark the affected row. A `View reservation` button in the conversation
+opens that list. Direct-form confirmations use the same behavior. Ending a
+conversation or reloading the page does not delete its saved reservation;
+reconnect with the operator token and choose its date to see it again. Logout
+clears private browser data. The underlying reservations remain in the shared
+SQLite database; they do not reserve tables at a real restaurant.
+
 ## Restaurant knowledge
 
 Edit a copy of `data/demo/restaurant-demo.json` and place it on the persistent
