@@ -22,7 +22,7 @@ const state = {
   micEpoch: 0,
   recapDeliveryId: null,
   awaitingRecapId: null,
-  demoLanguage: "auto",
+  demoLanguage: "et",
   replyLanguage: "et",
   readBusy: false,
   page: 1,
@@ -112,11 +112,16 @@ const TEXT = {
     "Один помощник для бронирования столика и ответов на вопросы гостей.",
   ],
   language: [
-    "Vestluse keel / Conversation language",
-    "Conversation language / Vestluse keel",
-    "Язык разговора / Conversation language",
+    "Vali vestluse keel",
+    "Choose your conversation language",
+    "Выберите язык разговора",
   ],
   languageHelp: [
+    "Abiline alustab ja vastab valitud keeles.",
+    "The assistant starts and replies in your chosen language.",
+    "Помощник начинает разговор и отвечает на выбранном языке.",
+  ],
+  languageLocked: [
     "Keele vahetamiseks lõpeta pooleliolev vestlus.",
     "End the active conversation before changing language.",
     "Завершите текущий разговор перед сменой языка.",
@@ -524,6 +529,12 @@ function controls() {
     !!state.mic ||
     reservation.busy ||
     !!reservation.sessionId;
+  for (const input of $("demo-language").querySelectorAll("input"))
+    input.checked = input.value === state.demoLanguage;
+  $("language-help").textContent =
+    state.sessionId || reservation.sessionId
+      ? demoCopy().languageLocked
+      : demoCopy().languageHelp;
   $("demo-start").disabled =
     !state.connected || !state.voiceReady || !!state.sessionId || locked;
   $("demo-end").disabled = !state.sessionId || locked;
@@ -1329,20 +1340,28 @@ $("demo-form").addEventListener("submit", (event) => {
   if (text) sendTurn({ text });
 });
 $("demo-mic").addEventListener("click", () => toggleMic());
-$("demo-language").addEventListener("change", () => {
+$("demo-language").addEventListener("change", (event) => {
+  const selected = event.target;
+  if (
+    !(selected instanceof HTMLInputElement) ||
+    selected.name !== "demo-language" ||
+    !["et", "en", "ru"].includes(selected.value)
+  )
+    return;
   if (
     state.sessionId ||
     state.turnBusy ||
     state.previewBusy ||
     state.micStarting ||
+    state.mic ||
     reservation.busy ||
     reservation.sessionId
   ) {
-    $("demo-language").value = state.demoLanguage;
+    controls();
     return;
   }
   stopAudio();
-  state.demoLanguage = $("demo-language").value;
+  state.demoLanguage = selected.value;
   $("demo-voice-result").textContent = "";
   localize();
   status("demo-status", state.connected ? demoCopy().ready : demoCopy().signIn);
