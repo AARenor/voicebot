@@ -44,6 +44,8 @@ def test_worker_does_not_authorize_individual_stt_fragments():
         observed = []
         state = SimpleNamespace(
             call_id="a" * 32,
+            language="et",
+            greeting="Tere!",
             outcome="completed",
             pending=None,
             results=[{"old": True}],
@@ -87,7 +89,7 @@ def test_worker_does_not_authorize_individual_stt_fragments():
             patch("app.worker.CallTools", return_value=state),
             patch("app.worker.AgentSession", return_value=session) as constructed,
             patch("app.worker.TelephoneAgent"),
-            patch("app.worker.groq.STT"),
+            patch("app.worker.TelephoneSTT", return_value=SimpleNamespace(aclose=AsyncMock())),
             patch("app.worker.groq.LLM"),
             patch("app.worker.azure.TTS"),
             patch("app.callslog.log_call") as log,

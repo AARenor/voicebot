@@ -1,8 +1,15 @@
 # Private telephone pilot (2026-10-02)
 
-**Implemented:** continuous LiveKit Agents worker, Estonian Groq/Azure audio,
+**Implemented:** continuous LiveKit Agents worker, English/Estonian Groq/Azure audio,
 call-scoped guarded booking tools, private reproducible LiveKit/SIP/Redis,
 and exact-number authenticated inbound provisioning.
+
+Automatic English/Estonian recognition and voice switching, including English
+booking recaps, consent, cancellation and FAQs, are configured through
+`VOICEBOT_TELEPHONE_LANGUAGE`, `AZURE_EN_VOICE` and `AZURE_EN_LANG`.
+See [English telephone deployment and verification](../../docs/operations/english-telephone.md).
+This code change requires rebuilding the separate worker; a web deployment alone
+does not update telephone calls. Live English/PSTN behavior remains unverified.
 
 **First carrier direction:** the user supplied an existing US Twilio number.
 Its separately signed HTTPS/WSS Media Streams bridge forwards into this private
@@ -47,7 +54,7 @@ is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
   is guarded by execution/state, including cancelled-receipt replay.
   Only the approved fictional profile/FAQ and owned inventory are exposed;
   spa opening hours come from the provider working plan. Superseded reads cannot
-  restore a proposal after a caller changes their mind. Cached Estonian WAV supplies an independent
+  restore a proposal after a caller changes their mind. Cached English/Estonian WAV supplies an independent
   audible failure message. No recording/transcript persistence. SDK child logs
   are suppressed because they can contain tool arguments/text.
 - Host API `127.0.0.1:7880`, SIP UDP/TCP `127.0.0.1:5060`, worker health

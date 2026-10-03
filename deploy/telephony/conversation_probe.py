@@ -1,4 +1,4 @@
-"""Real Estonian room audio -> consent -> Easy REST read/cancel; NOT PSTN.
+"""Real English/Estonian room audio -> consent -> Easy REST read/cancel; NOT PSTN.
 
 Requires pinned media Python and running private worker. Uses only call-scoped
 fictional contacts; no transcript/audio is written. Cleans only its own data.
@@ -26,6 +26,7 @@ import httpx
 from livekit import api, rtc
 from app.providers.azure_tts import AzureTtsClient
 from app.telephone import AFFIRMATIONS, CANCELLATIONS, CONSENT_TEXT
+from app.languages import AFFIRMATIONS_EN, CANCELLATIONS_EN, CONSENT, ENGLISH, spoken_date
 from probe import credentials
 
 
@@ -55,11 +56,11 @@ def diagnostic_counts(inputs, replies):
     return {
         "final_input_turns": len(inputs),
         "final_reply_count": len(replies),
-        "affirmative_observed": any(text in AFFIRMATIONS for text in normalized),
-        "cancellation_observed": any(text in CANCELLATIONS for text in normalized),
-        "recap_count": sum("Fiktiivne testbroneering:" in text for text in replies),
+        "affirmative_observed": any(text in AFFIRMATIONS | AFFIRMATIONS_EN for text in normalized),
+        "cancellation_observed": any(text in CANCELLATIONS | CANCELLATIONS_EN for text in normalized),
+        "recap_count": sum("Fiktiivne testbroneering:" in text or "Fictional test booking:" in text for text in replies),
         "failed_action_reply_count": sum(
-            "Toiming ei õnnestunud" in text for text in replies
+            "Toiming ei õnnestunud" in text or "The request failed" in text for text in replies
         ),
     }
 
@@ -90,7 +91,35 @@ async def cleanup_new(client, before_bookings, before_customers, email):
         ), "own customer cleanup failed"
 
 
-async def run(env):
+def scenario(language, day):
+    if language == "en":
+        return {
+            "voice": "en-US-GuyNeural", "locale": "en-US",
+            "request": f"Please book the demo spa consultation for {spoken_date(day.isoformat())} at nine in the morning.",
+            "decline": "No, do not confirm the booking.",
+            "consent": CONSENT["en"],
+            "cancel": "Please cancel this test booking.",
+            "recap_marker": "Fictional test booking:",
+            "confirmed": ENGLISH["confirmed"], "cancelled": ENGLISH["cancelled"],
+        }
+    if language != "et":
+        raise ValueError("unsupported probe language")
+    months = ("jaanuaril", "veebruaril", "märtsil", "aprillil", "mail", "juunil", "juulil", "augustil", "septembril", "oktoobril", "novembril", "detsembril")
+    return {
+        "voice": "et-EE-KertNeural", "locale": "et-EE",
+        "request": f"Palun broneeri demo spaakonsultatsioon {day.day}. {months[day.month - 1]} {day.year} kell üheksa.",
+        "decline": "Ei, ära kinnita broneeringut.", "consent": CONSENT_TEXT,
+        "cancel": "Jah, tühista.", "recap_marker": "Fiktiivne testbroneering:",
+        "confirmed": "Testbroneering on kinnitatud.", "cancelled": "Testbroneering on tühistatud.",
+    }
+
+
+async def run(env, language="et"):
+    # Choose a future weekday. This is a request, never proof of availability.
+    day = datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(days=14)
+    while day.weekday() > 4:
+        day += timedelta(days=1)
+    phrases = scenario(language, day)
     name = "voicebot-conversation-" + uuid.uuid4().hex
     client = api.LiveKitAPI(
         url="http://127.0.0.1:7880",
@@ -138,8 +167,8 @@ async def run(env):
         env["AZURE_REGION"],
         # Distinct caller voice. Anu remains the native agent's reply voice;
         # Groq mishears Anu's isolated compound-word cancellation fixture.
-        "et-EE-KertNeural",
-        "et-EE",
+        phrases["voice"],
+        phrases["locale"],
         output_format="riff-24khz-16bit-mono-pcm",
     )
 
@@ -209,42 +238,25 @@ async def run(env):
             )
             assert call_id, "missing opaque call scope"
             email = "demo.esimene+" + call_id + "@example.invalid"
-            day = datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(days=14)
-            while day.weekday() > 4:
-                day += timedelta(days=1)
-            months = [
-                "jaanuaril",
-                "veebruaril",
-                "märtsil",
-                "aprillil",
-                "mail",
-                "juunil",
-                "juulil",
-                "augustil",
-                "septembril",
-                "oktoobril",
-                "novembril",
-                "detsembril",
-            ]
-            request = f"Palun broneeri demo spaakonsultatsioon {day.day}. {months[day.month - 1]} {day.year} kell üheksa."
+            request = phrases["request"]
             before_reply = len(words)
             await speak(request)
             assert any(
-                "Fiktiivne testbroneering:" in reply for reply in words[before_reply:]
+                phrases["recap_marker"] in reply for reply in words[before_reply:]
             ), "no spoken canonical recap"
             assert {
                 b["id"] for b in await records(backend, "/appointments")
             } == before_bookings, "appointment created before consent"
-            await speak("Ei, ära kinnita broneeringut.")
+            await speak(phrases["decline"])
             assert {
                 b["id"] for b in await records(backend, "/appointments")
             } == before_bookings, "decline created an appointment"
             before_reply = len(words)
             await speak(request)
             assert any(
-                "Fiktiivne testbroneering:" in reply for reply in words[before_reply:]
+                phrases["recap_marker"] in reply for reply in words[before_reply:]
             ), "no spoken canonical recap"
-            await speak(CONSENT_TEXT)
+            await speak(phrases["consent"])
             customers = await records(backend, "/customers")
             own = {c["id"] for c in customers if c.get("email") == email}
             booked = [
@@ -255,9 +267,10 @@ async def run(env):
             assert len(booked) == 1, "no unique consented booking"
             stored = await backend.get("/appointments/" + str(booked[0]["id"]))
             assert (
-                stored.status_code == 200 and day.isoformat() in stored.json()["start"]
+                stored.status_code == 200
+                and datetime.fromisoformat(stored.json()["start"]).strftime("%Y-%m-%d %H:%M") == day.isoformat() + " 09:00"
             ), "independent backend read failed"
-            await speak("Jah, tühista.")
+            await speak(phrases["cancel"])
             assert (
                 await backend.get("/appointments/" + str(booked[0]["id"]))
             ).status_code == 404, "spoken cancellation failed"
@@ -266,6 +279,7 @@ async def run(env):
                 json.dumps(
                     {
                         "pass": True,
+                        "language": language,
                         "final_input_turns": len(inputs),
                         "spoken_replies": len(words),
                         "voiced_frames": voiced_frames,
@@ -307,10 +321,11 @@ async def run(env):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-container", required=True)
+    parser.add_argument("--language", choices=("et", "en"), default="et")
     args = parser.parse_args()
     failure = None
     try:
-        asyncio.run(run(credentials(args.source_container)))
+        asyncio.run(run(credentials(args.source_container), language=args.language))
     except Exception as exc:
         failure = failure_message(exc)
         traceback.clear_frames(exc.__traceback__)

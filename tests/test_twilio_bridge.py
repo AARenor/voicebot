@@ -4,7 +4,6 @@ import importlib
 import importlib.util
 import json
 import struct
-from copy import deepcopy
 from unittest.mock import patch
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
@@ -289,7 +288,7 @@ def test_disconnect_and_invalid_media_release_capacity_and_do_not_expose_errors(
     assert client.app.state.bindings.active_count == 0
 
 
-def test_capacity_returns_cached_estonian_audio_and_hangup_without_paid_job(client):
+def test_capacity_returns_cached_bilingual_audio_and_hangup_without_paid_job(client):
     store = client.app.state.bindings
     for n in range(2):
         call = "CA" + f"{n:032x}"
@@ -575,6 +574,8 @@ def test_cached_failure_streams_raw_mulaw_without_synthesis():
             await b.TwilioSender(Socket(), STREAM).failure()
         assert sent[0] == {"event": "clear", "streamSid": STREAM}
         payload = b"".join(base64.b64decode(m["media"]["payload"]) for m in sent[1:])
-        assert 40000 < len(payload) < 60000 and not payload.startswith(b"RIFF")
+        # Both languages fit the existing ten-second cap at 8 kHz mu-law.
+        assert 60000 < len(payload) < 80000 and not payload.startswith(b"RIFF")
+        assert len(payload) == len(b.fallback_pcm()) // 2
 
     asyncio.run(check())

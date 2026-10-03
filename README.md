@@ -11,11 +11,18 @@ Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
 Both voice transports use configurable Groq `openai/gpt-oss-120b` and
-`whisper-large-v3` with Estonian transcription, plus Azure Anu speech. See
+`whisper-large-v3`. Telephone calls automatically detect English or Estonian
+and reply with Azure Jenny or Anu respectively. English covers the same
+fictional spa/room searches, opening hours, FAQs, recaps, confirmation and
+cancellation. Ambiguous English numeric dates and hours require clarification;
+changing language requires a fresh delivered recap before confirmation. See
 `GROQ_CHAT_MODEL`, `GROQ_STT_MODEL` and `GROQ_MAX_COMPLETION_TOKENS` in
 `.env.example`. Configuration is reported by `/api/status`; it is not evidence
 of an actual successful carrier call. HTTP turns return per-stage timings and
 closed warning codes, and the native worker logs bounded latency summaries.
+HTTP callers select `language: "en"` for English recognition, dialogue and audio.
+See the [English telephone runbook](docs/operations/english-telephone.md) for
+voice selection, fixed language modes, worker deployment and live call checks.
 
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
