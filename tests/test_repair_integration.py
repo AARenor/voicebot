@@ -78,3 +78,34 @@ def test_unsafe_or_unsupported_voice_never_contacts_a_provider(kind):
         finally:
             with_speech.close()
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    "voice,locale",
+    [
+        ("en-US-JennyNeural'><break/>", "en-US"),
+        ("en-US-JennyNeural", "ru-RU"),
+        ("", "en-US"),
+        ("ru-RU-SvetlanaNeural", ""),
+    ],
+)
+def test_unsafe_stream_override_never_contacts_a_provider(voice, locale):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, text="fixture")
+
+    speaker = AzureTtsClient(
+        "fixture",
+        "fixture",
+        "et-EE-AnuNeural",
+        "et-EE",
+        transport=httpx.MockTransport(respond),
+    )
+    try:
+        with pytest.raises(ValueError, match="supported speech voice required"):
+            list(speaker.stream("Hello!", voice=voice, lang=locale))
+    finally:
+        speaker.close()
+    assert requests == []

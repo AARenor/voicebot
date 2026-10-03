@@ -60,6 +60,13 @@ English. End the current conversation to select another language. **Auto** keeps
 the existing automatic language behavior. See the
 [browser English verification](docs/evidence/2026-10-03-browser-english.md).
 
+The protected website demo also offers optional modern voice profiles with Azure
+as its default/fallback. The choices are server-configured; unconfigured voices
+stay disabled, and configuration is not a successful audio test. See the
+[modern voice setup and latency runbook](docs/operations/modern-voices.md) for
+ElevenLabs v4 Turbo, Google Chirp 3 HD and English/Russian Cartesia Sonic 3.6,
+incremental browser playback, and the separate telephone rollout boundary.
+
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
 records the earlier defects and live speech failures. The

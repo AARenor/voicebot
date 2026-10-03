@@ -4,7 +4,8 @@ This repair starts from the published application, not the original concurrent
 dirty checkout. It preserves the subsequent microphone/session UX, canonical
 booking shortcuts, Meretuule domain, natural dialogue, ET/EN/RU speech and the
 English browser controls, multilingual booking FAQs and safe release
-synchronization through published master `f154731`. The supported demo
+synchronization, selectable modern voices and incremental playback through
+published master `3791c6d`. The supported demo
 remains fictional; no real PMS connector, carrier
 acceptance or physical-microphone result is invented.
 
@@ -30,6 +31,11 @@ acceptance or physical-microphone result is invented.
 - SIP/worker/bridge names remain aligned. Scoped worker replacement preserves
   the existing shared volume and does not restart LiveKit/SIP/Redis; bridge
   configuration is reused in memory and mismatches fail before replacement.
+- NDJSON receipts appear only in a successful, complete terminal response.
+  Malformed, empty or partial synthesis cannot arm one; expired, foreign and
+  consumed receipts return 409 before streaming headers or paid recognition.
+  Browser MSE playback requires complete transport and actual contiguous playback;
+  interrupted audio may use deliberate reading only after validated canonical text.
 
 ## Local verification
 
@@ -38,18 +44,19 @@ the independently reviewed preparation deadline and custom-agent drift.
 
 | Check | Result |
 | --- | --- |
-| Full core suite, cleared environment | 2482 passed, 58 skipped, 36 subtests passed |
-| Full Python 3.12 pinned media/SDK suite, network disabled | 2736 passed, 9 skipped, 36 subtests passed |
-| Real Chromium recap/playback/read/expiry/unhappy-path suite | 31 passed, zero external requests |
-| All six local browser suites, including English and microphone races | Passed, zero page errors or external requests |
+| Full core suite, cleared environment | 2627 passed, 58 skipped, 36 subtests passed |
+| Full Python 3.12 pinned media/SDK suite, network disabled | 2880 passed, 10 skipped, 36 subtests passed |
+| Real Chromium recap/playback/read/expiry/unhappy-path suite | 48 passed, zero external requests |
+| All eight local browser suites, including modern voices, streaming and microphone races | Passed, zero page errors or external requests |
 | Host Compose parser checks covering both release manifests and bridge isolation | 5 passed |
 | Scoped Python fatal/name lint and diff whitespace | Passed |
 
 These suite selections overlap and must not be summed. Core skips cover missing
 native dependencies and installed-backend opt-in. The full media run exercises
-actual pinned native imports; its nine skips are four live installed-backend
-tests and five Docker Compose parser cases unavailable inside the disposable
-harness. All five parser cases passed separately on the host. Existing Starlette
+actual pinned native imports; its ten skips are four live installed-backend
+tests, five Docker Compose parser cases and one optional website-WebSocket
+dependency absent from the telephone image. All five parser cases and the
+website provider tests passed separately on the host. Existing Starlette
 TestClient and Python 3.12 audioop deprecation warnings remain disclosed.
 
 The native worker and bridge are separate deployments: the published release
@@ -68,6 +75,12 @@ are documented separately in the goal evidence; local tests are not a carrier
 or physical-microphone certificate. Independent round-three review passed with
 162 focused tests and 11 additional denial/configuration probes, zero socket
 connection attempts and no evidence-backed outstanding P0/P1/P2 finding.
-The subsequent published FAQ/release-sync and test-cleanup changes were merged
-without overwriting the repairs; the full counts above are from that final
-combined source, not the earlier review snapshot.
+The subsequent published FAQ/release-sync, modern voices and streaming changes
+were merged without overwriting the repairs. An independent backend integration
+addendum passed 98 tests and eight probes with zero socket attempts. The full
+counts above are from the final combined source, not the earlier review snapshot.
+Published deterministic JS fixtures were aligned with canonical DOM ownership,
+preparation TTL and actual current audio identity; no production guard was relaxed.
+The final independent frontend addendum passed 54 cases/probes; combined with
+the backend review it gives a qualified FINAL-INTEGRATION PASS, with no evidenced
+outstanding P0/P1/P2 finding. It does not certify deployment or human hearing.

@@ -28,6 +28,14 @@ from .errors import (
     raise_for_provider,
 )
 from .speech_text import normalize_estonian_speech
+from .modern_tts import (
+    Mp3Audio,
+    TOTAL_TIMEOUT,
+    check_status,
+    provider_error,
+    remaining,
+    validate_text,
+)
 
 TOKEN_TTL_SECONDS = 9 * 60
 
@@ -51,6 +59,9 @@ class _LanguageSpeaker:
     def synthesize(self, text):
         return self.client.synthesize(text, voice=self.voice, lang=self.lang)
 
+    def stream(self, text):
+        return self.client.stream(text, voice=self.voice, lang=self.lang)
+
 
 def ssml(
     text: str, voice: str, lang: str, delivery: SpeechDelivery | None = None
@@ -71,6 +82,9 @@ def ssml(
 
 
 class AzureTtsClient:
+    audio_type = "audio/mpeg"
+    streaming = True
+
     def __init__(
         self,
         subscription_key: str,
@@ -156,6 +170,52 @@ class AzureTtsClient:
             self._lang if lang is None else lang,
         )
         return self._synthesize_once(text, self.get_token(), voice=voice, lang=lang)
+
+    def stream(self, text: str, *, voice=None, lang=None):
+        """Real REST streaming; refresh once only before any audio is emitted."""
+        validate_text(text)
+        voice, lang = validated_voice(
+            self._voice if voice is None else voice,
+            self._lang if lang is None else lang,
+        )
+        body = ssml(text, voice, lang, self._delivery).encode("utf-8")
+        deadline = time.monotonic() + TOTAL_TIMEOUT
+        try:
+            token = self.get_token()
+            for attempt in range(2):
+                remaining(deadline)
+                refresh = False
+                with self._http.stream(
+                    "POST",
+                    f"https://{self._region}.tts.speech.microsoft.com/cognitiveServices/v1",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/ssml+xml",
+                        "X-Microsoft-OutputFormat": self._format,
+                    },
+                    content=body,
+                    timeout=10.0,
+                ) as response:
+                    if response.status_code == 401 and attempt == 0:
+                        refresh = True
+                    else:
+                        check_status(response)
+                        audio = Mp3Audio()
+                        for raw in response.iter_bytes():
+                            remaining(deadline)
+                            chunk = audio.feed(raw)
+                            if chunk:
+                                yield chunk
+                        audio.finish()
+                        return
+                if refresh:
+                    token = self.get_token(force=True)
+        except ProviderError as error:
+            raise provider_error(
+                error.reason or "provider_unavailable", error.status_code
+            ) from None
+        except Exception:
+            raise provider_error("transport_error") from None
 
     def _synthesize_once(
         self, text: str, token: str, *, voice=None, lang=None

@@ -1,11 +1,14 @@
 // Real Chromium, local fixture HTTP endpoints and generated WAV only. No providers.
-// node tests/dashboard_delivery_checks.cjs /absolute/path/to/playwright [case filter]
+// node tests/dashboard_delivery_checks.cjs /absolute/path/to/playwright [case filter] [published]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const {execFileSync} = require('node:child_process');
 const {chromium} = require(process.argv[2] || 'playwright');
 const root = path.resolve(__dirname, '../app/dashboard/static');
+const published=process.argv[4]==='published';
+const asset=name=>published ? execFileSync('git',['show',`origin/master:app/dashboard/static/${name}`],{cwd:path.resolve(__dirname,'..')}) : fs.readFileSync(path.join(root,name));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const tone = Buffer.alloc(44 + 16000 * 2 * 2);
 tone.write('RIFF'); tone.writeUInt32LE(tone.length - 8, 4); tone.write('WAVEfmt ', 8);
@@ -14,6 +17,9 @@ tone.writeUInt32LE(16000, 24); tone.writeUInt32LE(32000, 28);
 tone.writeUInt16LE(2, 32); tone.writeUInt16LE(16, 34); tone.write('data', 36);
 tone.writeUInt32LE(tone.length - 44, 40);
 for (let i = 44; i < tone.length; i += 2) tone.writeInt16LE(Math.round(Math.sin((i - 44) / 2 * Math.PI / 40) * 1200), i);
+const mp3=fs.readFileSync(path.join(__dirname,'fixtures/speech-tone.mp3'));
+const id3=mp3.subarray(0,3).toString()==='ID3' ? 10+((mp3[6]&127)<<21)+((mp3[7]&127)<<14)+((mp3[8]&127)<<7)+(mp3[9]&127) : 0;
+const streamTone=Buffer.concat([mp3,...Array(7).fill(mp3.subarray(id3))]);
 
 const cases = [];
 const test = (name, run) => cases.push({name, run});
@@ -437,14 +443,181 @@ test('published English browser contract passes against pure local fixtures', as
   console.log(JSON.stringify({check:'english_demo_browser_checks.js',fixture:'pure-local',...result}));
 });
 
+test('MSE complete native playback attaches exactly one next-input receipt', async (page, f) => {
+  f.stream=true; f.gateStream=true;
+  await start(page);
+  await page.locator('#demo-text').fill('Fictional streamed recap'); await page.locator('#demo-send').click();
+  await page.waitForFunction(()=>state.turnBusy && document.getElementById('demo-audio').currentTime>.08);
+  assert(await page.evaluate(()=>state.playback.source instanceof MediaSource), 'fixture did not use native MSE');
+  assert.equal(await page.evaluate(()=>state.recapDeliveryId), null, 'partial MSE output acknowledged the recap');
+  assert(await page.locator('#demo-recap-read').isHidden(), 'partial MSE output opened reading before canonical done');
+  assert.equal(typeof f.releaseStream, 'function'); f.releaseStream();
+  await page.waitForFunction(()=>!state.turnBusy && document.getElementById('demo-audio').ended);
+  const played=await page.evaluate(()=>{
+    const audio=document.getElementById('demo-audio');
+    return {duration:audio.duration,currentSrc:audio.currentSrc,url:state.audioUrl,source:state.playback.source.readyState,
+      ranges:Array.from({length:audio.played.length},(_,i)=>[audio.played.start(i),audio.played.end(i)])};
+  });
+  assert.equal(played.source,'ended','MSE was not successfully closed');
+  assert.equal(played.currentSrc,played.url,'MSE completion belongs to a different audio source');
+  assert(played.ranges.length && played.ranges[0][0]<.001 && played.ranges.at(-1)[1]>=played.duration-.001,'native MSE did not cover the entire duration');
+  assert(played.ranges.every((range,i)=>i===0 || range[0]<=played.ranges[i-1][1]+.001),'native MSE coverage has a gap');
+  assert.equal(f.requests.filter(request=>request.method==='POST').length,2,'MSE completion sent an acknowledgement or booking request');
+  await send(page,'Jah, kinnitan.');
+  assert.equal(f.posts('/api/turn')[1].recap_delivery_id,'11112222333344445555666677778888','complete MSE playback was not acknowledged');
+  await send(page,'Kontrollin olekut');
+  assert.equal(hasReceipt(f.posts('/api/turn')[2]),false,'MSE receipt replayed');
+});
+
+test('MSE paused and resumed native playback cannot acknowledge', async (page, f) => {
+  f.stream=true;
+  await start(page); await send(page);
+  await page.waitForFunction(()=>document.getElementById('demo-audio').currentTime>.08);
+  await page.locator('#demo-audio').evaluate(a=>a.pause()); await sleep(50);
+  await page.locator('#demo-audio').evaluate(a=>a.play());
+  await page.waitForFunction(()=>document.getElementById('demo-audio').ended);
+  assert.equal(await page.evaluate(()=>state.recapDeliveryId),null,'resumed interrupted MSE was acknowledged');
+  await send(page,'Jah, kinnitan.');
+  assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'paused MSE attached a receipt');
+});
+
+test('MSE seeking skips delivery even if native playback reaches the end', async (page, f) => {
+  f.stream=true;
+  await start(page); await send(page);
+  await page.waitForFunction(()=>document.getElementById('demo-audio').currentTime>.08 && Number.isFinite(document.getElementById('demo-audio').duration));
+  await page.locator('#demo-audio').evaluate(a=>{a.currentTime=a.duration-.08;});
+  await page.waitForFunction(()=>document.getElementById('demo-audio').ended);
+  await send(page,'Jah, kinnitan.');
+  assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'seeked MSE attached a receipt');
+});
+
+test('MSE preparation expiry is not extended until HTTP EOF', async (page, f) => {
+  f.stream=true; f.gateEOF=true; f.recapExpires=.2;
+  await start(page);
+  await page.locator('#demo-text').fill('Fictional streamed recap'); await page.locator('#demo-send').click();
+  await page.waitForFunction(()=>document.getElementById('demo-audio').currentTime>.08);
+  assert.equal(typeof f.releaseStream,'function');
+  await sleep(350); f.releaseStream();
+  await page.waitForFunction(()=>!state.turnBusy);
+  assert(await page.locator('#demo-recap-read').isHidden(),'expired preparation opened reading after delayed EOF');
+  await page.waitForFunction(()=>document.getElementById('demo-audio').ended);
+  await send(page,'Jah, kinnitan.');
+  assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'expired MSE preparation used session TTL');
+});
+
+for(const outcome of ['fallback','tools_failed','unknown_outcome']) {
+  test('MSE '+outcome+' cannot authorize recap delivery or reading', async (page, f) => {
+    f.stream=true; f.outcome=outcome;
+    await start(page); await send(page);
+    await page.waitForFunction(()=>document.getElementById('demo-audio').ended);
+    assert.equal(await page.evaluate(()=>state.recapDeliveryId),null,'blocked MSE outcome was acknowledged');
+    assert(await page.locator('#demo-recap-read').isHidden(),'blocked MSE outcome opened reading');
+    await page.evaluate(()=>document.getElementById('demo-recap-read').click());
+    await send(page,'Jah, kinnitan.');
+    assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'blocked MSE outcome attached a receipt');
+  });
+}
+
+test('MSE audio failure retains exact safe text for separate deliberate reading', async (page, f) => {
+  f.stream=true; f.streamFailure='decode';
+  await start(page); await send(page);
+  await page.waitForFunction(()=>!state.audioUrl);
+  assert.equal(await page.evaluate(()=>state.recapDeliveryId),null,'failed native decoding acknowledged audio');
+  assert(await page.locator('#demo-recap-read').isVisible(),'failed audio discarded safe canonical text reading');
+  const posts=f.requests.filter(request=>request.method==='POST').length;
+  await page.locator('#demo-recap-read').click();
+  assert.equal(f.requests.filter(request=>request.method==='POST').length,posts,'reading after decode failure sent an acknowledgement or write');
+  await send(page,'Jah, kinnitan.');
+  assert.equal(f.posts('/api/turn')[1].recap_delivery_id,'11112222333344445555666677778888','deliberate reading after failed audio was lost');
+});
+
+for(const failure of ['truncated','mismatch','synthesis']) {
+  test('MSE '+failure+' stream cannot acknowledge or replay a receipt', async (page, f) => {
+    f.stream=true; f.streamFailure=failure;
+    await start(page); await send(page);
+    await page.waitForFunction(()=>!state.audioUrl);
+    assert.equal(await page.evaluate(()=>state.recapDeliveryId),null,'incomplete/failed stream acknowledged');
+    assert(await page.locator('#demo-recap-read').isHidden(),'incomplete/failed stream opened reading');
+    assert.equal(f.posts('/api/turn').length,1,'incomplete stream retried a POST');
+    await page.evaluate(()=>document.getElementById('demo-audio').dispatchEvent(new Event('ended')));
+    await send(page,'Jah, kinnitan.');
+    assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'failed stream attached a receipt');
+  });
+}
+
+test('MSE microphone barge-in retires partial audio and stale callbacks', async (page, f) => {
+  f.stream=true;
+  await start(page); await send(page);
+  await page.waitForFunction(()=>document.getElementById('demo-audio').currentTime>.08);
+  await page.evaluate(async()=>{
+    const context=new AudioContext(),source=context.createOscillator(),sink=context.createMediaStreamDestination();
+    source.connect(sink); source.start(); await context.resume();
+    window.streamCapture={context,source,stream:sink.stream};
+    navigator.mediaDevices.getUserMedia=async()=>sink.stream;
+    window.streamEnded=document.getElementById('demo-audio').onended;
+  });
+  await page.locator('#demo-mic').click();
+  await page.waitForFunction(()=>state.mic?.frames>=8192);
+  await page.evaluate(()=>streamEnded?.());
+  await page.locator('#demo-mic').click();
+  await page.waitForFunction(()=>!state.micStarting && !state.turnBusy);
+  assert.equal(f.posts('/api/turn').length,2,'MSE barge-in sent duplicate inputs');
+  assert(f.posts('/api/turn')[1].audio_b64,'MSE barge-in did not send real captured audio');
+  assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'MSE barge-in acknowledged partial audio');
+  assert(await page.evaluate(()=>streamCapture.stream.getTracks().every(track=>track.readyState==='ended')),'MSE barge-in leaked microphone tracks');
+  await page.evaluate(async()=>{streamCapture.source.stop();await streamCapture.context.close();});
+});
+
+test('MSE cancelled stream cannot revive a later session', async (page, f) => {
+  f.stream=true; f.gateStream=true;
+  await start(page);
+  await page.locator('#demo-text').fill('Fictional streamed recap'); await page.locator('#demo-send').click();
+  await page.waitForFunction(()=>state.turnBusy && document.getElementById('demo-audio').currentTime>.08);
+  await page.evaluate(()=>{window.cancelledEnded=document.getElementById('demo-audio').onended;});
+  await page.locator('#demo-end').click();
+  await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
+  f.releaseStream();
+  await start(page); await page.evaluate(()=>cancelledEnded?.());
+  await send(page,'Jah, kinnitan.');
+  assert.equal(hasReceipt(f.posts('/api/turn')[1]),false,'cancelled stream revived an old session receipt');
+  assert(await page.locator('#demo-recap-read').isHidden(),'cancelled stream restored old reading');
+});
+
+test('published modern voice contract passes against pure local fixtures', async (page) => {
+  page.setDefaultTimeout(8000);
+  const check=eval('('+fs.readFileSync(path.join(__dirname,'modern_voice_browser_checks.js'),'utf8').replaceAll('http://127.0.0.1:8765',origin)+')');
+  const result=await check(page);
+  assert.equal(result.result,'passed');
+  console.log(JSON.stringify({check:'modern_voice_browser_checks.js',fixture:'pure-local',...result}));
+});
+
+for(const name of ['voice_browser_checks.js','microphone_race_browser_checks.js']) {
+  test(name+' passes against pure local fixtures', async page=>{
+    page.setDefaultTimeout(8000);
+    const check=eval('('+fs.readFileSync(path.join(__dirname,name),'utf8').replaceAll('http://127.0.0.1:8765',origin)+')');
+    const result=await check(page);
+    assert.equal(result.result,'passed');
+    console.log(JSON.stringify({check:name,fixture:'pure-local',...result}));
+  });
+}
+
+test('published streaming UI contract passes against pure local HTTP chunks', async (page, f) => {
+  f.stream=true; f.gateStream=true; f.streamingContract=true;
+  page.setDefaultTimeout(8000);
+  const check=eval('('+fs.readFileSync(path.join(__dirname,'streaming_voice_browser_checks.js'),'utf8').replaceAll('http://127.0.0.1:8776',origin)+')');
+  const result=await check(page);
+  assert.equal(result.result,'passed');
+  console.log(JSON.stringify({check:'streaming_voice_browser_checks.js',fixture:'pure-local-not-production-backend',...result}));
+});
+
 let active, origin;
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, origin);
-  if (!url.pathname.startsWith('/api/')) {
+  if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/test/')) {
     const name = url.pathname==='/'?'index.html':url.pathname.slice(1);
     if (!/^[\w./-]+$/.test(name) || name.includes('..')) {response.writeHead(404).end();return;}
     try {
-      const body=fs.readFileSync(path.join(root,name));
+      const body=asset(name);
       response.writeHead(200, {'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2'})[path.extname(name)] || 'application/octet-stream'}).end(body);
     } catch (_) {response.writeHead(404).end();}
     return;
@@ -458,6 +631,9 @@ const server = http.createServer(async (request, response) => {
   if (request.headers.authorization!=='Bearer fixture-operator') return reply({},403);
   if (f.stallReads && request.method==='GET' && ['/api/bookings','/api/stays','/api/calls','/api/call-history'].includes(url.pathname)) {recorded.stalled=true;return;}
   switch (url.pathname) {
+    case '/test/stream/state': return reply({started:f.turns>0,completed:!!f.streamCompleted,writes:f.posts('/api/booking/confirm').length,records:f.posts('/api/booking/confirm').length});
+    case '/test/stream/release': f.releaseStream?.(); return reply({released:true});
+    case '/api/demo/voices': return reply({endpointing_ms:650,voices:[{id:'azure',label:'Azure',languages:['et','en','ru'],configured:true,available:true,streaming:true}]});
     case '/api/calls': return reply({calls:[]});
     case '/api/catalogue': return reply({services:[{id:1,name:'Fiktiivne spaa',duration:30}],providers:[{id:2,name:'Demo',services:[1]}]});
     case '/api/rooms': return reply({room_types:[]});
@@ -466,7 +642,7 @@ const server = http.createServer(async (request, response) => {
     case '/api/call-history': return reply({items:[],summary:{total:0,active:0,with_booking:0,needs_attention:0},fetched_at:'2026-10-03T10:00:00Z',has_more:false});
     case '/api/demo/session': {
       const language=input.language==='auto' ? f.replyLanguage || 'et' : input.language;
-      return reply({session_id:'fixture-voice',language,greeting:language==='en'?'Hi! Fictional demo.':language==='ru'?'Здравствуйте! Тестовый разговор.':'Tere! Fiktiivne demo.',audio_b64:f.english?tone.toString('base64'):'',audio_type:'audio/wav',tts_failed:!f.english});
+      return reply({session_id:'fixture-voice',language,greeting:language==='en'?'Hi! Fictional demo.':language==='ru'?'Здравствуйте! Тестовый разговор.':'Tere! Fiktiivne demo.',audio_b64:f.streamingContract?mp3.toString('base64'):f.english?tone.toString('base64'):'',audio_type:f.streamingContract?'audio/mpeg':'audio/wav',tts_failed:!f.english && !f.streamingContract});
     }
     case '/api/demo/session/fixture-voice': return reply({ok:true});
     case '/api/turn': {
@@ -474,6 +650,26 @@ const server = http.createServer(async (request, response) => {
       if (f.failTurn) return reply({detail:'write_outcome_unknown'},503);
       if (f.rejectReceipt && hasReceipt(input)) return reply({detail:'recap_delivery_expired_or_unknown'},409);
       const language=input.language==='auto' ? f.replyLanguage || 'et' : input.language;
+      if(f.stream && f.turns===1) {
+        const first={type:'reply',reply:'Fiktiivne broneeringu kokkuvõte. 9. oktoober kell 10. Kinnitamiseks anna järgmises sõnumis selge nõusolek.',language,audio_type:'audio/mpeg'};
+        const done={...first,type:'done',text_heard:input.text || 'Fiktiivne heliproov',audio_b64:'',outcome:f.outcome || 'ok',tts_failed:false,booking_changes:[],turn_count:f.turns,expires_in_s:f.expires,recap_delivery_id:f.receiptId ?? '11112222333344445555666677778888',recap_expires_in_s:f.recapExpires ?? f.expires};
+        if(f.streamFailure==='mismatch') done.reply='Different canonical recap.';
+        if(f.streamFailure==='synthesis') {done.tts_failed=true;done.outcome='tts_failed';delete done.recap_delivery_id;delete done.recap_expires_in_s;}
+        response.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-store'});
+        const write=event=>{if(!response.destroyed)response.write(JSON.stringify(event)+'\n');};
+        const bytes=f.streamFailure==='decode'?Buffer.from('not-mp3'):streamTone;
+        write(first);
+        if(f.gateStream) {
+          const split=Math.floor(bytes.length/2);
+          write({type:'audio',seq:0,audio_b64:bytes.subarray(0,split).toString('base64')});
+          f.releaseStream=()=>{f.streamCompleted=true;write({type:'audio',seq:1,audio_b64:bytes.subarray(split).toString('base64')});write(done);response.end();};
+        } else {
+          write({type:'audio',seq:0,audio_b64:bytes.toString('base64')});
+          if(f.streamFailure!=='truncated') write(done);
+          if(f.gateEOF) f.releaseStream=()=>response.end(); else response.end();
+        }
+        return;
+      }
       if(f.english) return reply({text_heard:input.text || 'Fictional audio',language,reply:input.text==='Thank you'?"You're welcome. Fictional demo.":'Fictional reply.',outcome:'ok',audio_b64:'',booking_changes:[],expires_in_s:f.expires});
       return reply({text_heard:input.text || 'Fiktiivne heliproov',language,input_status:input.audio_b64?'recognized':'typed',reply:f.emptyReply?'':f.turns===1?'Fiktiivne broneeringu kokkuvõte. 9. oktoober kell 10. Kinnitamiseks anna järgmises sõnumis selge nõusolek.':'Fiktiivne vastus.',outcome:f.outcome || (f.audio&&f.turns===1?'ok':'tts_failed'),tts_failed:!f.audio || f.turns!==1,audio_b64:f.audio&&f.turns===1?tone.toString('base64'):'',audio_type:'audio/wav',recap_delivery_id:f.turns===1?(f.receiptId ?? '11112222333344445555666677778888'):undefined,turn_count:f.turns,expires_in_s:f.expires,recap_expires_in_s:f.recapExpires ?? f.expires,booking_changes:[]});
     }
@@ -498,13 +694,13 @@ const server = http.createServer(async (request, response) => {
       const context=await browser.newContext({serviceWorkers:'block'});
       const external=[], errors=[];
       await context.route('**/*', route=>{const url=new URL(route.request().url());if(url.origin!==origin && url.protocol!=='blob:'){external.push(url.origin);return route.abort();}return route.continue();});
-      const page=await context.newPage(); page.setDefaultTimeout(3500);
+      const page=await context.newPage(); page.setDefaultTimeout(name.startsWith('MSE ')?8000:3500);
       page.on('pageerror',error=>errors.push(error.message));
       try {await ready(page);await run(page,f);assert.deepEqual(errors,[]);assert.deepEqual(external,[]);passed++;console.log('PASS '+name);}
       catch(error) {failed++;console.error('FAIL '+name+': '+error.message);}
       finally {await context.close();server.closeAllConnections();}
     }
-    console.log(JSON.stringify({passed,failed,chromium:browser.version(),syntheticAudio:true,externalRequests:0}));
+    console.log(JSON.stringify({passed,failed,chromium:browser.version(),assets:published?'origin/master':'working-tree',syntheticAudio:true,externalRequests:0}));
     if (failed) process.exitCode=1;
   } finally {await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error.message);process.exitCode=1;server.closeAllConnections();server.close();});

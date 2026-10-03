@@ -31,6 +31,53 @@ def send(client, session_id, text, **extra):
     )
 
 
+@pytest.mark.parametrize("invalid", ["expired", "foreign", "consumed"])
+def test_invalid_stream_receipt_is_rejected_before_headers_or_recognition(
+    client, tmp_path, invalid
+):
+    from tests.test_browser_audio_stream import STREAM_AUTH
+
+    day, records, writes = install_backend(client, tmp_path)
+    client.app.state.stack["llm_primary"] = BookingLlm(day)
+    session_id = start(client)
+    prepared = send(client, session_id, "Soovin testbroneeringut").json()
+    receipt = prepared["recap_delivery_id"]
+    session = client.app.state.demo_sessions.sessions[session_id]
+    if invalid == "expired":
+        session.tools.pending["expires_at"] = 0
+    elif invalid == "foreign":
+        receipt = "0" * 32
+    else:
+        session.consume_recap_delivery(receipt)
+
+    class Recognition:
+        calls = 0
+
+        def transcribe(self, audio, **kwargs):
+            self.calls += 1
+            return "Jah, kinnitan."
+
+    recognition = Recognition()
+    client.app.state.stack["stt"] = recognition
+    observed = session.tools._turn_serial
+    spoken = list(client.app.state.stack["tts"].spoken)
+    response = client.post(
+        "/api/turn",
+        headers=STREAM_AUTH,
+        json={
+            "session_id": session_id,
+            "audio_b64": base64.b64encode(b"fictional-audio").decode(),
+            "recap_delivery_id": receipt,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "recap_delivery_expired_or_unknown"}
+    assert response.headers["Cache-Control"] == "no-store"
+    assert recognition.calls == 0 and session.tools._turn_serial == observed
+    assert client.app.state.stack["tts"].spoken == spoken
+    assert not session.busy and not records and not writes
+
+
 def prepare(client, day, session_id):
     client.app.state.stack["llm_primary"] = BookingLlm(day)
     response = send(client, session_id, "Soovin testbroneeringut")
@@ -185,8 +232,9 @@ def test_old_receipt_cannot_skip_an_intervening_normal_input(client, tmp_path):
         ("ru", "Говорите по-русски."),
     ],
 )
+@pytest.mark.parametrize("streaming", [False, True], ids=["json", "ndjson"])
 def test_repeated_or_translated_recap_has_a_fresh_receipt_without_new_tools(
-    client, tmp_path, language, utterance
+    client, tmp_path, language, utterance, streaming
 ):
     day, records, writes = install_backend(client, tmp_path)
     session_id = start(client)
@@ -199,7 +247,22 @@ def test_repeated_or_translated_recap_has_a_fresh_receipt_without_new_tools(
             raise AssertionError("canonical repeat must not request a model")
 
     client.app.state.stack["llm_primary"] = UnusedModel()
-    repeated = send(client, session_id, utterance, language=language).json()
+    if streaming:
+        from tests.test_browser_audio_stream import STREAM_AUTH, events
+
+        repeated = events(
+            client.post(
+                "/api/turn",
+                headers=STREAM_AUTH,
+                json={
+                    "session_id": session_id,
+                    "text": utterance,
+                    "language": language,
+                },
+            )
+        )[-1]
+    else:
+        repeated = send(client, session_id, utterance, language=language).json()
     assert (
         state.pending is not pending and state.pending["hold_id"] == pending["hold_id"]
     )
@@ -231,6 +294,52 @@ def test_repeated_or_translated_recap_has_a_fresh_receipt_without_new_tools(
     assert len(records) == 1
 
 
+@pytest.mark.parametrize(
+    "invalidated", ["expired", "replaced", "changed", "not_owned", "unknown"]
+)
+def test_done_cannot_issue_a_receipt_for_a_preparation_changed_during_speech(
+    client, tmp_path, invalidated
+):
+    from tests.test_browser_audio_stream import STREAM_AUTH, events
+
+    day, records, writes = install_backend(client, tmp_path)
+    session_id = start(client)
+    session = client.app.state.demo_sessions.sessions[session_id]
+
+    class InvalidatingSpeech(Speaker):
+        def stream(self, text):
+            pending = session.tools.pending
+            assert pending is not None and not pending["delivery"]
+            yield b"first-real-mp3-fixture"
+            if invalidated == "expired":
+                pending["expires_at"] = 0
+            elif invalidated == "replaced":
+                session.tools.pending = dict(pending)
+            elif invalidated == "changed":
+                pending["recap"]["guest_name"] = "Demo Teine"
+            elif invalidated == "not_owned":
+                session.tools.holds.clear()
+            else:
+                session.tools._unknown_mutation()
+            yield b"last-real-mp3-fixture"
+
+    client.app.state.stack.update(tts=InvalidatingSpeech(), llm_primary=BookingLlm(day))
+    done = events(
+        client.post(
+            "/api/turn",
+            headers=STREAM_AUTH,
+            json={"session_id": session_id, "text": "Soovin testbroneeringut"},
+        )
+    )[-1]
+    assert not done["tts_failed"]
+    assert done["recap_delivery_id"] is None and done["recap_expires_in_s"] is None
+    assert session.recap_delivery is None
+    if session.tools.pending is not None:
+        assert not session.tools.pending["delivery"]
+        assert not session.tools.pending["approved"]
+    assert not records and not writes
+
+
 @pytest.mark.parametrize("failure", ["raises", "empty_audio"])
 def test_canonical_text_only_recap_can_be_deliberately_read_then_acknowledged(
     client, tmp_path, failure
@@ -260,6 +369,36 @@ def test_canonical_text_only_recap_can_be_deliberately_read_then_acknowledged(
     assert result.status_code == 200, result.text
     assert result.json()["booking_ids"] == ["42"]
     assert len(records) == 1 and writes
+
+
+@pytest.mark.parametrize("failure", ["raises", "empty_audio"])
+def test_failed_ndjson_recap_has_no_playback_receipt(client, tmp_path, failure):
+    from tests.test_browser_audio_stream import STREAM_AUTH, events
+
+    day, records, writes = install_backend(client, tmp_path)
+
+    class FailedStream(Speaker):
+        def stream(self, text):
+            if failure == "raises":
+                raise RuntimeError("PRIVATE provider detail")
+            yield b""
+
+    client.app.state.stack.update(tts=FailedStream(), llm_primary=BookingLlm(day))
+    session_id = start(client)
+    response = client.post(
+        "/api/turn",
+        headers=STREAM_AUTH,
+        json={"session_id": session_id, "text": "Soovin testbroneeringut"},
+    )
+    items = events(response)
+    assert [item["type"] for item in items] == ["reply", "done"]
+    done = items[-1]
+    assert done["tts_failed"] and done["audio_b64"] == ""
+    assert done["recap_delivery_id"] is None and done["recap_expires_in_s"] is None
+    session = client.app.state.demo_sessions.sessions[session_id]
+    assert session.recap_delivery is None and session.tools.pending is None
+    assert "PRIVATE" not in response.text
+    assert not records and not writes
 
 
 @pytest.mark.parametrize("fail_step", [0, 1, 2])

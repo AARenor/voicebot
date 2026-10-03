@@ -76,6 +76,7 @@ async page => {
   assert((await page.locator('#demo-messages').textContent()).includes('Tere!'));
   await page.locator('#demo-end').click();await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
   await page.locator('#demo-language').selectOption('en');
+  assert.equal(await page.locator('#demo-voice-result').textContent(),'','idle language change retained the previous-language voice result');
   for (const [name,width,height] of [['desktop',1440,1000],['mobile',390,844]]) {
     await page.setViewportSize({width,height});await page.locator('#demo-section').scrollIntoViewIfNeeded();
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);

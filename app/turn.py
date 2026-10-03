@@ -31,8 +31,7 @@ REPEAT_PROMPT = {
 
 STT_UNAVAILABLE = {
     "et": (
-        "Kõnetuvastus ei ole praegu saadaval. "
-        "Palun proovige mõne hetke pärast uuesti."
+        "Kõnetuvastus ei ole praegu saadaval. Palun proovige mõne hetke pärast uuesti."
     ),
     "en": "Speech recognition is unavailable. Please try again in a moment.",
     "ru": "Распознавание речи недоступно. Попробуйте чуть позже.",
@@ -234,7 +233,8 @@ async def run_turn(
 async def _speak(tts, text: str) -> bytes:
     """Synthesize off the event loop, degrading to silence."""
     try:
-        return await asyncio.to_thread(tts.synthesize, text)
+        audio = await asyncio.to_thread(tts.synthesize, text)
+        return audio if isinstance(audio, bytes) else b""
     except Exception:
         return b""
 

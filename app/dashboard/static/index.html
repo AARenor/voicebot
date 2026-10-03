@@ -7,7 +7,7 @@
   <meta name="description" content="Voiceboti vastuvõtulaud: spaa- ja toabroneeringud, kõneproov ning toimingupäevik.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23173844'/%3E%3Cpath d='M8 13v6m5-10v14m6-17v20m5-13v6' fill='none' stroke='%2399d5d4' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preload" href="/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/dashboard.css?v=1b0591979484">
+  <link rel="stylesheet" href="/dashboard.css?v=875c1a22380c">
   <title>Vastuvõtulaud — Voicebot</title>
 </head>
 <body>
@@ -93,7 +93,10 @@
         <section class="work-panel demo-panel" id="demo-section" aria-labelledby="demo-title">
           <div class="panel-head"><div class="panel-title"><span class="section-icon"><svg class="icon" aria-hidden="true"><use href="#i-wave"/></svg></span><div><h2 id="demo-title" data-demo-copy="title">Proovi kõneabilist</h2><p data-demo-copy="subtitle">Kirjuta sõnum või räägi mikrofoniga</p></div></div><span class="demo-badge">HTTP demo</span></div>
           <div class="panel-body">
-            <div class="demo-language field"><label for="demo-language" data-demo-copy="languageLabel">Vestluse keel / Conversation language</label><select id="demo-language" name="conversation_language" aria-describedby="demo-language-help"><option value="auto">Automaatne / Auto</option><option value="et" lang="et">Eesti</option><option value="en" lang="en">English</option></select><p class="sub" id="demo-language-help" data-demo-copy="languageHelp">Vali keel enne vestlust. Keele muutmiseks lõpeta vestlus ja alusta uut.</p></div>
+            <div class="demo-selectors">
+              <div class="demo-language field"><label for="demo-language" data-demo-copy="languageLabel">Vestluse keel / Conversation language</label><select id="demo-language" name="conversation_language" aria-describedby="demo-language-help"><option value="auto">Automaatne / Auto</option><option value="et" lang="et">Eesti</option><option value="en" lang="en">English</option></select><p class="sub" id="demo-language-help" data-demo-copy="languageHelp">Vali keel enne vestlust. Keele muutmiseks lõpeta vestlus ja alusta uut.</p></div>
+              <div class="demo-language field"><label for="demo-voice" data-demo-copy="voiceLabel">Abilise hääl / Assistant voice</label><select id="demo-voice" name="assistant_voice" aria-describedby="demo-voice-help demo-voice-result" disabled><option value="azure">Azure</option></select><p class="sub" id="demo-voice-help">Vali hääl enne vestlust. Seadistust kontrollitakse pärast ühendamist.</p><p class="sub" id="demo-voice-result" role="status" aria-live="polite"></p></div>
+            </div>
             <div class="conversation-intro" id="demo-placeholder"><div class="voice-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><h3 data-demo-copy="introTitle">Üks vestlus. Lihtsam vastuvõtt.</h3><p data-demo-copy="intro">Küsi teenuste kohta, leia sobiv aeg ja proovi broneerimist fiktiivse külalisena.</p></div>
             <div class="controls demo-actions"><button class="button primary" id="demo-start" type="button" aria-describedby="demo-status" disabled><span data-demo-copy="start">Alusta demovestlust</span><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="button" id="demo-end" data-demo-copy="end" type="button" disabled>Lõpeta vestlus</button></div>
             <p class="status" id="demo-status" role="status" aria-live="polite">Vestluse alustamiseks sisesta operaatori tunnus ja vajuta „Ühenda”.</p>
@@ -116,7 +119,7 @@
     </main>
   </div>
   <script src="/call-history.js?v=963f8b649643" defer></script>
-  <script src="/dashboard.js?v=0696e64e57d5" defer></script>
+  <script src="/dashboard.js?v=a2bf81afa86d" defer></script>
   <script>document.addEventListener("DOMContentLoaded", () => { loadStatus("/api/status"); setInterval(poll, 30000); });</script>
 </body>
 </html>
