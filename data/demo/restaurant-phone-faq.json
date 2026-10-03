@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "purpose": "Reviewed restaurant telephone answers for a fictional table-reservation demo. No real menu, allergen safety, availability or staff notification claims.",
+  "entries": [
+    {
+      "id": "booking-046",
+      "route": "static",
+      "question_et": "Mis teil menüüs on?",
+      "variants_et": [
+        "Mida te süüa pakute?",
+        "Kas teil on taimetoitu?",
+        "Kas pakute veganitoitu?",
+        "Kas on gluteenivabu toite?",
+        "Kas on laktoosivabu toite?",
+        "Kas teie toit on pähklivaba?",
+        "Kas teie köök on pähklivaba?",
+        "Mul on pähkliallergia. Kas teie toit on ohutu?",
+        "Kas saate vältida allergeenide ristsaastumist?",
+        "Kas teil on laste menüü?",
+        "Kas teil on allergiavaba menüü?",
+        "Kas mul on siin tsöliaakiaga ohutu süüa?"
+      ],
+      "answer_et": "Menüü ja allergeenide kohta ei ole demos kinnitatud infot. Konkreetset eritoitu ma lubada ei saa.",
+      "question_en": "What is on the menu?",
+      "variants_en": [
+        "What food do you serve?",
+        "Do you have vegetarian food?",
+        "Do you have vegan food?",
+        "Do you have gluten-free food?",
+        "Do you have lactose-free food?",
+        "Is your food nut-free?",
+        "Is your kitchen nut-free?",
+        "I have a peanut allergy. Is your food safe?",
+        "Can you prevent allergen cross-contact?",
+        "Do you have a children's menu?",
+        "Do you have an allergen-free menu?",
+        "Is it safe for me to eat here with coeliac disease?"
+      ],
+      "answer_en": "The demo has no verified menu or allergen information. I can't promise specific dietary options.",
+      "question_ru": "Что у вас в меню?",
+      "variants_ru": [
+        "Какую еду вы предлагаете?",
+        "Есть вегетарианские блюда?",
+        "Есть веганские блюда?",
+        "Есть блюда без глютена?",
+        "Есть блюда без лактозы?",
+        "В вашей еде нет орехов?",
+        "В вашей кухне нет орехов?",
+        "У меня аллергия на арахис. Мне безопасно у вас есть?",
+        "Можете исключить перекрёстный контакт с аллергенами?",
+        "Есть детское меню?",
+        "Есть меню без аллергенов?",
+        "Мне безопасно у вас есть при целиакии?"
+      ],
+      "answer_ru": "В этой демонстрации нет подтверждённой информации о меню и аллергенах. Я не могу обещать конкретное специальное питание."
+    },
+    {
+      "id": "booking-101",
+      "route": "static",
+      "question_et": "Kas saate minu allergiast köögile teatada?",
+      "variants_et": [
+        "Kas saate mu allergia broneeringule kirja panna?",
+        "Kas saate lisada broneeringule erisoovi?",
+        "Teatage köögile mu pähkliallergiast.",
+        "Märkige minu allergia üles."
+      ],
+      "answer_et": "See demo ei salvesta erisoove ega saada köögile teateid. Allergiaohutust ma kinnitada ei saa.",
+      "question_en": "Can you tell the kitchen about my allergy?",
+      "variants_en": [
+        "Can you record an allergy note?",
+        "Can you add a special request to my booking?",
+        "Tell the kitchen about my peanut allergy.",
+        "Make a note of my allergy."
+      ],
+      "answer_en": "This demo can't save special requests or notify the kitchen. I can't confirm allergy safety.",
+      "question_ru": "Можете сообщить кухне о моей аллергии?",
+      "variants_ru": [
+        "Можете записать мою аллергию в бронирование?",
+        "Можете добавить особое пожелание к бронированию?",
+        "Сообщите кухне о моей аллергии на арахис.",
+        "Запишите мою аллергию."
+      ],
+      "answer_ru": "Эта демонстрация не сохраняет особые пожелания и не уведомляет кухню. Я не могу подтвердить безопасность при аллергии."
+    },
+    {
+      "id": "booking-102",
+      "route": "static",
+      "question_et": "Kas saan toitu kaasa tellida?",
+      "variants_et": [
+        "Kas tellite toitu koju?",
+        "Kas saab õhtusöögi ette tellida?",
+        "Tellige mulle õhtusöök.",
+        "Kas saan toitu tellida?"
+      ],
+      "answer_et": "See demo ei võta vastu toidu-, kaasamüügi- ega kohaletoimetamise tellimusi. Saan aidata fiktiivse lauabroneeringuga.",
+      "question_en": "Can I order takeaway?",
+      "variants_en": [
+        "Can I order food delivery?",
+        "Can I order dinner in advance?",
+        "Order dinner for me.",
+        "Can I order food?"
+      ],
+      "answer_en": "This demo doesn't take food, takeaway or delivery orders. I can help with a fictional table reservation.",
+      "question_ru": "Можно заказать еду навынос?",
+      "variants_ru": [
+        "Можно заказать доставку еды?",
+        "Можно заказать ужин заранее?",
+        "Закажите мне ужин.",
+        "Можно заказать еду?"
+      ],
+      "answer_ru": "Эта демонстрация не принимает заказы еды, навынос или с доставкой. Я могу помочь с тестовым бронированием столика."
+    }
+  ]
+}
