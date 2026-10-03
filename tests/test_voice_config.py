@@ -166,7 +166,7 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
                 worker, "TelephoneSTT", return_value=NS(aclose=AsyncMock())
             ) as stt,
             patch.object(worker.groq, "LLM") as llm,
-            patch.object(worker.azure, "TTS"),
+            patch.object(worker, "TelephoneTTS"),
         ):
             await worker.entrypoint(ctx)
         stay.assert_called_once_with(str(tmp_path / "stay-booking.db"))

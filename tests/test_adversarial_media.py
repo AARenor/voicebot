@@ -265,7 +265,7 @@ def test_fatal_initialization_failure_closes_allocated_adapter_and_owned_room():
             patch.object(w.groq, "STT"),
             patch.object(w.groq, "LLM"),
             patch.object(
-                w.azure, "TTS", side_effect=RuntimeError("fixture constructor")
+                w, "TelephoneTTS", side_effect=RuntimeError("fixture constructor")
             ),
             patch.object(w, "play_failure", new=AsyncMock()),
         ):

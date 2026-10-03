@@ -91,7 +91,7 @@ def test_worker_does_not_authorize_individual_stt_fragments():
             patch("app.worker.TelephoneAgent"),
             patch("app.worker.TelephoneSTT", return_value=SimpleNamespace(aclose=AsyncMock())),
             patch("app.worker.groq.LLM"),
-            patch("app.worker.azure.TTS"),
+            patch("app.worker.TelephoneTTS"),
             patch("app.callslog.log_call") as log,
             patch.dict(
                 "os.environ",

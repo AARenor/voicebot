@@ -24,6 +24,13 @@ HTTP callers select `language: "en"` for English recognition, dialogue and audio
 See the [English telephone runbook](docs/operations/english-telephone.md) for
 voice selection, fixed language modes, worker deployment and live call checks.
 
+Both languages share shorter conversational questions, reviewed social replies,
+focused catalogue answers and configurable Azure speech pacing. Recaps are read
+more slowly, and Estonian dates/times have pronunciation aliases. See the
+[natural conversation runbook](docs/operations/natural-conversation.md) for
+settings, neutral rollback and listening checks, and the
+[local verification report](docs/evidence/2026-10-03-natural-conversation.md).
+
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
 records the earlier defects and live speech failures. The

@@ -32,6 +32,7 @@ def build_stack() -> dict:
     from .providers.gemini import GeminiClient
     from .providers.groq import GroqClient
     from .providers.voice_config import SpeechConfig
+    from .providers.speech_delivery import SpeechDelivery
 
     stack: dict = {
         "stt": None,
@@ -58,6 +59,7 @@ def build_stack() -> dict:
             os.environ.get("AZURE_VOICE", "et-EE-AnuNeural"),
             os.environ.get("AZURE_LANG", "et-EE"),
             languages={lang: speech.voice_for(lang) for lang in ("et", "en")},
+            delivery=SpeechDelivery.from_env(),
         )
     # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
     if os.environ.get("APALEO_CLIENT_ID") and os.environ.get("APALEO_CLIENT_SECRET"):
@@ -274,9 +276,11 @@ def create_app():
     def status() -> dict:
         stack = app.state.stack
         from .providers.voice_config import SpeechConfig, VoiceConfig
+        from .providers.speech_delivery import SpeechDelivery
 
         config = getattr(stack.get("llm_primary"), "config", VoiceConfig())
         speech = SpeechConfig.from_env()
+        delivery = SpeechDelivery.from_env()
         return {
             "wired": {
                 name: stack[name] is not None
@@ -308,6 +312,9 @@ def create_app():
                 "language_mode": speech.mode,
                 "supported_languages": ["et", "en"],
                 "english_voice": speech.english_voice,
+                "speaking_style": delivery.mode,
+                "speech_rate": delivery.rate,
+                "recap_rate": delivery.recap_rate,
                 "media_credentials_configured": stack["livekit"] is not None,
                 "worker_health_probe": "separate_private_endpoint",
                 "public_ingress_verified": False,
