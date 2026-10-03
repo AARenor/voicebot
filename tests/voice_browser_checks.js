@@ -39,6 +39,7 @@ async (page) => {
   assert(await page.locator('#demo-audio').isVisible(),'blocked playback removed manual controls');
   await page.locator('#demo-audio').evaluate(a=>{delete a.play;a.dispatchEvent(new Event('error'));});
   assert(/heli|Heli/.test(await page.locator('#demo-status').textContent()),'media decode error was silent');
+  assert(await page.evaluate(()=>!state.audioUrl && !state.recapDeliveryId),'decode error retained failed media or receipt');
   await page.evaluate(async data=>{
     const context = new AudioContext();await context.resume();
     const bytes = Uint8Array.from(atob(data), c=>c.charCodeAt(0));
@@ -49,6 +50,9 @@ async (page) => {
       source.buffer = buffer;source.loop = window.fixtureLoop;source.connect(sink);source.start();return sink.stream;
     }});
     window.fixtureContext=context;
+    // Decode-error cleanup retired the previous source. Start a fresh valid
+    // fixture before testing microphone interruption of advancing playback.
+    playReply({audio_b64:data,audio_type:'audio/wav'});
     await document.getElementById('demo-audio').play();
   },audio_b64);
   await page.locator('#demo-mic').click();

@@ -11,6 +11,7 @@ import json
 import os
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -171,6 +172,13 @@ def create_streaming_app():
             gate.clear()
             progress.update(started=True, completed=False)
             audio = self.synthesize(text)
+            # A 0.19-second prefix is below Chromium's native startup buffer.
+            # Repeat existing MP3 frames, preserving its single initial ID3 tag,
+            # so the test can advance and then starve before synthesis ends.
+            offset = 0
+            if audio.startswith(b"ID3"):
+                offset = 10 + sum(audio[6 + i] << (7 * (3 - i)) for i in range(4))
+            audio = audio[:offset] + audio[offset:] * 20
             split = len(audio) // 2
             yield audio[:split]
             if not gate.wait(10):
@@ -182,7 +190,20 @@ def create_streaming_app():
             return self
 
     app = create_app()
-    app.state.stack["slot"].close()
+    static_route = app.router.routes.pop()
+    assert static_route.name == "dashboard"
+    old_slot = app.state.stack["slot"]
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(application):
+        try:
+            async with original_lifespan(application):
+                yield
+        finally:
+            await old_slot.close()
+
+    app.router.lifespan_context = lifespan
     day, records, writes = install_backend(
         SimpleNamespace(app=app), Path(_storage.name)
     )
@@ -204,4 +225,6 @@ def create_streaming_app():
         gate.set()
         return {"ok": True}
 
+    # The production catch-all static mount must remain after fixture controls.
+    app.router.routes.append(static_route)
     return app

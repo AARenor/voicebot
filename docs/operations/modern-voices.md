@@ -111,6 +111,19 @@ not provider pronunciation or human preference. New live providers and telephone
 calls are acceptance boundaries to record separately, never inferred from a
 healthy web deployment or configured catalog.
 
+Local browser acceptance uses `tests.browser_fixture:create_app` on port 8765
+and `tests.browser_fixture:create_streaming_app` on port 8776, then
+`node tests/run_browser_checks.cjs` with an already installed Playwright package.
+The gated fixture uses real HTTP chunks and advancing native MP3; it waits for
+an actual underrun before completing synthesis and checks zero fictional writes.
+When using a shell-based server wrapper, prefix each server command with `exec`
+so cleanup owns the Python process rather than leaving a stale child on the port.
+The runner bounds each suite at 120 seconds. Fixture controls are not included
+in the production Docker image.
+
+See [release verification](../evidence/2026-10-03-modern-voices.md) for exact
+suite results, review fixes and the separately reproduced native baseline failure.
+
 To roll back voice selection, use Azure for the next session. To roll back speech
 styling, follow the [neutral profile](natural-conversation.md). Keep the provider
 credentials out of diagnostics; report only profile IDs, fixed reason codes and

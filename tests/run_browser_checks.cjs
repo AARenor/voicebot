@@ -14,10 +14,15 @@ const available = ['dashboard_browser_checks.js', 'hotel_browser_checks.js', 'bo
     for (const name of process.argv.length > 2 ? process.argv.slice(2) : available) {
       if (!available.includes(name)) throw new Error('unknown browser check');
       const page = await browser.newPage();
+      let timer;
       try {
         const check = eval('('+fs.readFileSync(path.join(__dirname,name),'utf8')+')');
-        console.log(JSON.stringify({check:name,...await check(page)}));
-      } finally {await page.close();}
+        const result=await Promise.race([
+          check(page),
+          new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${name}: browser check timed out`)),120000);}),
+        ]);
+        console.log(JSON.stringify({check:name,...result}));
+      } finally {clearTimeout(timer);await page.close();}
     }
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

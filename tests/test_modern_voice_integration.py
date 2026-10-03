@@ -9,6 +9,23 @@ from tests.test_browser_audio_stream import AsgiExchange, StreamingSpeaker
 from tests.test_product_demo import AUTH, client, start
 
 
+def test_stream_fixture_controls_are_authenticated_and_not_shadowed_by_static():
+    from fastapi.testclient import TestClient
+    from tests.browser_fixture import create_streaming_app
+
+    with TestClient(create_streaming_app()) as fixture:
+        response = fixture.get("/test/stream/state", headers=AUTH)
+        assert response.status_code == 200
+        assert response.json() == {
+            "started": False,
+            "completed": False,
+            "writes": 0,
+            "records": 0,
+        }
+        assert fixture.get("/test/stream/state").status_code == 403
+        assert fixture.post("/test/stream/release", headers=AUTH).json() == {"ok": True}
+
+
 def test_stream_explicitly_disables_proxy_buffering(client):
     response = client.post(
         "/api/turn",
