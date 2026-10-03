@@ -8,8 +8,19 @@ http:
       service: https-0-zs7s830dsrlo4j81s0ohgpgc@docker
       middlewares: [meretuule-root]
       tls: {}
+    meretuule-legacy:
+      rule: "Host(`robot.arleserver.cfd`) && (Path(`/hotel`) || Path(`/hotel/`))"
+      entryPoints: [https]
+      service: https-0-zs7s830dsrlo4j81s0ohgpgc@docker
+      middlewares: [meretuule-legacy-redirect]
+      tls: {}
   middlewares:
     meretuule-root:
       replacePathRegex:
         regex: "^/$"
         replacement: "/hotel"
+    meretuule-legacy-redirect:
+      redirectRegex:
+        regex: "^https?://[^/]+/hotel/?([?].*)?$"
+        replacement: "https://meretuule.arleserver.cfd/${1}"
+        permanent: true

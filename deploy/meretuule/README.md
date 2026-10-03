@@ -16,11 +16,13 @@ The current wildcard DNS and application tunnel already forward
 `*.arleserver.cfd` to the Coolify HTTPS proxy. No additional DNS record,
 tunnel, container, or provider credential is required.
 
-[`traefik.yml`](traefik.yml) adds one hostname-specific router using the
-application's stable Docker-provider service. It rewrites only `/` to `/hotel`;
-CSS, JavaScript, fonts, illustrations, APIs, query strings and all other paths
+[`traefik.yml`](traefik.yml) uses the application's stable Docker-provider
+service. The public-host router rewrites only `/` to the internal `/hotel`
+renderer. A separate robot-only router redirects the exact old hotel paths;
+do not redirect the shared renderer unconditionally, which would loop on the
+public root. CSS, JavaScript, fonts, illustrations, APIs and all other paths
 remain unchanged. Existing operator authorization still applies to private APIs.
-The route does not depend on a changing container name or IP address.
+The routes do not depend on a changing container name or IP address.
 The `/hotel` handler remains available for this internal rewrite and local
 previews; it is no longer a public guest entry point on the robot hostname.
 

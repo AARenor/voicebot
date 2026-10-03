@@ -5,6 +5,20 @@ async (page) => {
   const errors = [];
   tab.on('pageerror', error => errors.push(error.message));
   try {
+    const legacyRedirects = [];
+    for (const [path, destination] of [
+      ['/hotel', 'https://meretuule.arleserver.cfd/'],
+      ['/hotel/', 'https://meretuule.arleserver.cfd/'],
+      ['/hotel?via=old-demo', 'https://meretuule.arleserver.cfd/?via=old-demo'],
+    ]) {
+      const url = `https://robot.arleserver.cfd${path}`;
+      const redirect = await tab.request.get(url, {maxRedirects: 0});
+      require(redirect.status() === 301, `Legacy hotel returned ${redirect.status()}, expected permanent redirect: ${path}`);
+      require(redirect.headers().location === destination, `Wrong hotel redirect destination: ${path}`);
+      await tab.goto(url, {waitUntil: 'networkidle', timeout: 30000});
+      require(tab.url() === destination && /Meretuule/.test(await tab.title()), `Legacy hotel redirect loop or wrong site: ${path}`);
+      legacyRedirects.push({path, status: redirect.status(), destination});
+    }
     const response = await tab.goto('https://meretuule.arleserver.cfd/', {
       waitUntil: 'networkidle', timeout: 30000,
     });
@@ -54,23 +68,21 @@ async (page) => {
       [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.hotel-link, .heading-actions a.button:not(.primary)')].map(el => el.getAttribute('href')),
     robotHtml);
     require(dashboardHotelLinks.length === 2 && dashboardHotelLinks.every(href => href === 'https://meretuule.arleserver.cfd/'), 'Dashboard hotel links did not use the exact canonical Meretuule root');
-    const retiredRoutes = [];
-    for (const path of ['/hotel', '/hotel/']) {
-      const url = `https://robot.arleserver.cfd${path}`;
-      const retired = await tab.request.get(url, {maxRedirects: 0});
-      const statusCode = retired.status();
-      const location = retired.headers().location ?? null;
-      const canonicalRedirect = statusCode === 301 && location === 'https://meretuule.arleserver.cfd/';
-      const retiredFallback = statusCode === 410 && location === null;
-      require(canonicalRedirect || retiredFallback, `Retired guest address returned ${statusCode} with Location ${JSON.stringify(location)}, expected 301 to the canonical Meretuule root or 410 without Location: ${url}`);
-      retiredRoutes.push({url, status: statusCode, location});
-    }
     const health = await tab.request.get('https://robot.arleserver.cfd/health');
     require(health.status() === 200 && (await health.json()).ok === true, 'Robot health check failed');
+    const management = await page.context().newPage();
+    try {
+      await management.goto('https://robot.arleserver.cfd/', {waitUntil: 'networkidle', timeout: 30000});
+      const demoLinks = management.locator('a[href="https://meretuule.arleserver.cfd/"]');
+      require(await demoLinks.count() === 2, 'Dashboard demo links do not point directly to the public root');
+      await demoLinks.first().click();
+      await management.waitForURL('https://meretuule.arleserver.cfd/');
+      require(/Meretuule/.test(await management.title()), 'Dashboard demo link did not open the hotel website');
+    } finally { await management.close(); }
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,
       rooms: await tab.locator('.room-card').count(), services: await tab.locator('#service-list li').count(),
-      homepageLinks, dashboardHotelLinks, retiredRoutes, operatorLinks,
+      homepageLinks, dashboardHotelLinks, operatorLinks, legacyRedirects, dashboardDemoLinkVerified: true,
       privateRoutesDenied: true, robotHealthy: true, errors};
   } finally {
     await tab.close();

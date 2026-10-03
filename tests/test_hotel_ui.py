@@ -173,7 +173,28 @@ def test_retiring_the_old_hotel_page_preserves_operator_root_health_and_auth() -
                 assert denied.status_code == 403
                 assert denied.headers["Cache-Control"] == "no-store"
         allowed = client.get(
-            "/api/calls", headers={**headers, "Authorization": "Bearer fixture-operator"}
+            "/api/calls",
+            headers={**headers, "Authorization": "Bearer fixture-operator"},
         )
         assert allowed.status_code == 200
         assert allowed.headers["Cache-Control"] == "no-store"
+
+
+def test_hotel_home_and_dashboard_demo_links_use_public_root() -> None:
+    hrefs: list[str] = []
+
+    class Parser(HTMLParser):
+        def handle_starttag(
+            self, tag: str, attrs: list[tuple[str, str | None]]
+        ) -> None:
+            if tag == "a" and dict(attrs).get("href"):
+                hrefs.append(dict(attrs)["href"])
+
+    with patch.dict("os.environ", {}, clear=True), TestClient(create_app()) as client:
+        for path in ("/", "/hotel"):
+            hrefs.clear()
+            response = client.get(path)
+            assert response.status_code == 200
+            Parser().feed(response.text)
+            assert hrefs.count("https://meretuule.arleserver.cfd/") == 2
+            assert "/hotel" not in hrefs
