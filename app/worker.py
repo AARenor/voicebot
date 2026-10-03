@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import inspect
+import logging
+import math
 import os
 import uuid
 import wave
+from collections import defaultdict, deque
 from pathlib import Path
 
 from livekit import api, rtc
@@ -15,8 +17,10 @@ from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import azure, groq, silero
 
 from .booking.easyappointments import EasyAppointmentsAdapter
+from .booking.demo_stay import DemoStayAdapter
 from .booking.tools import Dispatcher
 from . import callslog
+from .providers.voice_config import STT_LANGUAGE, VoiceConfig
 from .telephone import (
     CallTools,
     FALLBACK,
@@ -30,7 +34,7 @@ class PrivateLogs(logging.Filter):
     def filter(self, record):
         # SDK debug/errors may include transcripts, tool args and response bodies.
         # Worker readiness is exposed by SDK HTTP health; retain only our codes.
-        return record.name == "voicebot.telephone"
+        return record.name in {"voicebot.telephone", "voicebot.twilio"}
 
 
 def protect_logs():
@@ -46,6 +50,8 @@ class TelephoneAgent(Agent):
         )
         self.state = state
         self._generated_recap = None
+        self._fallback_reply = None
+        self._fallback_speech = None
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         # SDK aggregates STT fragments here, before generating any tool call.
@@ -78,6 +84,15 @@ class TelephoneAgent(Agent):
     def on_conversation_item_added(self, event):
         if getattr(event.item, "role", None) != "assistant":
             return
+        failed_reply, self._fallback_reply = self._fallback_reply, None
+        failed_speech, self._fallback_speech = self._fallback_speech, None
+        if failed_reply is not None and (
+            (failed_speech is not None and failed_speech is self._current_speech())
+            or (failed_speech is None and getattr(event.item, "text_content", None) == failed_reply)
+        ):
+            # The SDK stores this same message in agent/session history before
+            # emitting the event. Cached apology PCM must have matching history.
+            event.item.content = [FALLBACK]
         generated, self._generated_recap = self._generated_recap, None
         if getattr(event.item, "interrupted", False):
             self.state.invalidate_recap()
@@ -88,9 +103,20 @@ class TelephoneAgent(Agent):
             else:
                 self.state.invalidate_recap()
 
+    def _current_speech(self):
+        try:
+            return self.session.current_speech
+        except RuntimeError:
+            # A standalone agent has no session before AgentSession.start.
+            return None
+
     async def tts_node(self, text, model_settings):
         self._generated_recap = None
+        self._fallback_reply = None
+        self._fallback_speech = None
         complete = False
+        reply = None
+        speech = self._current_speech()
         try:
             reply = await self.checked_reply(text)
             pending = self.state.pending
@@ -111,16 +137,81 @@ class TelephoneAgent(Agent):
                 and reply == canonical
             ):
                 self._generated_recap = (pending, reply)
-        except Exception:
+        except Exception as error:
             self.state.invalidate_recap()
             if self.state.outcome != "write_outcome_unknown":
                 self.state.outcome = "provider_error"
+            log_failure("tts_fallback", error)
+            self._fallback_reply = reply or FALLBACK
+            self._fallback_speech = speech
             async for frame in fallback_audio():
                 yield frame
         finally:
             if not complete:
                 self._generated_recap = None
                 self.state.invalidate_recap()
+
+
+def log_failure(stage, error):
+    """Closed diagnostic fields only; provider bodies never enter worker logs."""
+    if stage not in {
+        "configuration", "providers", "session_start", "media_connect",
+        "participant_wait", "greeting", "call_runtime", "tts_fallback",
+    }:
+        stage = "call_runtime"
+    status = getattr(error, "status_code", 0)
+    if type(status) is not int or not 100 <= status <= 599:
+        status = 0
+    kind = "timeout" if isinstance(error, TimeoutError) else "error"
+    logging.getLogger("voicebot.telephone").warning(
+        "call_failure stage=%s kind=%s status=%d", stage, kind, status
+    )
+
+
+class VoiceMetrics:
+    """Bounded per-call timing samples; no provider labels or message IDs."""
+
+    FIELDS = {
+        "stt_metrics": {"stt": "duration"},
+        "llm_metrics": {"llm_first_token": "ttft", "llm": "duration"},
+        "tts_metrics": {"tts_first_audio": "ttfb", "tts": "duration"},
+        "eou_metrics": {
+            "endpointing": "end_of_utterance_delay",
+            "transcription": "transcription_delay",
+        },
+    }
+
+    def __init__(self):
+        self.samples = defaultdict(lambda: deque(maxlen=60))
+
+    def observe(self, event):
+        metrics = getattr(event, "metrics", None)
+        for stage, field in self.FIELDS.get(getattr(metrics, "type", None), {}).items():
+            self._add(stage, getattr(metrics, field, None))
+
+    def observe_playback(self, event):
+        item = getattr(event, "item", None)
+        metrics = getattr(item, "metrics", None)
+        if getattr(item, "role", None) == "assistant" and isinstance(metrics, dict):
+            self._add("reply_first_audio", metrics.get("e2e_latency"))
+
+    def _add(self, stage, value):
+        if type(value) in {int, float} and math.isfinite(value) and 0 <= value <= 600:
+            self.samples[stage].append(value)
+
+    def log_summary(self):
+        logger = logging.getLogger("voicebot.telephone")
+        for stage, values in sorted(self.samples.items()):
+            ordered = sorted(values)
+            if not ordered:
+                continue
+            logger.info(
+                "voice_metrics stage=%s samples=%d p50_ms=%d p95_ms=%d",
+                stage,
+                len(ordered),
+                round(ordered[(len(ordered) - 1) // 2] * 1000),
+                round(ordered[math.ceil(len(ordered) * 0.95) - 1] * 1000),
+            )
 
 
 async def fallback_audio():
@@ -324,8 +415,11 @@ async def entrypoint(ctx: JobContext):
     adapter = state = session = None
     failed = asyncio.Event()
     interruption_tasks = set()
+    metrics = VoiceMetrics()
+    stage = "configuration"
     try:
         validate_environment()
+        config = VoiceConfig.from_env()
         adapter = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"],
             os.environ["EASY_API_KEY"],
@@ -334,18 +428,37 @@ async def entrypoint(ctx: JobContext):
             state_db=os.environ["EASY_STATE_DB"],
             allow_writes=True,
         )
-        state = CallTools(Dispatcher(slot=adapter))
+        stay = None
+        if os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES")) == "1":
+            stay = DemoStayAdapter(
+                os.environ.get("STAY_STATE_DB")
+                or os.path.join(os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db")
+            )
+        state = CallTools(Dispatcher(slot=adapter, stay=stay))
+        stage = "providers"
+        chat_options = config.chat_options()
+        # The Groq plugin does not expose include_reasoning. It forwards only
+        # delta.content/tool calls; reasoning never reaches its speech output.
+        chat_options.pop("include_reasoning", None)
+        voice = os.environ.get("AZURE_VOICE", "et-EE-AnuNeural").strip()
+        language = os.environ.get("AZURE_LANG", "et-EE").strip()
+        if not voice.startswith("et-EE-") or language != "et-EE":
+            raise ValueError("Estonian speech voice required")
         session = AgentSession(
-            stt=groq.STT(language="et", api_key=os.environ["GROQ_API_KEY"]),
+            stt=groq.STT(
+                model=config.stt_model,
+                language=STT_LANGUAGE,
+                api_key=os.environ["GROQ_API_KEY"],
+            ),
             llm=groq.LLM(
-                model="openai/gpt-oss-20b",
+                model=config.chat_model,
                 api_key=os.environ["GROQ_API_KEY"],
                 parallel_tool_calls=False,
-                max_completion_tokens=512,
+                **chat_options,
             ),
             tts=azure.TTS(
-                voice="et-EE-AnuNeural",
-                language="et-EE",
+                voice=voice,
+                language=language,
                 speech_key=os.environ["AZURE_SPEECH_KEY"],
                 speech_region=os.environ["AZURE_REGION"],
             ),
@@ -371,15 +484,27 @@ async def entrypoint(ctx: JobContext):
             ),
         )
         session.on("conversation_item_added", agent.on_conversation_item_added)
+        session.on("conversation_item_added", metrics.observe_playback)
+        session.on("metrics_collected", metrics.observe)
         session.on("error", lambda ev: on_provider_error(failed, ev, state=state))
         ctx.room.on("participant_disconnected", lambda p: closed.set())
-        await session.start(agent=agent, room=ctx.room, record=False)
-        await ctx.connect()
-        await ctx.room.local_participant.set_attributes(
-            {"voicebot.call_id": state.call_id}
+        stage = "session_start"
+        await asyncio.wait_for(
+            session.start(agent=agent, room=ctx.room, record=False), timeout=20
         )
-        await asyncio.wait_for(ctx.wait_for_participant(), timeout=30)
-        session.say(GREETING)
+        stage = "media_connect"
+        await asyncio.wait_for(ctx.connect(), timeout=10)
+        await asyncio.wait_for(
+            ctx.room.local_participant.set_attributes({"voicebot.call_id": state.call_id}),
+            timeout=5,
+        )
+        stage = "participant_wait"
+        await asyncio.wait_for(ctx.wait_for_participant(), timeout=20)
+        stage = "greeting"
+        greeting = session.say(GREETING)
+        if inspect.isawaitable(greeting):
+            await asyncio.wait_for(greeting, timeout=20)
+        stage = "call_runtime"
         tasks = [asyncio.create_task(closed.wait()), asyncio.create_task(failed.wait())]
         try:
             done, _ = await asyncio.wait(
@@ -392,7 +517,8 @@ async def entrypoint(ctx: JobContext):
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception:
+    except Exception as error:
+        log_failure(stage, error)
         failed.set()
         if session is not None:
             await close_session(session)
@@ -404,6 +530,7 @@ async def entrypoint(ctx: JobContext):
         for task in interruption_tasks:
             task.cancel()
         await asyncio.gather(*interruption_tasks, return_exceptions=True)
+        metrics.log_summary()
         await cleanup_call(ctx, session, adapter, state=state, failed=failed.is_set())
 
 

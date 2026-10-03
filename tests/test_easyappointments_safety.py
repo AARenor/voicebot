@@ -451,6 +451,7 @@ class TestAmbiguousWrites(unittest.TestCase):
                     " WHERE idempotency_key='k-age-1'"
                 )
                 conn.commit()
+            conn.close()
             out2 = run(a.confirm(hold.hold_id, dict(GUEST), "k-age-1"))
             self.assertEqual(out2["error"], "write_outcome_unknown")
             self.assertEqual(posts, [1])

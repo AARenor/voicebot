@@ -17,7 +17,7 @@ import httpx
 sys.path.insert(0, "voicebot")
 
 from app import turn  # noqa: E402
-from app.booking.base import Hold, HoldLedger, StayAdapter, UnknownQuoteError  # noqa: E402
+from app.booking.base import HoldLedger, StayAdapter, UnknownQuoteError  # noqa: E402
 from app.booking.tools import Dispatcher, speak_offer  # noqa: E402
 from app.knowledge import ingest, open_db, retrieve  # noqa: E402
 from app.providers.azure_tts import AzureTtsClient  # noqa: E402
@@ -435,7 +435,7 @@ class TestValidation(unittest.TestCase):
         stay_names = {t["function"]["name"] for t in stay.available_tools()}
         self.assertEqual(
             stay_names,
-            {"search_availability", "hold_offer", "confirm_booking"},
+            {"search_availability", "hold_offer", "confirm_booking", "cancel_booking"},
         )
 
         from app.booking.apaleo import ApaleoAdapter

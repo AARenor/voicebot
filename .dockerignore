@@ -1,6 +1,9 @@
 .env*
 !.env.example
 .venv/
+.venv-media/
+.pytest_cache/
+output/
 __pycache__/
 *.pyc
 .opencode/

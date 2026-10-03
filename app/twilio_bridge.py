@@ -51,6 +51,24 @@ FALLBACK_FILE = Path(__file__).parent / "audio" / "unavailable-et.wav"
 STATE = web.AppKey("twilio_state", SimpleNamespace)
 
 
+class BridgeLogs(logging.Filter):
+    def filter(self, record):
+        return record.name == "voicebot.twilio"
+
+
+def log_bridge_failure(stage, error):
+    if stage not in {"handshake", "native_setup", "media_stream", "first_audio", "output"}:
+        stage = "media_stream"
+    code = "timeout" if isinstance(error, TimeoutError) else "error"
+    if isinstance(error, BridgeError) and error.code in {
+        "media_invalid", "media_limit", "message_invalid", "output_invalid", "output_limit",
+    }:
+        code = error.code
+    logging.getLogger("voicebot.twilio").warning(
+        "bridge_failure stage=%s code=%s", stage, code
+    )
+
+
 class BridgeDisconnected(Exception):
     pass
 
@@ -180,6 +198,7 @@ class TwilioSender:
         self.lock, self.first_audio = asyncio.Lock(), asyncio.Event()
         self.epoch, self.samples, self.clears, self.next_frame = 0, 0, 0, 0.0
         self.native_marked = False
+        self.started = time.monotonic()
 
     async def audio(self, pcm, *, native=False):
         if not isinstance(pcm, bytes) or not 2 <= len(pcm) <= 3200 or len(pcm) % 2:
@@ -204,6 +223,11 @@ class TwilioSender:
                 await asyncio.wait_for(self.socket.send_json(message), IO_TIMEOUT)
                 self.next_frame = time.monotonic() + len(frame) / 16000
                 if audioop.rms(frame, 2) > 32:
+                    if not self.first_audio.is_set():
+                        logging.getLogger("voicebot.twilio").info(
+                            "bridge_first_audio elapsed_ms=%d",
+                            round((time.monotonic() - self.started) * 1000),
+                        )
                     self.first_audio.set()
                     if native and not self.native_marked:
                         await asyncio.wait_for(
@@ -380,7 +404,8 @@ class LiveKitCall:
                 ):
                     raise BridgeError("output_invalid")
                 await self.sender.audio(bytes(frame.data), native=True)
-        except Exception:
+        except Exception as error:
+            log_bridge_failure("output", error)
             self.failed = True
             self.ended.set()
         # Track retirement is not participant hangup: the same bound agent may
@@ -615,7 +640,10 @@ class IncomingAudio:
 async def call_deadline(sender, started):
     try:
         remaining = max(0, FIRST_AUDIO_TIMEOUT - (time.monotonic() - started))
-        await asyncio.wait_for(sender.first_audio.wait(), remaining)
+        if not sender.first_audio.is_set():
+            if remaining <= 0:
+                return "first_audio_timeout"
+            await asyncio.wait_for(sender.first_audio.wait(), remaining)
     except TimeoutError:
         return "first_audio_timeout"
     await asyncio.sleep(max(0, CALL_TIMEOUT - (time.monotonic() - started)))
@@ -726,6 +754,7 @@ def create_app():
         state.running.add(asyncio.current_task())
         call = sender = native = None
         tasks, close_code = [], 1000
+        stage = "handshake"
         try:
             await socket.prepare(request)
             if request.transport is not None:
@@ -750,6 +779,7 @@ def create_app():
             protocol = MediaProtocol(config.account, call, stream)
             native = LiveKitCall(config, sender)
             incoming = IncomingAudio(socket, protocol, native)
+            stage = "native_setup"
             reader = asyncio.create_task(incoming.read())
             setup = asyncio.create_task(asyncio.wait_for(native.start(), SETUP_TIMEOUT))
             ended = asyncio.create_task(native.ended.wait())
@@ -763,6 +793,7 @@ def create_app():
                     raise RuntimeError("native output failed")
                 return socket
             setup.result()
+            stage = "media_stream"
             tasks = [
                 reader,
                 ended,
@@ -776,12 +807,18 @@ def create_app():
             for task in done:
                 result = task.result()
                 if result == "first_audio_timeout":
+                    stage = "first_audio"
                     raise TimeoutError("first audio unavailable")
             if getattr(native, "failed", False):
                 raise RuntimeError("native output failed")
-        except (BridgeError, BridgeDisconnected):
+        except BridgeDisconnected:
+            close_code = 1000
+        except BridgeError as error:
+            if call is not None:
+                log_bridge_failure(stage, error)
             close_code = 1008
-        except Exception:
+        except Exception as error:
+            log_bridge_failure(stage, error)
             close_code = 1011
             for task in tasks:
                 task.cancel()
@@ -820,7 +857,10 @@ def create_app():
 def main():
     # This dedicated process emits no request URLs, headers, bodies, SDK
     # exceptions, participant IDs, transcripts, or raw credential-bearing logs.
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.NOTSET)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(BridgeLogs())
     web.run_app(
         create_app(),
         host="0.0.0.0",

@@ -374,7 +374,7 @@ def test_plan_decline_expiry_require_fresh_consent_and_unknown_blocks_retry():
     asyncio.run(run())
 
 
-def test_conversation_tools_advertise_only_compact_paths_and_preserve_manual_tools():
+def test_conversation_tools_advertise_catalogue_and_service_selection_paths():
     state, _ = state_and_backend()
     assert callable(getattr(state, "conversation_tools", None)), (
         "compact tools are missing"
@@ -385,6 +385,10 @@ def test_conversation_tools_advertise_only_compact_paths_and_preserve_manual_too
         "plan_demo_booking",
         "confirm_slot_booking",
         "cancel_slot_booking",
+        "get_slot_catalogue",
+        "search_slots",
+        "hold_slot",
+        "prepare_demo_booking",
     }
     assert {
         "get_slot_catalogue",
@@ -413,7 +417,9 @@ def test_compact_prompt_keeps_fiction_faq_names_date_safety_without_contacts_or_
     assert CONSENT_TEXT in instructions
     assert "plan_demo_booking" in instructions
     assert "Ära küsi päris" in instructions
-    assert "get_slot_catalogue" not in instructions
+    assert "get_slot_catalogue" in instructions
+    assert "get_stay_catalogue" in instructions
+    assert "search_availability" in instructions
     assert state.call_id not in instructions
     assert "example.invalid" not in instructions and "+120255501" not in instructions
     assert "2026-10-05" not in instructions and "working_hours" not in instructions
@@ -423,7 +429,7 @@ def test_compact_prompt_keeps_fiction_faq_names_date_safety_without_contacts_or_
     compact = len(instructions) + len(
         json.dumps(state.conversation_tools(), ensure_ascii=False)
     )
-    assert compact < full * 0.6, (full, compact)
+    assert compact < full, (full, compact)
 
 
 def test_native_sdk_compact_tools_delegate_one_plan_and_leave_default_tools_available():
@@ -444,6 +450,10 @@ def test_native_sdk_compact_tools_delegate_one_plan_and_leave_default_tools_avai
             "plan_demo_booking",
             "confirm_slot_booking",
             "cancel_slot_booking",
+            "get_slot_catalogue",
+            "search_slots",
+            "hold_slot",
+            "prepare_demo_booking",
         }
         manual = {get_raw_function_info(t).name for t in sdk_tools(state)}
         assert {"search_slots", "hold_slot", "prepare_demo_booking"} <= manual

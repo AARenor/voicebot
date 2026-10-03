@@ -131,9 +131,13 @@ Carrier reference:
 
 ## Why the hackathon cap is three
 
-Current provider limits are organization/resource-wide, not per caller:
+Provider limits are organization/resource-wide, not per caller. The following
+table and three-call calculation describe the original 2026-09-30 pilot.
+The 2026-10-03 defaults use `openai/gpt-oss-120b` and `whisper-large-v3`;
+their actual account quotas must be checked before applying this calculation
+or increasing concurrency. This historical table is not current capacity proof.
 
-| Provider path | Current published base limit |
+| Historical provider path | Recorded base limit |
 | --- | --- |
 | Groq `openai/gpt-oss-20b` | 30 RPM, 1,000 RPD, 8,000 TPM, 200,000 TPD |
 | Groq `whisper-large-v3-turbo` | 20 RPM, 2,000 RPD, 7,200 audio sec/hour, 28,800 audio sec/day |
@@ -152,8 +156,9 @@ response plus two tool rounds). A conservative fast-conversation bound is:
 3 callers × 3 user turns/minute = 9 STT RPM and 9 TTS requests/minute
 ```
 
-That leaves little LLM burst headroom below 30 RPM, so three is a ceiling, not
-a target average. Enforce a Redis-backed provider token bucket at 27 LLM RPM,
+That calculation left little LLM burst headroom below 30 RPM, so the original
+three-call cap was a ceiling, not a target average. Its proposed Redis-backed
+provider token bucket was 27 LLM RPM,
 18 STT RPM, and 18 TTS requests/60s so isolated job subprocesses share one
 budget. Honor `retry-after` on 429 responses.
 

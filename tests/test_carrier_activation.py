@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import sys
 from pathlib import Path
 import subprocess
 from unittest.mock import patch
@@ -82,15 +84,18 @@ def test_docker_failure_is_closed_and_nonzero(capsys):
 
 
 def test_clean_environment_failure_is_nonzero():
+    clean_env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"}
+    if os.name == "nt":
+        clean_env["SystemRoot"] = os.environ["SystemRoot"]
     result = subprocess.run(
         [
-            "/usr/bin/python3",
+            sys.executable,
             str(ROOT / "deploy/telephony/activate.py"),
             "check",
             "--source-container",
             "voicebot-nonexistent-fixture",
         ],
-        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+        env=clean_env,
         capture_output=True,
         text=True,
     )

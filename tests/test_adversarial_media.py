@@ -49,7 +49,7 @@ def test_failure_audio_is_microphone_and_source_closes_on_every_path(failure):
     asyncio.run(run())
 
 
-def test_known_cached_apology_history_mismatch_is_not_hidden_as_a_pass():
+def test_cached_apology_history_matches_actual_audio():
     from livekit.agents import AgentSession, tts
     from livekit.agents.voice import io
     from app.booking.tools import Dispatcher
@@ -117,11 +117,11 @@ def test_known_cached_apology_history_mismatch_is_not_hidden_as_a_pass():
                     if getattr(item, "role", None) == "assistant"
                 ]
                 assert len(assistant) == 1
-                if assistant[0].text_content == GREETING:
-                    pytest.xfail(
-                        "Open P2: cached apology PCM is labelled with original greeting in native history"
-                    )
                 assert assistant[0].text_content == FALLBACK
+                assert [
+                    item.text_content for item in session.history.items
+                    if getattr(item, "role", None) == "assistant"
+                ] == [FALLBACK]
             finally:
                 await session.aclose()
 
@@ -362,11 +362,12 @@ def test_terminal_fallback_rejects_retired_mic_controls_and_close_cancels_predec
             agent = NS(kind=4, identity="fixture-agent")
             mic = NS(source=rtc.TrackSource.SOURCE_MICROPHONE)
             call._on_track(NS(kind=1, name="microphone"), mic, agent)
-            packet = lambda: NS(
-                topic="voicebot.interruption",
-                data=b"clear:" + b"a" * 32,
-                participant=agent,
-            )
+            def packet():
+                return NS(
+                    topic="voicebot.interruption",
+                    data=b"clear:" + b"a" * 32,
+                    participant=agent,
+                )
             if scenario == "late_clear":
                 call._on_track(NS(kind=1, name="voicebot-fallback"), mic, agent)
             else:

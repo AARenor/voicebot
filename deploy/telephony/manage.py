@@ -45,7 +45,17 @@ def environment(source):
         raise ValueError("shared booking journal not identified")
     env = dict(os.environ)
     env.update({k: source_env[k] for k in required})
-    for k in ("EASY_AUTH_SCHEME", "EASY_API_PREFIX"):
+    for k in (
+        "EASY_AUTH_SCHEME",
+        "EASY_API_PREFIX",
+        "GROQ_CHAT_MODEL",
+        "GROQ_STT_MODEL",
+        "GROQ_MAX_COMPLETION_TOKENS",
+        "AZURE_VOICE",
+        "AZURE_LANG",
+        "STAY_STATE_DB",
+        "STAY_DEMO_WRITES",
+    ):
         if k in source_env:
             env[k] = source_env[k]
     env["VOICEBOT_DATA_VOLUME"] = volumes[0]

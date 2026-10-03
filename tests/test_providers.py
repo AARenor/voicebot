@@ -40,7 +40,11 @@ class TestGroq(unittest.TestCase):
 
     def test_chat_uses_current_model(self):
         def handler(request):
-            self.assertEqual(json.loads(request.content)["model"], "openai/gpt-oss-20b")
+            body = json.loads(request.content)
+            self.assertEqual(body["model"], "openai/gpt-oss-120b")
+            self.assertEqual(body["reasoning_effort"], "low")
+            self.assertFalse(body["include_reasoning"])
+            self.assertEqual(body["max_completion_tokens"], 2048)
             return httpx.Response(
                 200,
                 json={"choices": [{"message": {"role": "assistant", "content": "OK"}}]},
@@ -51,6 +55,8 @@ class TestGroq(unittest.TestCase):
     def test_transcribe(self):
         def handler(request):
             self.assertIn("/openai/v1/audio/transcriptions", str(request.url))
+            self.assertIn(b"whisper-large-v3", request.content)
+            self.assertIn(b'name="language"\r\n\r\net\r\n', request.content)
             return httpx.Response(200, json={"text": "Tere!"})
 
         self.assertEqual(self.client(handler).transcribe(b"RIFF"), "Tere!")

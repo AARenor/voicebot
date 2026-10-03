@@ -220,9 +220,14 @@ def test_compose_parser_keeps_bridge_separate_and_only_twilio_paths_public():
 def test_probe_clean_environment_exits_closed_without_network_or_key_output(arguments):
     script = ROOT / "deploy/telephony/twilio_probe.py"
     assert script.exists(), "bounded carrier protocol probe missing"
+    clean_env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"}
+    if os.name == "nt":
+        # Windows needs its OS directory to initialize Python's async socket
+        # runtime. No application/provider credentials enter this clean process.
+        clean_env["SystemRoot"] = os.environ["SystemRoot"]
     result = subprocess.run(
         [os.sys.executable, str(script), *arguments],
-        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+        env=clean_env,
         capture_output=True,
         text=True,
         timeout=10,

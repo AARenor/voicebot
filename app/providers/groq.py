@@ -4,11 +4,8 @@ Endpoints follow Groq's OpenAI-compatible API (verified against
 console.groq.com/docs/speech-to-text + /docs/text-chat patterns):
   POST {base}/openai/v1/audio/transcriptions  (multipart: file, model)
   POST {base}/openai/v1/chat/completions      (json: model, messages[, tools])
-Free tier: whisper 20 RPM / 2K RPD / 7.2K ASH / 28.8K ASD (2026-09-29);
-429s carry retry-after — caller retries with backoff (Groq → Gemini →
-OpenRouter chain lives in pipeline, not here).
-Sync httpx.Client: concurrent async turns serialize on I/O — acceptable
-for the single-worker pilot; move to AsyncClient with Phase 2 volume.
+429s carry retry-after; the turn controller owns retries and failover.
+Sync requests are sent through the HTTP turn controller's thread boundary.
 """
 
 from __future__ import annotations
@@ -20,10 +17,14 @@ from .errors import (
     RetryableProviderError,
     raise_for_provider,
 )
+from .voice_config import (
+    CHAT_MODEL as CHAT_MODEL,
+    STT_LANGUAGE,
+    STT_MODEL as STT_MODEL,
+    VoiceConfig,
+)
 
 DEFAULT_BASE_URL = "https://api.groq.com"
-STT_MODEL = "whisper-large-v3-turbo"  # $0.04/hr; NOT the TalTech ET finetune
-CHAT_MODEL = "openai/gpt-oss-20b"  # Groq's replacement for retired Llama 3.1 8B
 
 
 class GroqClient:
@@ -32,7 +33,10 @@ class GroqClient:
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
         transport: httpx.BaseTransport | None = None,
+        *,
+        config: VoiceConfig | None = None,
     ) -> None:
+        self.config = VoiceConfig.from_env() if config is None else config
         self._key = api_key
         self._base = base_url.rstrip("/")
         self._http = httpx.Client(
@@ -56,14 +60,19 @@ class GroqClient:
         return response
 
     def transcribe(
-        self, audio: bytes, filename: str = "chunk.wav", model: str = STT_MODEL
+        self, audio: bytes, filename: str = "chunk.wav", model: str | None = None
     ) -> str:
         """Transcribe one VAD chunk. Returns plain text."""
         response = self._post(
             "/openai/v1/audio/transcriptions",
             "groq.transcribe",
             files={"file": (filename, audio, "audio/wav")},
-            data={"model": model},
+            data={
+                "model": model or self.config.stt_model,
+                "language": STT_LANGUAGE,
+                "response_format": "json",
+                "temperature": "0",
+            },
         )
         try:
             payload = response.json()
@@ -77,18 +86,29 @@ class GroqClient:
     def chat(
         self,
         messages: list[dict],
-        model: str = CHAT_MODEL,
+        model: str | None = None,
         tools: list[dict] | None = None,
     ) -> dict:
         """Chat completion. Returns the assistant message dict
         (may carry tool_calls for booking function-calling)."""
-        body: dict = {"model": model, "messages": messages}
+        model = model or self.config.chat_model
+        body: dict = {
+            "model": model,
+            "messages": messages,
+            **self.config.chat_options(model),
+        }
         if tools:
             body["tools"] = tools
+            body["parallel_tool_calls"] = False
         response = self._post("/openai/v1/chat/completions", "groq.chat", json=body)
         try:
             payload = response.json()
-            message = payload["choices"][0]["message"]
-            return dict(message)
+            choice = payload["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise ProviderError("groq.chat: incomplete completion")
+            message = dict(choice["message"])
+            # Provider reasoning is neither a spoken reply nor conversation data.
+            message.pop("reasoning", None)
+            return message
         except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
             raise ProviderError(f"groq.chat: bad payload: {exc}") from exc

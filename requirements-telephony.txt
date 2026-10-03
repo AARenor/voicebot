@@ -7,3 +7,5 @@ livekit-plugins-openai==1.8.4
 livekit-plugins-azure==1.8.4
 livekit-plugins-silero==1.8.4
 httpx==0.28.1
+# Windows has no system IANA timezone database for Tallinn booking dates.
+tzdata==2026.4 ; sys_platform == 'win32'

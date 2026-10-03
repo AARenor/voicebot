@@ -33,7 +33,7 @@ def test_saved_profile_faq_and_guests_are_loaded_without_booking_examples():
 
 def test_loader_ignores_poisoned_example_dates_hours_and_ids(tmp_path):
     demo = demo_module()
-    source = json.loads(DATA_PATH.read_text())
+    source = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     source["reference_date"] = "1900-01-01"
     source["example_bookings"] = [{"start": "1900-01-01", "status": "confirmed"}]
     source["existing_backend_reference"] = {
@@ -42,7 +42,7 @@ def test_loader_ignores_poisoned_example_dates_hours_and_ids(tmp_path):
     }
     source["tool_example"] = {"search": "invent availability"}
     path = tmp_path / "demo.json"
-    path.write_text(json.dumps(source))
+    path.write_text(json.dumps(source), encoding="utf-8")
     assert demo.load_demo_data(path) == demo.load_demo_data()
 
 
@@ -61,7 +61,7 @@ def test_loader_ignores_poisoned_example_dates_hours_and_ids(tmp_path):
 )
 def test_loader_rejects_real_guest_or_unsafe_fixture_configuration(tmp_path, mutation):
     demo = demo_module()
-    source = json.loads(DATA_PATH.read_text())
+    source = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     if mutation == "non_synthetic":
         source["synthetic"] = False
     elif mutation == "automatic_import":
@@ -79,7 +79,7 @@ def test_loader_rejects_real_guest_or_unsafe_fixture_configuration(tmp_path, mut
     else:
         source["safety"]["speak_prices"] = True
     path = tmp_path / "demo.json"
-    path.write_text(json.dumps(source))
+    path.write_text(json.dumps(source), encoding="utf-8")
     with pytest.raises(ValueError, match="invalid synthetic demo data"):
         demo.load_demo_data(path)
 
@@ -127,5 +127,5 @@ def test_readers_cannot_mutate_fixture_guests_or_faq():
 def test_telephony_image_copies_approved_demo_fixtures():
     assert (
         "COPY data/demo/ ./data/demo/"
-        in (ROOT / "deploy/telephony/Dockerfile").read_text()
+        in (ROOT / "deploy/telephony/Dockerfile").read_text(encoding="utf-8")
     )

@@ -5,6 +5,7 @@ async (page) => {
   let mode = 'loaded';
   let releaseBooking;
   let turns = 0;
+  let speechFails = false;
   const requests = [];
   const services = [{id:1,name:'Klassikaline massaaž',duration:60},{id:2,name:'Näohooldus',duration:45},{id:3,name:'Lõõgastav kehahooldus',duration:90}];
   await page.unroute('**/api/**');
@@ -13,10 +14,12 @@ async (page) => {
     const url = new URL(request.url());
     requests.push(url.pathname);
     const reply = (body, status = 200) => route.fulfill({status,contentType:'application/json',body:JSON.stringify(body),headers:{'Cache-Control':'no-store'}});
-    if (url.pathname === '/api/status') return reply({capabilities:{text_turn_ready:true},telephone:{media_credentials_configured:true,public_ingress_verified:false,carrier_call_verified:false}});
+    if (url.pathname === '/api/status') return reply({capabilities:{text_turn_ready:true},telephone:{media_credentials_configured:true,public_ingress_verified:false,carrier_call_verified:false},models:{stt:{model:'whisper-large-v3'},llm:{model:'openai/gpt-oss-120b'},tts:{voice:'et-EE-AnuNeural'}}});
     if (request.headers().authorization !== 'Bearer fixture-operator') return reply({},403);
     if (url.pathname === '/api/calls') return reply({calls:[{at:'2026-10-02 14:32:18',lang:'et',outcome:'tools_ok',source:'demo'},{at:'2026-10-02 14:18:07',lang:'et',outcome:'ok',source:'demo'}]});
     if (url.pathname === '/api/catalogue') return reply({services,providers:[{id:1,name:'Demo teenindaja',services:[1,2,3]}]});
+    if (url.pathname === '/api/rooms') return reply({synthetic:true,room_types:[]});
+    if (url.pathname === '/api/stays') return reply({synthetic:true,items:[]});
     if (url.pathname === '/api/bookings') {
       if (mode === 'delayed') await new Promise(resolve => releaseBooking = resolve);
       if (mode === 'failure') return reply({},503);
@@ -30,7 +33,7 @@ async (page) => {
     if (url.pathname === '/api/turn') {
       turns++;
       const input = request.postDataJSON();
-      return reply({text_heard:input.text,reply:'Klassikaline massaaž kestab 60 minutit. Mis päeval soovid tulla?',outcome:'ok',audio_b64:'',turn_count:turns,expires_in_s:590,booking_changes:[]});
+      return reply({text_heard:input.text,reply:'Klassikaline massaaž kestab 60 minutit. Mis päeval soovid tulla?',outcome:speechFails?'tts_failed':'ok',tts_failed:speechFails,warnings:speechFails?[{stage:'tts',code:'reply_audio_unavailable'}]:[],timings_ms:{stt:0,llm:400,tools:25,tts:75,total:500},audio_b64:'',turn_count:turns,expires_in_s:590,booking_changes:[]});
     }
     return reply({},404);
   });
@@ -92,9 +95,19 @@ async (page) => {
   await page.locator('#demo-send').click();
   await page.waitForFunction(()=>document.querySelectorAll('#demo-messages li').length===3);
   assert(await page.locator('#demo-messages .user-message').count()===1,'user bubble missing');
+  assert(await page.locator('#demo-timings').isVisible(),'turn timings missing');
+  assert((await page.locator('#demo-models').textContent()).includes('openai/gpt-oss-120b'),'configured model missing');
   await page.screenshot({path:'output/playwright/after-conversation-desktop.png',fullPage:true});
+  speechFails=true;
+  await page.locator('#demo-text').fill('Küsin veel ühe küsimuse.');
+  await page.locator('#demo-send').click();
+  await page.waitForFunction(()=>!state.turnBusy && document.querySelectorAll('#demo-messages li').length===5);
+  assert(await page.locator('#demo-warning').isVisible(),'speech failure warning missing');
+  assert((await page.locator('#demo-warning').textContent()).includes('tekstina alles'),'speech failure omitted text fallback guidance');
+  assert(await page.locator('#demo-messages .assistant-message').count()===3,'speech failure discarded text reply');
+  await page.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Fixture microphone permission denied','NotAllowedError');};});
   await page.locator('#demo-mic').click();
-  await page.waitForFunction(()=>document.getElementById('demo-status').classList.contains('error'));
+  await page.waitForFunction(()=>document.getElementById('demo-status').classList.contains('error') && document.getElementById('demo-status').textContent.includes('Mikrofon'));
   assert((await page.locator('#demo-status').textContent()).includes('Mikrofon'),'microphone denial did not give guidance');
   await page.locator('.navigation a[href="#calls-section"]').click();
   await page.waitForFunction(()=>document.querySelector('.navigation [aria-current]')?.getAttribute('href')==='#calls-section');
@@ -132,5 +145,7 @@ async (page) => {
   assert(await page.locator('#token').inputValue()==='','stalled sign-in retained credential');
   assert(stalledSignIns===1,'stalled sign-in retried automatically');
   assert(errors.length===0,`browser errors: ${errors.join('; ')}`);
+  await page.unroute('**/api/calls');
+  await page.unroute('**/api/**');
   return {result:'passed',layouts,turns,errors,screenshots:5};
 }

@@ -1,4 +1,5 @@
 .venv/
+.venv-media/
 __pycache__/
 *.pyc
 .env*

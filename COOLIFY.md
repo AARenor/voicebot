@@ -53,6 +53,15 @@ Single-process assumption: in-memory search/hold snapshots + demo STORE diverge 
 replicas scale past 1 — keep Coolify replicas at exactly 1.
 
 Scale continuous-call **agent workers** separately from this web/API container.
+The fictional room demo uses `STAY_STATE_DB=/data/stay-booking.db` on this same
+volume. `STAY_DEMO_WRITES` follows `EASY_DEMO_WRITES` when absent; explicit `0`
+disables it. The native worker uses the identical room database path. The room
+inventory and receipts must survive replacement alongside the Easy journal;
+never initialize a different worker volume for this feature. Public hotel
+pitching content is served at `/hotel`; its contact number comes from
+`PUBLIC_PHONE_NUMBER`, or the configured Twilio/SIP number. The public DTOs
+contain catalogue/property information, and all booking writes retain operator
+authentication and call-owned confirmation rules.
 The Easy write journal persists on `/data` and its file lock coordinates a
 shared single-host journal. This does not make search/hold state distributed.
 

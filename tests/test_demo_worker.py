@@ -211,6 +211,10 @@ def test_native_agent_uses_compact_prompt_and_only_conversation_tools():
         "plan_demo_booking",
         "confirm_slot_booking",
         "cancel_slot_booking",
+        "get_slot_catalogue",
+        "search_slots",
+        "hold_slot",
+        "prepare_demo_booking",
     }
 
 

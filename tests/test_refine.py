@@ -1,6 +1,5 @@
 """Refine-round tests: calls log, seeded FAQ wiring, UI badge/refresh."""
 
-import os
 import sys
 import unittest
 
@@ -98,7 +97,7 @@ class TestUiBadge(unittest.TestCase):
             / "dashboard"
             / "static"
             / "index.html"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         self.assertIn("/api/status", html)
         self.assertIn("setInterval", html)
         self.assertIn("30000", html)

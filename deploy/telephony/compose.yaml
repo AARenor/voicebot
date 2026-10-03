@@ -38,13 +38,20 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?required}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?required}
       GROQ_API_KEY: ${GROQ_API_KEY:?required}
+      GROQ_CHAT_MODEL: ${GROQ_CHAT_MODEL:-openai/gpt-oss-120b}
+      GROQ_STT_MODEL: ${GROQ_STT_MODEL:-whisper-large-v3}
+      GROQ_MAX_COMPLETION_TOKENS: ${GROQ_MAX_COMPLETION_TOKENS:-2048}
       AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:?required}
       AZURE_REGION: ${AZURE_REGION:?required}
+      AZURE_VOICE: ${AZURE_VOICE:-et-EE-AnuNeural}
+      AZURE_LANG: ${AZURE_LANG:-et-EE}
       EASY_BASE_URL: ${EASY_BASE_URL:?required}
       EASY_API_KEY: ${EASY_API_KEY:?required}
       EASY_API_PREFIX: ${EASY_API_PREFIX:-/index.php/api/v1}
       EASY_AUTH_SCHEME: ${EASY_AUTH_SCHEME:-Bearer }
       EASY_STATE_DB: /data/easy-booking.db
+      STAY_STATE_DB: /data/stay-booking.db
+      STAY_DEMO_WRITES: ${STAY_DEMO_WRITES:-1}
       CALLS_DB: /data/calls.db
       VOICEBOT_AGENT_NAME: ${VOICEBOT_AGENT_NAME:-voicebot}
       EASY_DEMO_WRITES: "1"

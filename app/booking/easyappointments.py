@@ -35,6 +35,7 @@ import os
 import re
 import sqlite3
 import time
+from contextlib import contextmanager
 from datetime import date as calendar_date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -149,6 +150,55 @@ def _is_int_like(value) -> bool:
         return False
 
 
+def _working_hours(record):
+    """Allowlist the provider's current working plan; missing is unknown."""
+    settings = record.get("settings")
+    if not isinstance(settings, dict):
+        return None
+    plan = settings.get("workingPlan")
+    if isinstance(plan, str):
+        try:
+            plan = json.loads(plan) if len(plan) <= 16000 else None
+        except ValueError:
+            return None
+    if not isinstance(plan, dict):
+        return None
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    hours = {}
+    try:
+        for day in days:
+            if day not in plan:
+                return None
+            value = plan[day]
+            if value is None:
+                hours[day] = None
+                continue
+            if not isinstance(value, dict):
+                return None
+            start, end = value["start"], value["end"]
+            if any(not isinstance(v, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
+                   for v in (start, end)) or end <= start:
+                return None
+            breaks = value.get("breaks", [])
+            if not isinstance(breaks, list) or len(breaks) > 6:
+                return None
+            clean_breaks = []
+            for pause in breaks:
+                pause_start, pause_end = pause["start"], pause["end"]
+                if any(not isinstance(v, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", v)
+                       for v in (pause_start, pause_end)) or not start <= pause_start < pause_end <= end:
+                    return None
+                clean_breaks.append({"start": pause_start, "end": pause_end})
+            clean_breaks.sort(key=lambda pause: (pause["start"], pause["end"]))
+            if any(previous["end"] > following["start"]
+                   for previous, following in zip(clean_breaks, clean_breaks[1:])):
+                return None
+            hours[day] = {"start": start, "end": end, "breaks": clean_breaks}
+    except (KeyError, TypeError):
+        return None
+    return hours
+
+
 class _Journal:
     """Durable idempotency journal (SQLite). No guest PII stored."""
 
@@ -156,7 +206,7 @@ class _Journal:
         parent = os.path.dirname(os.path.abspath(path))
         os.makedirs(parent, exist_ok=True)
         self._path = path
-        with sqlite3.connect(path, timeout=10) as conn:
+        with self._connect() as conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS easy_writes("
                 "idempotency_key TEXT PRIMARY KEY, status TEXT NOT NULL,"
@@ -165,8 +215,17 @@ class _Journal:
             )
             conn.commit()
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._path, timeout=10)
+    @contextmanager
+    def _connect(self):
+        # Connection.__exit__ commits/rolls back but does not close the handle.
+        # Close deterministically so repeat reads do not leak descriptors or
+        # retain Windows file locks after a temporary journal is finished.
+        conn = sqlite3.connect(self._path, timeout=10)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def get(self, key: str) -> dict | None:
         with self._connect() as conn:
@@ -240,18 +299,35 @@ class _Journal:
 
 def _acquire_lock(lock_path: str, timeout: float):
     """Blocking file-lock acquisition (run via to_thread, never on loop)."""
-    import fcntl
+    import errno
 
     parent = os.path.dirname(os.path.abspath(lock_path))
     os.makedirs(parent, exist_ok=True)
     handle = open(lock_path, "a+b")
+    if os.name == "nt":
+        import msvcrt
+
+        # Windows locks a byte range rather than the entire file. Every writer
+        # uses byte zero; closing the returned handle releases that lock.
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+    else:
+        import fcntl
     deadline = time.monotonic() + timeout
     try:
         while True:
             try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if os.name == "nt":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return handle
-            except BlockingIOError:
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
                 if time.monotonic() >= deadline:
                     raise TimeoutError("easy.confirm: lock busy")
                 time.sleep(0.05)
@@ -555,9 +631,12 @@ class EasyAppointmentsAdapter(SlotAdapter):
                     str(record.get(k, "")).strip() for k in ("firstName", "lastName")
                 ).strip()
             )
-            providers.append(
-                {"id": pid, "name": name, "services": record.get("services")}
-            )
+            provider = {"id": pid, "name": name, "services": record.get("services")}
+            hours = _working_hours(record)
+            if hours is not None:
+                provider["working_hours"] = hours
+                provider["timezone"] = record.get("timezone", "Europe/Tallinn")
+            providers.append(provider)
         return {"services": services, "providers": providers}
 
     def _match_name(self, records: list, value: str, keys: tuple) -> str | None:

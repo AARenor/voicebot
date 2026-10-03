@@ -1,6 +1,5 @@
 """Session-owned HTTP demo through the same native ownership/consent gates."""
 
-import asyncio
 import base64
 import json
 import threading
@@ -210,6 +209,37 @@ def test_tts_failure_has_text_warning_and_no_secret_or_raw_exception(client):
     assert response.status_code == 200
     assert response.json()["tts_failed"] is True
     assert response.json()["audio_b64"] == ""
+    assert {"stage": "tts", "code": "reply_audio_unavailable"} in response.json()["warnings"]
+    assert set(response.json()["timings_ms"]) == {"stt", "llm", "tools", "tts", "total"}
+    assert all(value >= 0 for value in response.json()["timings_ms"].values())
+    assert "PRIVATE" not in response.text
+
+
+def test_transcription_failure_reports_the_failed_stage_without_provider_details(client):
+    class FailingStt:
+        def transcribe(self, audio):
+            raise RuntimeError("PRIVATE transcription credential")
+
+    client.app.state.stack["stt"] = FailingStt()
+    response = client.post(
+        "/api/turn",
+        json={"session_id": start(client), "audio_b64": base64.b64encode(b"fixture audio").decode()},
+        headers=AUTH,
+    )
+    assert response.status_code == 200
+    assert response.json()["fallback_used"] is True
+    assert {"stage": "stt", "code": "transcription_unavailable"} in response.json()["warnings"]
+    assert response.json()["timings_ms"]["stt"] >= 0
+    assert "PRIVATE" not in response.text
+
+
+def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client):
+    client.app.state.stack["llm_primary"] = SimpleLlm(error=RuntimeError("PRIVATE model error"))
+    response = send(client, start(client), "Tere")
+    assert response.status_code == 200
+    assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()["warnings"]
+    assert response.json()["reply"]
+    assert response.json()["audio_b64"]
     assert "PRIVATE" not in response.text
 
 
@@ -551,7 +581,8 @@ def test_http_advertises_compact_native_conversation_tools(client, tmp_path):
     client.app.state.stack["llm_primary"] = Probe()
     assert send(client, start(client), "Tere").status_code == 200
     assert "plan_demo_booking" in observed["names"]
-    assert "search_slots" not in observed["names"]
+    assert "search_slots" in observed["names"]
+    assert "get_slot_catalogue" in observed["names"]
     assert "plan_demo_booking" in observed["instructions"]
 
 

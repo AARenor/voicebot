@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
 
 import httpx
@@ -22,7 +21,7 @@ TOOL_SEARCH = {
     "type": "function",
     "function": {
         "name": "search_availability",
-        "description": "Search live availability. Returns priced offers, "
+        "description": "Search configured stay inventory. Returns backend-priced offers, "
         "each with a price_quote_id.",
         "parameters": {
             "type": "object",
@@ -31,6 +30,8 @@ TOOL_SEARCH = {
                 "checkin": {"type": "string"},
                 "checkout": {"type": "string"},
                 "adults": {"type": "integer"},
+                "children": {"type": "integer", "minimum": 0, "maximum": 8},
+                "room_type": {"type": "string"},
                 "service": {"type": "string"},
             },
         },
@@ -64,6 +65,27 @@ TOOL_CONFIRM = {
                 "idempotency_key": {"type": "string"},
             },
         },
+    },
+}
+
+TOOL_CANCEL_STAY = {
+    "type": "function",
+    "function": {
+        "name": "cancel_booking",
+        "description": "Cancel a hotel stay booking by its backend booking id.",
+        "parameters": {
+            "type": "object", "required": ["booking_id"],
+            "properties": {"booking_id": {"type": "string"}, "idempotency_key": {"type": "string"}},
+        },
+    },
+}
+
+TOOL_STAY_CATALOGUE = {
+    "type": "function",
+    "function": {
+        "name": "get_stay_catalogue",
+        "description": "List actual configured room types, capacities and disclosed property policies. Query search_availability for dates and quoted prices.",
+        "parameters": {"type": "object", "properties": {}},
     },
 }
 
@@ -159,6 +181,8 @@ BOOKING_TOOLS = [
     TOOL_SEARCH,
     TOOL_HOLD,
     TOOL_CONFIRM,
+    TOOL_CANCEL_STAY,
+    TOOL_STAY_CATALOGUE,
     TOOL_FAQ,
     TOOL_SEARCH_SLOTS,
     TOOL_HOLD_SLOT,
@@ -224,6 +248,19 @@ def _coerce_adults(args: dict) -> int:
     if not 1 <= adults <= 10:
         raise ProviderError("tools: adults out of range 1..10")
     return adults
+
+
+def _coerce_children(args: dict) -> int:
+    value = args.get("children", 0)
+    if isinstance(value, bool):
+        raise ProviderError("tools: bad children")
+    try:
+        children = int(str(value))
+    except (ValueError, TypeError):
+        raise ProviderError("tools: bad children") from None
+    if not 0 <= children <= 8:
+        raise ProviderError("tools: children out of range 0..8")
+    return children
 
 
 def _require_guest(args: dict) -> dict:
@@ -325,7 +362,9 @@ class Dispatcher:
         if self._faq is not None:
             tools.append(TOOL_FAQ)
         if self._stay is not None and getattr(self._stay, "operational", False):
-            tools.extend((TOOL_SEARCH, TOOL_HOLD, TOOL_CONFIRM))
+            tools.extend((TOOL_SEARCH, TOOL_HOLD, TOOL_CONFIRM, TOOL_CANCEL_STAY))
+            if callable(getattr(self._stay, "get_stay_catalogue", None)):
+                tools.append(TOOL_STAY_CATALOGUE)
         if self._slot is not None and getattr(self._slot, "operational", False):
             tools.extend(
                 (
@@ -337,6 +376,14 @@ class Dispatcher:
                 )
             )
         return tools
+
+    async def get_stay_hold(self, hold_id: str):
+        """Trusted call-policy read; not advertised as a model tool."""
+        stay = _require_stay(self._stay)
+        getter = getattr(stay, "get_hold", None)
+        if not callable(getter):
+            raise ProviderError("tools: stay hold read not configured")
+        return await _guarded("hold_invalid", getter, _require_str({"hold_id": hold_id}, "hold_id"))
 
     async def dispatch(self, name: str, args: dict) -> dict:
         if isinstance(args, str):
@@ -358,7 +405,8 @@ class Dispatcher:
                 stay.search_availability,
                 checkin,
                 checkout,
-                {"adults": _coerce_adults(args), "service": args.get("service", "")},
+                {"adults": _coerce_adults(args), "children": _coerce_children(args),
+                 "room_type": args.get("room_type", ""), "service": args.get("service", "")},
             )
             return {"offers": offers}
         if name == "hold_offer":
@@ -368,11 +416,18 @@ class Dispatcher:
                 hold = await stay.create_hold(quote_id)
             except (UnknownQuoteError, ProviderError):
                 raise ProviderError("tools: hold_invalid") from None
-            return {
+            result = {
                 "hold_id": hold.hold_id,
+                "price_quote_id": hold.price_quote_id,
                 "quoted_total": hold.quoted_total,
                 "currency": hold.currency,
             }
+            if hold.payload.get("synthetic") is True:
+                result["synthetic"] = True
+                result["source"] = hold.payload.get("source")
+            if isinstance(hold.payload.get("recap"), dict):
+                result["recap"] = hold.payload["recap"]
+            return result
         if name == "confirm_booking":
             stay = _require_stay(self._stay)
             guest = _require_guest(args)
@@ -383,6 +438,16 @@ class Dispatcher:
                 guest,
                 _idempotency_key(args),
             )
+        if name == "cancel_booking":
+            stay = _require_stay(self._stay)
+            return await _guarded("cancel_failed", stay.cancel,
+                                  _require_str(args, "booking_id"), _idempotency_key(args))
+        if name == "get_stay_catalogue":
+            stay = _require_stay(self._stay)
+            describe = getattr(stay, "get_stay_catalogue", None)
+            if not callable(describe):
+                raise ProviderError("tools: catalogue not configured")
+            return await _guarded("catalogue_failed", describe)
         if name == "search_slots":
             slot = _require_slot(self._slot)
             return {

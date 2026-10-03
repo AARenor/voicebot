@@ -1,9 +1,10 @@
 import importlib.util
+import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -65,15 +66,18 @@ def test_up_propagates_docker_failure():
 
 
 def test_missing_source_fails_in_clean_environment():
+    clean_env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"}
+    if os.name == "nt":
+        clean_env["SystemRoot"] = os.environ["SystemRoot"]
     result = subprocess.run(
         [
-            "/usr/bin/python3",
+            sys.executable,
             str(ROOT / "deploy/telephony/manage.py"),
             "validate",
             "--source-container",
             "voicebot-nonexistent-fixture",
         ],
-        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent"},
+        env=clean_env,
         capture_output=True,
         text=True,
     )

@@ -1,14 +1,26 @@
-# Voicebot — fictional Estonian spa hackathon demo
+# Voicebot — fictional Estonian hotel and spa demo
 
 LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
 **1.6.0**. The dashboard reads actual provider bookings and offers a protected
-text/microphone demo. Only fictional guests and approved fictional FAQ data.
-Spoken writes require an owned slot, a delivered recap and subsequent explicit
+text/microphone demo, direct spa and room booking, and a public hotel pitch at
+`/hotel`. Room inventory is a finite, persistent fictional PMS; Easy!Appointments
+continues to supply spa services, working plans and appointment availability.
+Only fictional guests and approved fictional FAQ data.
+Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
+
+Both voice transports use configurable Groq `openai/gpt-oss-120b` and
+`whisper-large-v3` with Estonian transcription, plus Azure Anu speech. See
+`GROQ_CHAT_MODEL`, `GROQ_STT_MODEL` and `GROQ_MAX_COMPLETION_TOKENS` in
+`.env.example`. Configuration is reported by `/api/status`; it is not evidence
+of an actual successful carrier call. HTTP turns return per-stage timings and
+closed warning codes, and the native worker logs bounded latency summaries.
 
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
-records repaired defects, a known expected failure and live speech failures.
+records the earlier defects and live speech failures. The
+[2026-10-03 update](docs/evidence/2026-10-03-voice-and-booking-update.md)
+records the repaired SDK fallback, room/website changes and current verification gaps.
 **This fictional pilot is not production-approved.**
 The first carrier target is the supplied **US Twilio number** over signed HTTPS
 Media Streams, avoiding the missing public SIP/RTP edge. Fresh rotated credentials,
@@ -31,6 +43,7 @@ voicebot/
     worker.py         # actual continuous LiveKit Agents session, separate image
     telephone.py      # shared ownership, delivered-recap consent and speech guards
     hackathon.py      # bounded memory-only authenticated HTTP conversations
+    booking_web.py    # direct website controls using the same owned call tools
     server.py         # FastAPI: dashboard, /api/status, POST /api/turn
     providers/        # Groq (STT+chat), Gemini (failover), Azure TTS
     booking/
@@ -42,9 +55,11 @@ voicebot/
       zenoti.py       # spa parallel (stub)
       qloapps.py      # $0 demo double (stub)
       easyappointments.py  # real spa REST adapter, opt-in demo + durable writes
+      demo_stay.py     # finite fictional rooms, durable quotes/holds/bookings
     knowledge/        # SQLite FTS FAQ ingest + retrieve + ET seed
     callslog.py       # SQLite turn/call log (masked peers, 30d retention)
     dashboard/        # protected provider bookings/catalogue + text/microphone UI
+    hotel/            # public fictional hotel/spa pitching website
 ```
 
 ## Quickstart
@@ -66,6 +81,21 @@ the documented REST API for catalogue, slots, booking and cancellation.
 See [installation and operator runbook](deploy/easyappointments/README.md).
 This is synthetic spa data, not hotel room inventory or a real-property release.
 Canonical repository: **Parnuhakk/voicebot** (branch `master`).
+
+The room demo stores inventory, expiring exclusive holds and idempotent booking
+receipts in `STAY_STATE_DB` (default beside the Easy journal at
+`/data/stay-booking.db`). When unset, `STAY_DEMO_WRITES` follows the existing
+`EASY_DEMO_WRITES` opt-in; explicit `0` disables it. The web app and telephone
+worker must mount the same persistent volume and room database path. No real
+hotel PMS connection, payment or notification is implied by demo inventory.
+
+Direct bookings use `/api/booking/session`, `/search`, `/prepare`, `/recap`,
+`/confirm` and `/cancel`. The displayed backend recap is acknowledged before
+the explicit confirmation button is accepted. Operator authentication applies
+to every step and to `/api/rooms` and `/api/stays`. Public `/api/public/property`
+and `/api/public/catalogue` contain only property/contact and catalogue DTOs;
+they expose no guests or appointment records. `PUBLIC_PHONE_NUMBER` can specify
+the demo phone contact; otherwise the configured Twilio/SIP number is used.
 
 ## Website architecture
 

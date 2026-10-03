@@ -15,7 +15,7 @@ from datetime import date, datetime
 
 from fastapi import HTTPException
 
-from .telephone import CallTools, GREETING
+from .telephone import GREETING, CallTools
 
 SESSION_TTL = 600
 MAX_SESSIONS = 16
@@ -223,21 +223,30 @@ class _TurnTools:
         self.session = session
         self.results, self.changes = [], []
         self.mutation_attempted = False
+        self.latency_ms = 0.0
 
     def available_tools(self):
         return self.session.tools.conversation_tools()
 
     async def dispatch(self, name, arguments):
-        is_mutation = name in {"confirm_slot_booking", "cancel_slot_booking"}
+        is_mutation = name in {
+            "confirm_slot_booking",
+            "cancel_slot_booking",
+            "confirm_booking",
+            "cancel_booking",
+        }
         if is_mutation and self.mutation_attempted:
             result = {"error": "mutation_retry_forbidden"}
         else:
             if is_mutation:
                 self.mutation_attempted = True
+            started = time.perf_counter()
             try:
                 result = await self.session.tools.dispatch(name, arguments)
             except Exception:
                 result = {"error": "booking_unavailable"}
+            finally:
+                self.latency_ms += (time.perf_counter() - started) * 1000
         if not isinstance(result, dict):
             result = {"error": "booking_unavailable"}
         if is_mutation and result.get("error") == "booking_unavailable":
@@ -273,6 +282,23 @@ class _TurnTools:
                             **self.session.booking_details[booking_id],
                         }
                     )
+                elif name == "confirm_booking":
+                    booking = result["booking"]
+                    booking_id = str(booking["id"])
+                    self.session.booking_details[booking_id] = {
+                        "id": booking_id,
+                        "kind": "stay",
+                        "date": date.fromisoformat(booking["checkin"]).isoformat(),
+                        "checkin": booking["checkin"],
+                        "checkout": booking["checkout"],
+                        "timezone": "Europe/Tallinn",
+                    }
+                    self.changes.append(
+                        {
+                            "action": "confirmed",
+                            **self.session.booking_details[booking_id],
+                        }
+                    )
                 elif str(args["booking_id"]) in self.session.booking_details:
                     self.changes.append(
                         {
@@ -289,6 +315,8 @@ class _TurnTools:
 class _TrustedLlm:
     def __init__(self, client, session):
         self.client, self.session = client, session
+        self.latency_ms = 0.0
+        self.failed = False
 
     def chat(self, messages, tools=None):
         state = self.session.tools
@@ -296,21 +324,30 @@ class _TrustedLlm:
             "pending": state.pending,
             "booking_ids": sorted(state.bookings)[-16:],
             "last_booking": state.last_booking,
+            **state.inventory_context,
         }
         instructions = (
             state.conversation_instructions
             + "\nServer-owned state: "
             + json.dumps(context, ensure_ascii=False)
         )
-        return self.client.chat(
-            [{"role": "system", "content": instructions}] + messages, tools=tools
-        )
+        started = time.perf_counter()
+        try:
+            return self.client.chat(
+                [{"role": "system", "content": instructions}] + messages, tools=tools
+            )
+        except Exception:
+            self.failed = True
+            raise
+        finally:
+            self.latency_ms += (time.perf_counter() - started) * 1000
 
 
 class _SafeSpeaker:
     def __init__(self, provider, turn_tools):
         self.provider, self.tools, self.reply = provider, turn_tools, None
         self.recap_id = None
+        self.latency_ms = 0.0
 
     def normalize(self, text):
         outcome = result_outcome(
@@ -320,7 +357,11 @@ class _SafeSpeaker:
             return self.tools.session.tools.guard_reply(text, self.tools.results)
         elif outcome == "tools_failed":
             self.tools.session.tools.pending = None
-            text = "Toiming ei õnnestunud; edu ei ole kinnitatud. Palun kontrolli testbroneeringu ettevalmistust või proovi hiljem uuesti."
+            text = (
+                "Toiming ei õnnestunud; edu ei ole kinnitatud. "
+                "Palun kontrolli testbroneeringu ettevalmistust "
+                "või proovi hiljem uuesti."
+            )
         else:
             # Speak the actual preparation recap, not an optional model paraphrase.
             recap = next(
@@ -343,18 +384,25 @@ class _SafeSpeaker:
 
     def synthesize(self, text):
         self.reply = self.normalize(text)
-        return self.provider.synthesize(self.reply)
+        started = time.perf_counter()
+        try:
+            return self.provider.synthesize(self.reply)
+        finally:
+            self.latency_ms += (time.perf_counter() - started) * 1000
 
 
 async def run_demo_turn(session, stack, audio, text, language):
     from .turn import MAX_HISTORY_TURNS, run_turn
 
+    started = time.perf_counter()
+    stt_started = started
     stt_failed = False
     if audio:
         try:
             text = await asyncio.to_thread(stack["stt"].transcribe, audio)
         except Exception:
             text, stt_failed = "", True
+    stt_ms = (time.perf_counter() - stt_started) * 1000 if audio else 0.0
     if not isinstance(text, str) or len(text) > 500:
         session.tools.observe_user_text("", is_final=True)
         raise HTTPException(413, "transcript_too_large")
@@ -362,15 +410,19 @@ async def run_demo_turn(session, stack, audio, text, language):
     session.tools.observe_user_text(text, is_final=True)
     tools = _TurnTools(session)
     speaker = _SafeSpeaker(stack["tts"], tools)
+    primary = _TrustedLlm(stack["llm_primary"], session)
+    secondary = (
+        _TrustedLlm(stack["llm_secondary"], session)
+        if stack["llm_secondary"] is not None
+        else None
+    )
     result = await run_turn(
         b"",
         None,
-        _TrustedLlm(stack["llm_primary"], session),
+        primary,
         speaker,
         tools,
-        llm_secondary=_TrustedLlm(stack["llm_secondary"], session)
-        if stack["llm_secondary"] is not None
-        else None,
+        llm_secondary=secondary,
         text=text,
         language=language,
         history=session.history,
@@ -400,6 +452,29 @@ async def run_demo_turn(session, stack, audio, text, language):
             {"role": "assistant", "content": result["reply"]},
         ]
     )[-MAX_HISTORY_TURNS:]
+    warnings = []
+    if stt_failed:
+        warnings.append({"stage": "stt", "code": "transcription_unavailable"})
+    if primary.failed:
+        warnings.append(
+            {
+                "stage": "llm",
+                "code": "reply_provider_unavailable"
+                if secondary is None or secondary.failed
+                else "reply_provider_fallback",
+            }
+        )
+    if result["tts_failed"]:
+        warnings.append({"stage": "tts", "code": "reply_audio_unavailable"})
+    timings = {
+        "stt": round(stt_ms, 1),
+        "llm": round(
+            primary.latency_ms + (secondary.latency_ms if secondary else 0), 1
+        ),
+        "tools": round(tools.latency_ms, 1),
+        "tts": round(speaker.latency_ms, 1),
+        "total": round((time.perf_counter() - started) * 1000, 1),
+    }
     return {
         "text_heard": result["text_heard"],
         "reply": result["reply"],
@@ -413,4 +488,6 @@ async def run_demo_turn(session, stack, audio, text, language):
         "expires_in_s": max(0, int(session.expires_at - time.monotonic())),
         "booking_ids": sorted(session.tools.bookings),
         "booking_changes": tools.changes,
+        "warnings": warnings,
+        "timings_ms": timings,
     }

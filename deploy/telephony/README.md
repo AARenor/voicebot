@@ -23,26 +23,31 @@ is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
 - Worker: `python -m app.worker start`, two call processes, process-local dialogue,
   VAD endpointing/interruption, no cloud-inference turn detector, 30-second drain.
   Caller arrival is bounded to 30 seconds, conversation to 600 seconds afterward.
-- Conversation schemas expose compact `plan_demo_booking`, confirm and cancel;
-  planning resolves live catalogue/search/hold/preparation without repeated model
-  round trips. Lower-level owned tools remain for direct SDK verification.
+- Conversation schemas expose catalogue, spa/room search, owned holds, preparation,
+  confirmation and cancellation. Compact `plan_demo_booking` also resolves spa
+  catalogue/search/hold/preparation without repeated model round trips.
   Model-supplied write keys/customer IDs and foreign call IDs are rejected.
   Retries reuse successes and per-call/action keys. Telephone search requires a
   catalogue-backed provider; the backend returns empty availability without one.
 - Same `/data/easy-booking.db` volume as HTTP: never use a per-call journal.
+  The fictional room demo also shares `/data/stay-booking.db`; its opt-in follows
+  `EASY_DEMO_WRITES` unless `STAY_DEMO_WRITES` explicitly overrides it. Room holds,
+  inventory and booking receipts persist; this is not a real hotel PMS.
   Configure the web application's `/data` Persistent Storage explicitly in
   Coolify; Dockerfile `VOLUME` alone is anonymous and changes on redeployment.
   See `COOLIFY.md` and verify both mount names after upgrades.
   Easy remains a controlled single-host sole-writer **synthetic** backend, not
   safe against independent admin/API writers or distributed hosts.
-- Complete replies pass a conservative price/currency denylist before TTS;
-  the slot pilot cannot quote prices. This is not exhaustive semantic validation.
+- Complete replies pass a conservative price/currency guard before TTS. Spa
+  appointments cannot quote prices; fictional room prices must match an owned
+  provider quote exactly. This is not exhaustive semantic validation.
   Preparation does not grant consent: the specific canonical recap must finish
   delivery, then a subsequent affirmative final transcript authorizes the owned
   write. Failed/blocked/interrupted delivery invalidates approval. Success speech
   is guarded by execution/state, including cancelled-receipt replay.
-  Only the approved fictional profile/FAQ is exposed; generic property promises
-  and hotel stubs are excluded. Cached Estonian WAV supplies an independent
+  Only the approved fictional profile/FAQ and owned inventory are exposed;
+  spa opening hours come from the provider working plan. Superseded reads cannot
+  restore a proposal after a caller changes their mind. Cached Estonian WAV supplies an independent
   audible failure message. No recording/transcript persistence. SDK child logs
   are suppressed because they can contain tool arguments/text.
 - Host API `127.0.0.1:7880`, SIP UDP/TCP `127.0.0.1:5060`, worker health

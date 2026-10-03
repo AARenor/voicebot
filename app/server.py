@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sqlite3
 
 try:
     from starlette.requests import Request
@@ -119,6 +120,25 @@ def build_stack() -> dict:
         from .booking.zenoti import ZenotiAdapter
 
         stack["slot"] = ZenotiAdapter(os.environ["ZENOTI_API_KEY"])
+    if (
+        stack["stay"] is None
+        and os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
+        == "1"
+    ):
+        from .booking.demo_stay import DemoStayAdapter
+
+        # Keep room inventory beside the existing persistent booking journal.
+        # This is explicitly fictional inventory, never a live hotel PMS.
+        state_dir = os.path.dirname(
+            os.environ.get("EASY_STATE_DB", "/data/easy-booking.db")
+        )
+        try:
+            stack["stay"] = DemoStayAdapter(
+                os.environ.get("STAY_STATE_DB")
+                or os.path.join(state_dir, "stay-booking.db")
+            )
+        except (OSError, ValueError, sqlite3.Error):
+            stack["stay"] = None
     from .booking.tools import Dispatcher
 
     # The HTTP demo uses the approved fictional profile through CallTools.
@@ -156,6 +176,7 @@ def create_app():
             "llm_secondary",
             "tts",
             "slot",
+            "stay",
             "booking_reader",
         ):
             client = stack.get(key)
@@ -188,7 +209,9 @@ def create_app():
             "/api/bookings",
             "/api/catalogue",
             "/api/reset",
-        ) or request.url.path.startswith(("/api/demo/", "/api/holds/"))
+            "/api/rooms",
+            "/api/stays",
+        ) or request.url.path.startswith(("/api/demo/", "/api/holds/", "/api/booking/"))
         try:
             response = await call_next(request)
         except Exception:
@@ -245,6 +268,9 @@ def create_app():
     @app.get("/api/status")
     def status() -> dict:
         stack = app.state.stack
+        from .providers.voice_config import VoiceConfig
+
+        config = getattr(stack.get("llm_primary"), "config", VoiceConfig())
         return {
             "wired": {
                 name: stack[name] is not None
@@ -259,6 +285,18 @@ def create_app():
                 )
             },
             "demo": stack["demo"],
+            "models": {
+                "stt": {
+                    "provider": "groq",
+                    "model": config.stt_model,
+                    "language": "et",
+                },
+                "llm": {"provider": "groq", "model": config.chat_model},
+                "tts": {
+                    "provider": "azure",
+                    "voice": os.environ.get("AZURE_VOICE", "et-EE-AnuNeural"),
+                },
+            },
             "capabilities": app.state.capabilities,
             "telephone": {
                 "media_credentials_configured": stack["livekit"] is not None,
@@ -280,6 +318,7 @@ def create_app():
 
     async def private_read(operation):
         from fastapi import HTTPException
+
         from .booking.easyappointments import BookingReadError
 
         try:
@@ -297,8 +336,10 @@ def create_app():
         length: str = "50",
         authorization: str | None = Header(default=None),
     ):
-        from datetime import date as calendar_date, datetime
+        from datetime import date as calendar_date
+        from datetime import datetime
         from zoneinfo import ZoneInfo
+
         from fastapi import HTTPException
 
         reader = reader_or_raise(authorization)
@@ -340,15 +381,16 @@ def create_app():
         Never retries a mutation automatically, never accepts browser history.
         """
         import time
+
+        from . import callslog
         from .hackathon import (
-            DemoSession,
             SESSION_TTL,
+            DemoSession,
             operator_scope,
-            run_demo_turn,
             read_turn_body,
+            run_demo_turn,
             validate_input,
         )
-        from . import callslog
 
         dashboard_api._require_operator(authorization)
         body = await read_turn_body(request)
@@ -387,6 +429,7 @@ def create_app():
     @app.post("/api/demo/session")
     async def start_demo_session(authorization: str | None = Header(default=None)):
         from fastapi import HTTPException
+
         from .hackathon import operator_scope
 
         dashboard_api._require_operator(authorization)
@@ -406,6 +449,36 @@ def create_app():
 
     if dashboard_api.router is not None:
         app.include_router(dashboard_api.router)
+
+    from fastapi.responses import FileResponse
+
+    from .booking_web import add_booking_routes
+
+    add_booking_routes(app, sessions)
+    hotel_dir = os.path.join(os.path.dirname(__file__), "hotel", "static")
+
+    @app.get("/hotel", include_in_schema=False)
+    @app.get("/hotel/", include_in_schema=False)
+    def hotel_page():
+        return FileResponse(
+            os.path.join(hotel_dir, "index.html"), media_type="text/html"
+        )
+
+    @app.get("/hotel.css", include_in_schema=False)
+    def hotel_css():
+        return FileResponse(os.path.join(hotel_dir, "hotel.css"), media_type="text/css")
+
+    @app.get("/hotel.js", include_in_schema=False)
+    def hotel_js():
+        return FileResponse(
+            os.path.join(hotel_dir, "hotel.js"), media_type="application/javascript"
+        )
+
+    @app.get("/hotel/coastal-hotel.svg", include_in_schema=False)
+    def hotel_illustration():
+        return FileResponse(
+            os.path.join(hotel_dir, "coastal-hotel.svg"), media_type="image/svg+xml"
+        )
 
     static_dir = os.path.join(os.path.dirname(__file__), "dashboard", "static")
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")

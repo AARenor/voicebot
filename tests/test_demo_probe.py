@@ -2,6 +2,7 @@ import asyncio
 import copy
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -153,11 +154,17 @@ def test_probe_uses_preparation_transcript_gate_and_exact_scoped_cleanup(
 
 
 def test_probe_failure_is_nonzero_and_redacted_in_clean_environment():
+    clean_env = {"PYTHONPATH": str(ROOT), "PATH": os.defpath}
+    if os.environ.get("SystemRoot"):
+        # Windows needs this to load native socket libraries; provider secrets
+        # remain absent from the intentionally clean child environment.
+        clean_env["SystemRoot"] = os.environ["SystemRoot"]
     result = subprocess.run(
         [sys.executable, str(ROOT / "deploy/telephony/booking_probe.py")],
-        env={"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"},
+        env=clean_env,
         text=True,
         capture_output=True,
+        timeout=30,
     )
     assert result.returncode != 0
     assert result.stdout == ""
