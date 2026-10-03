@@ -391,6 +391,15 @@ audio {
   color: var(--muted);
   text-align: right;
 }
+.booking-recent {
+  background: #eef6f0;
+  border-radius: 7px;
+  padding: 13px 12px;
+}
+.booking-link {
+  display: block;
+  margin-top: 10px;
+}
 .information {
   display: grid;
   grid-template-columns: 1fr 1fr;

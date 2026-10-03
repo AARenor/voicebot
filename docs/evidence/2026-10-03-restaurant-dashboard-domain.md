@@ -92,7 +92,33 @@ and disabled unauthenticated booking controls are retained. Installed ingress
 and release-controller source already match the published repository files;
 no self-upgrade or extra installation is required.
 
-The goal remains active pending latest-master integration, fresh full-suite and
-browser verification, independent Codex review, normal publication and live
-source/storage/private-speech acceptance. Earlier counts are historical rather
-than evidence for a later untested release.
+Published PR #8 (`3af499b`) was also normally merged without conflicts. Its
+closed whole-turn natural Estonian confirmations, spoken recap dates and saved
+reservation list are retained; no reset or replacement of newer master occurred.
+
+## Final prepublication verification
+
+- Fresh full suite after both merges: **3,156 passed; 36 subtests passed; 4
+  private-backend opt-in skips; 2 upstream warnings**, 259.50 seconds. Same
+  isolated command above, with basetemp
+  `/tmp/opencode/restaurant-domain-current-pr8-final`.
+- All **nine** retained local Chromium scenarios passed with unchanged
+  assertions, zero page errors and zero external requests. Restaurant checks
+  include ET/EN/RU preparation/confirmation/cancellation, natural Estonian ASR
+  confirmation, saved booking after reload, page reset, voice receipt, synthetic
+  microphone WAV and logout isolation. Legacy hotel fixtures are rollback
+  regressions, not a second published guest site.
+- Initial shared-host attempts had an English timeout and native playback timing
+  assertion, then browser launch failures. Memory and swap were full and load
+  exceeded 124 on 12 CPUs. Both unchanged legacy cases passed isolated retries.
+  Final verification ran each scenario in a separate instance of the same
+  Chromium 153.0.8010.12 with a temporary single-renderer adapter outside the repo.
+  No test assertions, product code or other services were weakened/restarted.
+- Both Codex-account reviewers rechecked the actual merged source: no remaining
+  actionable P0/P1/P2 in the scoped domain/auth or phone-bank merge. Their review
+  remains static; runtime results are the parent's executed evidence.
+- Updated private restaurant audio-harness self-test again passed 33 boundary
+  cases and 12 restaurant inputs, zero providers called.
+
+Publication and fresh live source/storage/private-speech acceptance remain
+pending. Historical initial counts do not stand in for deployment evidence.

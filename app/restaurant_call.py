@@ -18,69 +18,110 @@ from .turn import REPEAT_PROMPT, STT_UNAVAILABLE, TURN_UNAVAILABLE
 
 COPY: dict[str, dict[str, str]] = {
     "et": {
-        "greeting": "Tere! Olen restorani tehisintellektil põhinev demoabiline. Aitan lauabroneeringu, menüü ja lahtiolekuaegadega. Kuidas saan aidata?",
+        "greeting": "Tere! Olen restorani AI-abiline. Siin saad proovida lauabroneeringut; päris lauda demo ei broneeri. Kuidas saan aidata?",
         "date": "Mis kuupäevaks soovid lauda?",
-        "time": "Mis kellaajaks soovid lauda? Ütle näiteks kell 19.00.",
-        "party": "Mitmele külalisele lauda soovid? Arvesta ka lapsed koguarvu sisse.",
+        "time": "Mis kell soovid tulla?",
+        "party": "Mitu teid tuleb, koos lastega?",
         "unavailable": "Soovitud ajal sobivat lauda ei ole. Kas soovid teist kellaaega või kuupäeva?",
-        "unknown": "Broneeringu tulemus jäi ebaselgeks. Ära kinnita uuesti; palu personalil tulemust kontrollida.",
-        "confirmed": "Sinu fiktiivne lauabroneering on kinnitatud.",
-        "cancelled": "Sinu fiktiivne lauabroneering on tühistatud.",
-        "existing": "See lauabroneering on juba kinnitatud; uut broneeringut ei tehtud.",
+        "unknown": "Ma ei saanud kinnitust, kas broneering salvestus. Kontrolli saidi broneeringuid enne uuesti proovimist.",
+        "confirmed": "Tehtud! Sinu testbroneering on kinnitatud.",
+        "cancelled": "Tehtud! Sinu testbroneering on tühistatud.",
+        "existing": "See laud on juba broneeritud. Teist broneeringut ma ei teinud.",
         "already_cancelled": "See lauabroneering on juba tühistatud.",
-        "staff": "Selle soovi peab kinnitama restorani personal. Demokeskkonnas ei saa ma päris kõnet üle anda ega tagasihelistamist lubada.",
+        "staff": "Seda tuleks küsida restorani töötajalt. Selles demos ei saa ma kõnet edasi suunata.",
         "domain": "Aitan restorani lauabroneeringute, menüü ja lahtiolekuaegadega. Milles saan aidata?",
-        "price": "Kinnitatud menüühinnad pole praegu saadaval. Küsi hinda restorani personalilt.",
-        "failed": "Lauabroneering ei õnnestunud. Edu ei ole kinnitatud; kontrolli detaile või proovi hiljem uuesti.",
+        "price": "Mul pole praegu menüühindu. Täpse hinna saad restorani töötajalt.",
+        "failed": "Broneering ei õnnestunud. Kontrolli kuupäeva ja kellaaega või proovi hiljem uuesti.",
         "menu": "Demomenüüs on: {items}. {notice}",
         "hours": "Restorani demo lahtiolekuajad: {hours}. Laua saadavust kontrollin eraldi.",
         "closed": "suletud",
         "alternatives": "Soovitud ajal lauda ei ole. Sama kuupäeva võimalikud ajad: {times}. Milline sobib?",
-        "recap": "Fiktiivne lauabroneering restoranis {name}: {date} kell {time}, Eesti aja järgi, {party} külalist, kestus {duration} minutit, külaline {guest}. Kas kinnitad? Ütle: „{consent}”",
+        "recap": "Testbroneering: {name}, {date} kell {time} Eesti aja järgi, {party} külalist. Laud {duration} minutiks, nimele {guest}. Sobib? Võid öelda „{consent}”",
     },
     "en": {
-        "greeting": "Hello! I'm the restaurant's AI demo assistant. I can help with table reservations, the menu and opening hours. How can I help?",
+        "greeting": "Hello! I'm the restaurant's AI assistant. You can try a table reservation here; this demo won't reserve a real table. How can I help?",
         "date": "What date would you like a table?",
-        "time": "What time would you like a table? Please include a.m. or p.m., or use 24-hour time.",
-        "party": "How many guests is the table for? Please include children in the total.",
+        "time": "What time would you like to come?",
+        "party": "How many of you are coming, including children?",
         "unavailable": "There is no suitable table at that time. Would you like another time or date?",
-        "unknown": "The reservation result is uncertain. Please do not confirm again; ask staff to check the result.",
-        "confirmed": "Your fictional table reservation is confirmed.",
-        "cancelled": "Your fictional table reservation is cancelled.",
-        "existing": "This table reservation is already confirmed; no new reservation was created.",
+        "unknown": "I couldn't check whether the reservation was saved. Please check the reservations on the website before trying again.",
+        "confirmed": "All set! Your test reservation is confirmed.",
+        "cancelled": "Done! Your test reservation is cancelled.",
+        "existing": "That table is already booked. I haven't made a second reservation.",
         "already_cancelled": "This table reservation is already cancelled.",
-        "staff": "Restaurant staff must confirm that request. This demo cannot transfer a real call or promise a callback.",
+        "staff": "Please ask a member of the restaurant team about that. I can't transfer calls in this demo.",
         "domain": "I can help with restaurant table reservations, the menu and opening hours. How can I help?",
-        "price": "Verified menu prices are not available. Please ask restaurant staff about pricing.",
-        "failed": "The table reservation failed. Success is not confirmed; check the details or try again later.",
+        "price": "I don't have the menu prices right now. The restaurant team can help with those.",
+        "failed": "I couldn't book the table. Check the date and time, or try again later.",
         "menu": "The demo menu includes: {items}. {notice}",
         "hours": "The restaurant demo opening hours are: {hours}. Table availability is checked separately.",
         "closed": "closed",
         "alternatives": "There is no table at the requested time. Possible times on the same date are: {times}. Which would you prefer?",
-        "recap": 'Fictional table reservation at {name}: {date} at {time}, Tallinn local time, {party} guests, lasting {duration} minutes, guest {guest}. Do you confirm? Say: "{consent}"',
+        "recap": 'Your test reservation: {name}, {date} at {time}, Tallinn local time, for {party} guests. The table is for {duration} minutes, under {guest}. Shall I confirm it? You can say "{consent}"',
     },
     "ru": {
-        "greeting": "Здравствуйте! Я демонстрационный помощник ресторана на основе ИИ. Помогу со столиком, меню и часами работы. Чем могу помочь?",
+        "greeting": "Здравствуйте! Я ИИ-помощник ресторана. Здесь можно попробовать забронировать столик; демонстрация не бронирует настоящий столик. Чем могу помочь?",
         "date": "На какую дату нужен столик?",
-        "time": "На какое время нужен столик? Укажите время в 24-часовом формате.",
-        "party": "На сколько гостей нужен столик? Включите детей в общее число.",
+        "time": "Во сколько хотите прийти?",
+        "party": "Сколько вас будет, вместе с детьми?",
         "unavailable": "На это время подходящего столика нет. Вы хотите другое время или дату?",
-        "unknown": "Результат бронирования неизвестен. Не подтверждайте повторно; попросите персонал проверить результат.",
+        "unknown": "Не удалось проверить, сохранилась ли бронь. Посмотрите бронирования на сайте, прежде чем пробовать снова.",
         "confirmed": "Ваше тестовое бронирование столика подтверждено.",
         "cancelled": "Ваше тестовое бронирование столика отменено.",
         "existing": "Этот столик уже забронирован; новое бронирование не создано.",
         "already_cancelled": "Это бронирование столика уже отменено.",
-        "staff": "Этот запрос должен подтвердить персонал ресторана. Демонстрация не переводит реальные звонки и не обещает обратный звонок.",
+        "staff": "Об этом лучше спросить сотрудника ресторана. В этой демонстрации я не могу перевести звонок.",
         "domain": "Я помогу с бронированием столика, меню и часами работы ресторана. Чем могу помочь?",
-        "price": "Подтверждённые цены меню недоступны. Уточните цену у персонала ресторана.",
-        "failed": "Бронирование столика не удалось. Успех не подтверждён; проверьте данные или попробуйте позже.",
+        "price": "Сейчас у меня нет цен меню. Точную цену подскажет сотрудник ресторана.",
+        "failed": "Не удалось забронировать столик. Проверьте дату и время или попробуйте позже.",
         "menu": "В демонстрационном меню: {items}. {notice}",
         "hours": "Часы работы демонстрационного ресторана: {hours}. Наличие столика проверяется отдельно.",
         "closed": "закрыто",
         "alternatives": "На запрошенное время столика нет. Возможное время на ту же дату: {times}. Что вам подходит?",
-        "recap": "Тестовое бронирование столика в {name}: {date} в {time}, по местному времени Таллина, {party} гостей, на {duration} минут, гость {guest}. Подтверждаете? Скажите: «{consent}»",
+        "recap": "Тестовая бронь: {name}, {date} в {time}, по времени Таллина, на {party} гостей. Столик на {duration} минут, на имя {guest}. Всё верно? Можно сказать «{consent}»",
     },
 }
+
+DATE_MONTHS = {
+    "et": (
+        "jaanuar",
+        "veebruar",
+        "märts",
+        "aprill",
+        "mai",
+        "juuni",
+        "juuli",
+        "august",
+        "september",
+        "oktoober",
+        "november",
+        "detsember",
+    ),
+    "ru": (
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря",
+    ),
+}
+
+
+def restaurant_spoken_date(value: str, language: str) -> str:
+    """Speak the trusted recap's date without depending on the server locale."""
+    if language == "en":
+        return spoken_date(value)
+    day = datetime.fromisoformat(value)
+    separator = "." if language == "et" else ""
+    return f"{day.day}{separator} {DATE_MONTHS[language][day.month - 1]} {day.year}"
+
 
 NUMBER_WORDS = {
     "one": 1,
@@ -789,9 +830,7 @@ class RestaurantCallTools(CallTools):
         start = datetime.fromisoformat(fields["start"])
         return COPY[self.language]["recap"].format(
             name=self.restaurant["name"],
-            date=(
-                spoken_date(fields["date"]) if self.language == "en" else fields["date"]
-            ),
+            date=restaurant_spoken_date(fields["date"], self.language),
             time=(
                 spoken_time(start.strftime("%H:%M"))
                 if self.language == "en"

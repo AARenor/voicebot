@@ -26,10 +26,11 @@ class Provider:
     def __init__(self):
         self.spoken = []
         self.recognized_languages = []
+        self.transcript = "What is on the menu?"
 
     def transcribe(self, audio, *, language=None):
         self.recognized_languages.append(language)
-        return "What is on the menu?"
+        return self.transcript
 
     def synthesize(self, text):
         self.spoken.append(text)
@@ -217,6 +218,68 @@ def test_browser_voice_policy_books_only_after_recap_receipt(
     assert confirmed["reply"] == COPY[language]["confirmed"]
     page = client.get("/api/bookings?date=" + tomorrow(), headers=AUTH).json()
     assert len(page["items"]) == 1 and page["source"] == "restaurant"
+    row = page["items"][0]
+    assert str(row["id"]) == confirmed["booking_changes"][0]["id"]
+    assert row["status"] == "confirmed" and row["service_id"] == 4
+    assert row["start_local"] == confirmed["booking_changes"][0]["start_local"]
+
+
+@pytest.mark.parametrize("channel", ["text", "audio"])
+def test_misheard_estonian_confirmation_saves_a_visible_durable_booking(
+    client, channel
+):
+    session = start(client, "et")["session_id"]
+    proposal = turn(
+        client, session, "Soovin homme lauda neljale kell 14.00", language="et"
+    )
+    body = {
+        "session_id": session,
+        "language": "auto",
+        "recap_delivery_id": proposal["recap_delivery_id"],
+    }
+    if channel == "audio":
+        client.provider.transcript = "ja kinnitää"
+        body["audio_b64"] = base64.b64encode(b"RIFF-fixture-synthetic-audio").decode()
+    else:
+        body["text"] = "ja kinnitää"
+    response = client.post("/api/turn", json=body, headers=AUTH)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["language"] == "et"
+    assert result["text_heard"] == "ja kinnitää"
+    assert result["reply"] == COPY["et"]["confirmed"]
+    change = result["booking_changes"][0]
+    assert change["action"] == "confirmed" and change["date"] == tomorrow()
+    # Ending the conversation doesn't remove the restaurant's saved booking.
+    assert (
+        client.delete("/api/demo/session/" + session, headers=AUTH).status_code == 200
+    )
+    page = client.get("/api/bookings?date=" + change["date"], headers=AUTH).json()
+    assert page["items"][0]["status"] == "confirmed"
+    assert str(page["items"][0]["id"]) == change["id"]
+    # A new adapter reads the same on-disk record after the in-memory call ends.
+    from app.booking.restaurant import RestaurantAdapter
+    from app.restaurant_data import load_restaurant_data
+
+    adapter = RestaurantAdapter(
+        client.app.state.stack["dispatcher"]._slot.state_db,
+        data=load_restaurant_data(),
+        allow_writes=True,
+    )
+    assert (
+        asyncio_run(adapter.get_operator_bookings(tomorrow()))["items"] == page["items"]
+    )
+
+
+def test_asr_confirmation_without_delivery_receipt_never_reaches_the_calendar(client):
+    session = start(client, "et")["session_id"]
+    turn(client, session, "Soovin homme lauda neljale kell 14.00", language="et")
+    result = turn(client, session, "ja kinnitää", language="et")
+    assert result["booking_changes"] == []
+    assert (
+        client.get("/api/bookings?date=" + tomorrow(), headers=AUTH).json()["items"]
+        == []
+    )
 
 
 def test_audio_language_is_sent_to_recognition_and_restaurant_reply(client):
