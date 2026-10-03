@@ -1,11 +1,11 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, audioUrl:null, mic:null, micStarting:false, micEpoch:0, recapDeliveryId:null, awaitingRecapId:null, demoLanguage:"auto", replyLanguage:"et", demoModels:null};
+const state = {credential:"", connected:false, generation:0, controllers:new Set(), bookings:[], fetchedAt:null, hasMore:false, page:1, readBusy:false, bookingError:false, retryAt:0, failures:0, view:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, demoEnding:false, demoEpoch:0, audioUrl:null, audioEpoch:0, playback:null, turnController:null, mic:null, micStarting:false, micEpoch:0, recapDeliveryId:null, awaitingRecapId:null, demoLanguage:"auto", demoVoice:"azure", voiceCatalog:null, endpointingMs:650, replyLanguage:"et", demoModels:null};
 const bookingUi = {kind:"table", sessionId:null, busy:false, uncertain:false, holdId:null, recapDeliveryId:null, acknowledged:false, selected:null, confirmed:null, tables:[], rules:null, epoch:0};
 const DEMO_COPY = {
   et: {
     title:"Proovi kõneabilist", subtitle:"Kirjuta sõnum või räägi mikrofoniga",
-    languageLabel:"Vestluse keel / Conversation language", languageHelp:"Vali keel enne vestlust. Keele muutmiseks lõpeta vestlus ja alusta uut.",
+    languageLabel:"Vestluse keel / Conversation language", languageHelp:"Vali keel enne vestlust. Keele muutmiseks lõpeta vestlus ja alusta uut.", voiceLabel:"Abilise hääl / Assistant voice",
     introTitle:"Üks vestlus. Laud ootab.", intro:"Küsi restorani kohta, vali aeg ja inimeste arv ning proovi lauabroneeringut fiktiivse külalisena.",
     start:"Alusta demovestlust", end:"Lõpeta vestlus", history:"Vaata vestluse ajalugu", messageLabel:"Sõnum demoabilisele", send:"Saada sõnum",
     placeholder:"Näiteks: homme kell 18 laud kahele", micLevel:"Mikrofoni helitase", speakNaturally:"Räägi loomulikult.",
@@ -29,7 +29,7 @@ const DEMO_COPY = {
   },
   en: {
     title:"Try the voice assistant", subtitle:"Type a message or speak into your microphone",
-    languageLabel:"Conversation language / Vestluse keel", languageHelp:"Choose a language before starting. To change it, end this conversation and start a new one.",
+    languageLabel:"Conversation language / Vestluse keel", languageHelp:"Choose a language before starting. To change it, end this conversation and start a new one.", voiceLabel:"Assistant voice / Abilise hääl",
     introTitle:"One conversation. A table awaits.", intro:"Ask about the restaurant, choose a time and party size, and try a table booking with a fictional guest.",
     start:"Start demo conversation", end:"End conversation", history:"View conversation history", messageLabel:"Message the demo assistant", send:"Send message",
     placeholder:"For example: a table for two tomorrow at 6 pm", micLevel:"Microphone level", speakNaturally:"Speak naturally.",
@@ -66,6 +66,53 @@ function localizeDemo() {
   $("demo-messages").setAttribute("aria-label", copy.transcriptLabel);
   $("demo-audio").setAttribute("aria-label", copy.audioLabel);
   renderDemoModels();
+  renderVoices();
+}
+const VOICE_LABELS={azure:"Azure",elevenlabs:"ElevenLabs",google:"Google Chirp 3 HD",cartesia:"Cartesia"};
+const VOICE_REASONS=new Set(["missing_credentials","credentials_missing","not_configured","invalid_configuration","missing_dependency","dependency_missing","dependency_unavailable","missing_voice","missing_voice_id","unsupported_language","provider_unavailable","provider_failed","provider_failure","synthesis_failed","catalog_unavailable","unavailable","disabled","transport_error","request_rejected","rate_limited","invalid_response","completion_incomplete"]);
+function voiceReason(code) { return VOICE_REASONS.has(code) ? code : "unavailable"; }
+function renderVoices() {
+  const english=state.demoLanguage==="en", catalog=state.voiceCatalog;
+  const profiles=catalog || Object.entries(VOICE_LABELS).map(([id,label])=>({id,label,languages:id==="cartesia"?["en","ru"]:["et","en","ru"],configured:false,available:false,disabled_reason:"catalog_unavailable",legacy:id==="azure"}));
+  const select=$("demo-voice"), reasons=[];
+  select.replaceChildren();
+  for(const profile of profiles) {
+    const unsupported=state.demoLanguage!=="auto" && !profile.languages.includes(state.demoLanguage);
+    const unavailable=!profile.legacy && (profile.configured!==true || profile.available!==true);
+    const reason=unsupported ? "unsupported_language" : unavailable ? voiceReason(profile.disabled_reason) : profile.legacy ? "catalog_unavailable" : null;
+    const option=document.createElement("option"); option.value=profile.id; option.disabled=unsupported || unavailable;
+    option.textContent=profile.label + (reason ? ` (${reason})` : "") + (profile.id==="cartesia" && state.demoLanguage==="auto" ? english ? " — Azure for Estonian" : " — eesti keeles Azure" : "");
+    select.append(option);
+    if(reason) reasons.push(`${profile.label}: ${reason}.`);
+  }
+  if(!state.sessionId && !Array.from(select.children).some(option=>option.value===state.demoVoice && !option.disabled)) state.demoVoice="azure";
+  select.value=state.demoVoice;
+  $("demo-voice-help").textContent=(english ? "Choose before starting; the voice stays fixed for this conversation. Configuration is not a quality or live-availability test. " : "Vali enne vestlust; hääl on selle vestluse ajal lukus. Seadistus ei tõenda kvaliteeti ega teenuse toimimist. ") + reasons.join(" ") + (reasons.length ? english ? " Set the provider credentials and licensed voice in the server environment; install required server dependencies and restart. Azure remains the legacy default when the catalog is unavailable." : " Seadista pakkuja tunnused ja lubatud hääl serveri keskkonnas, paigalda vajalikud serveri sõltuvused ning taaskäivita. Puuduva kataloogi korral jääb vaikimisi Azure." : "");
+}
+async function loadVoices() {
+  if(!state.connected) return;
+  const generation=state.generation;
+  try {
+    const data=await api("/api/demo/voices");
+    if(generation!==state.generation || !state.connected) return;
+    const ids=new Set();
+    if(!Array.isArray(data.voices) || !data.voices.length || data.voices.length>4 || data.voices.some(profile=>!profile || !Object.hasOwn(VOICE_LABELS,profile.id) || ids.has(profile.id) || !ids.add(profile.id) || typeof profile.label!=="string" || profile.label.length>80 || !Array.isArray(profile.languages) || !profile.languages.length || profile.languages.some(lang=>!["et","en","ru"].includes(lang)) || typeof profile.configured!=="boolean" || typeof profile.available!=="boolean" || typeof profile.streaming!=="boolean") || !ids.has("azure")) throw new Error("catalog_unavailable");
+    state.voiceCatalog=data.voices;
+    state.endpointingMs=Number.isInteger(data.endpointing_ms) && data.endpointing_ms>=300 && data.endpointing_ms<=2000 ? data.endpointing_ms : 650;
+  } catch(_) { if(generation!==state.generation || !state.connected) return; state.voiceCatalog=null; state.endpointingMs=650; }
+  renderVoices(); controls();
+}
+function changeDemoVoice() {
+  if(!state.connected || state.sessionId || state.turnBusy || state.mic || state.micStarting) { $("demo-voice").value=state.demoVoice; return; }
+  const option=Array.from($("demo-voice").children).find(item=>item.value===$("demo-voice").value && !item.disabled);
+  if(option) { stopAudio(); state.demoVoice=option.value; $("demo-voice-result").textContent=""; }
+  renderVoices(); controls();
+}
+function renderVoiceResult(data) {
+  const voice=data.voice, english=state.demoLanguage==="en";
+  if(data.tts_failed || data.outcome==="tts_failed") { $("demo-voice-result").textContent=english ? "Reply audio failed; effective voice unverified." : "Vastuse heli ebaõnnestus; kasutatud hääl kontrollimata."; return; }
+  if(!voice || !Object.hasOwn(VOICE_LABELS,voice.effective) || !Object.hasOwn(VOICE_LABELS,voice.requested) || typeof voice.fallback!=="boolean") { $("demo-voice-result").textContent=english ? "Effective voice unverified: server metadata unavailable." : "Kasutatud hääl kontrollimata: serveri teave puudub."; return; }
+  $("demo-voice-result").textContent=(english ? "Reply voice: " : "Vastuse hääl: ") + VOICE_LABELS[voice.effective] + (voice.fallback ? ` (${english ? "fallback from " : "varuhääl, valitud "}${VOICE_LABELS[voice.requested]}: ${voiceReason(voice.reason)})` : "") + (voice.streaming===false ? english ? "; provider audio is buffered." : "; pakkuja heli on puhverdatud." : "");
 }
 function renderDemoModels() {
   const models=state.demoModels?.models;
@@ -135,39 +182,173 @@ function presentation() {
   $("mic-feedback").hidden=!state.mic;
 }
 function stopAudio() {
-  $("demo-audio").onended = $("demo-audio").onerror = null;
+  state.audioEpoch++;
+  const playback=state.playback; state.playback=null;
+  state.turnController?.abort(); state.turnController=null;
+  if(playback) {
+    playback.reader?.cancel().catch(()=>{});
+    playback.queue.length=playback.chunks.length=0;
+    if(playback.source) {
+      playback.source.onsourceopen=playback.source.onsourceclose=null;
+      if(playback.buffer) {
+        playback.buffer.onupdateend=playback.buffer.onerror=playback.buffer.onabort=null;
+        try { playback.buffer.abort(); playback.source.removeSourceBuffer(playback.buffer); } catch(_) {}
+      }
+      try { if(playback.source.readyState==="open") playback.source.endOfStream(); } catch(_) {}
+    }
+  }
+  $("demo-audio").onended = $("demo-audio").onerror = $("demo-audio").onplaying = $("demo-audio").onseeking = $("demo-audio").onwaiting = $("demo-audio").onstalled = null;
   $("demo-audio").pause(); $("demo-audio").removeAttribute("src"); $("demo-audio").load(); $("demo-audio").hidden = true;
   if (state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   state.audioUrl = null;
   state.recapDeliveryId = state.awaitingRecapId = null;
   $("demo-recap-read").hidden = true;
 }
+const MAX_REPLY_AUDIO=8*1024*1024;
+const MAX_REPLY_WIRE=12*1024*1024; // Base64 expansion plus bounded event metadata.
+function audioBytes(value, limit=MAX_REPLY_AUDIO) {
+  if(typeof value!=="string" || !value.length || value.length%4 || value.length>Math.ceil(limit/3)*4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error(demoCopy().audioInvalid);
+  const raw=atob(value);
+  if(!raw.length || raw.length>limit || btoa(raw)!==value) throw new Error(demoCopy().audioInvalid);
+  return Uint8Array.from(raw,c=>c.charCodeAt(0));
+}
+function currentPlayback(playback) { return state.connected && playback===state.playback && playback.generation===state.generation && playback.session===state.sessionId && playback.epoch===state.audioEpoch && (!playback.url || (playback.url===state.audioUrl && playback.url===$("demo-audio").src)); }
+function newPlayback() {
+  const playback={generation:state.generation,session:state.sessionId,epoch:state.audioEpoch,queue:[],chunks:[],reader:null,source:null,buffer:null,complete:false,eof:false,appended:false,started:false,seeked:false,interrupted:false,earlyEnd:false,failed:false,receipt:null,resultStatus:$("demo-status").textContent,resultError:false};
+  state.playback=playback; return playback;
+}
+function fullyPlayed(audio) {
+  if(!audio.ended || !Number.isFinite(audio.duration) || audio.duration<=0 || !audio.played.length) return false;
+  const tolerance=Math.min(.01,audio.duration*.005);
+  if(audio.currentTime<audio.duration-tolerance) return false;
+  let covered=0;
+  for(let i=0;i<audio.played.length;i++) { if(audio.played.start(i)>covered+tolerance) return false; covered=Math.max(covered,audio.played.end(i)); }
+  return covered>=audio.duration-tolerance;
+}
+function failPlayback(playback) {
+  if(!currentPlayback(playback)) return;
+  playback.failed=true;
+  const result=playback.resultStatus;
+  stopAudio(); status("demo-status",result+" "+demoCopy().audioError,"error"); controls();
+}
+function bindPlayback(playback, source) {
+  const audio=$("demo-audio");
+  state.audioUrl=playback.url=URL.createObjectURL(source); audio.src=state.audioUrl; audio.hidden=false;
+  audio.onplaying=()=>{if(currentPlayback(playback)) playback.started=true;};
+  audio.onseeking=()=>{if(currentPlayback(playback)) playback.seeked=true;};
+  audio.onwaiting=audio.onstalled=()=>{if(currentPlayback(playback) && playback.started && audio.currentTime>0) playback.interrupted=true;};
+  audio.onended=()=>{
+    if(!currentPlayback(playback)) return;
+    if(!playback.complete || !playback.eof || !playback.appended) { playback.earlyEnd=true; return; }
+    if(playback.failed || playback.seeked || playback.interrupted || playback.earlyEnd || !playback.started || !fullyPlayed(audio)) return;
+    if(playback.receipt) { state.recapDeliveryId=playback.receipt; $("demo-recap-read").hidden=true; }
+    status("demo-status",playback.resultStatus+" "+(playback.receipt ? recapPlayedMessage() : demoCopy().replyPlayed),playback.resultError ? "error" : "");
+  };
+  audio.onerror=()=>failPlayback(playback);
+}
+function startPlayback(playback) {
+  try { $("demo-audio").play().catch(()=>{ if(currentPlayback(playback)) { playback.started=false; status("demo-status",playback.resultStatus+" "+demoCopy().autoplay,"error"); } }); }
+  catch(_) { if(currentPlayback(playback)) status("demo-status",playback.resultStatus+" "+demoCopy().autoplay,"error"); }
+}
+function armRecap(data, playback) {
+  if(!currentPlayback(playback) || playback.failed) return;
+  playback.resultStatus=$("demo-status").textContent; playback.resultError=["unknown_outcome","tools_failed","tts_failed"].includes(data.outcome);
+  playback.receipt=!data.tts_failed && data.outcome!=="tts_failed" && /^[a-f0-9]{32}$/.test(data.recap_delivery_id || "") ? data.recap_delivery_id : null;
+  state.awaitingRecapId=playback.receipt;
+  $("demo-recap-read").hidden=!playback.receipt; controls();
+}
 function playReply(data) {
-  state.awaitingRecapId = /^[a-f0-9]{32}$/.test(data.recap_delivery_id || "") ? data.recap_delivery_id : null;
-  $("demo-recap-read").hidden = !state.awaitingRecapId;
-  controls();
+  const playback=newPlayback(); playback.complete=playback.eof=playback.appended=true;
+  armRecap(data,playback);
   if (!data.audio_b64) return;
-  const generation=state.generation, session=state.sessionId, audio=$("demo-audio");
-  const resultStatus=$("demo-status").textContent, resultError=["unknown_outcome","tools_failed","tts_failed"].includes(data.outcome);
-  const current=()=>generation===state.generation && session===state.sessionId && state.connected;
   try {
-    const bytes=Uint8Array.from(atob(data.audio_b64), c=>c.charCodeAt(0));
-    state.audioUrl=URL.createObjectURL(new Blob([bytes], {type:data.audio_type === "audio/wav" ? "audio/wav" : "audio/mpeg"}));
-    const url=state.audioUrl, receipt=state.awaitingRecapId;
-    audio.src=url; audio.hidden=false;
-    audio.onended=()=>{
-      if (!current() || url!==state.audioUrl) return;
-      if (receipt) { state.recapDeliveryId=receipt; $("demo-recap-read").hidden=true; }
-      status("demo-status", resultStatus + " " + (receipt ? recapPlayedMessage() : demoCopy().replyPlayed), resultError ? "error" : "");
+    bindPlayback(playback,new Blob([audioBytes(data.audio_b64)],{type:data.audio_type==="audio/wav" ? "audio/wav" : "audio/mpeg"}));
+    startPlayback(playback);
+  } catch(_) { failPlayback(playback); }
+}
+function appendStreamAudio(playback, bytes) {
+  if(!currentPlayback(playback)) throw new DOMException("Playback retired","AbortError");
+  const Media=window.MediaSource;
+  if(!Media || !Media.isTypeSupported("audio/mpeg")) { playback.chunks.push(bytes); return; }
+  playback.queue.push(bytes);
+  if(!playback.source) {
+    playback.source=new Media(); bindPlayback(playback,playback.source);
+    playback.source.onsourceopen=()=>{
+      if(!currentPlayback(playback)) return;
+      try {
+        playback.buffer=playback.source.addSourceBuffer("audio/mpeg");
+        playback.buffer.onupdateend=()=>pumpStreamAudio(playback);
+        playback.buffer.onerror=playback.buffer.onabort=()=>failPlayback(playback);
+        pumpStreamAudio(playback);
+      } catch(_) { failPlayback(playback); }
     };
-    audio.onerror=()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().audioError, "error");
-    };
-    audio.play().catch(()=>{
-      if (current() && url===state.audioUrl) status("demo-status", resultStatus + " " + demoCopy().autoplay, "error");
-    });
-  } catch (_) {
-    if (current()) status("demo-status", resultStatus + " " + demoCopy().audioInvalid, "error");
+    playback.source.onsourceclose=()=>{if(!playback.appended)failPlayback(playback);};
+  } else pumpStreamAudio(playback);
+}
+function pumpStreamAudio(playback) {
+  if(!currentPlayback(playback) || !playback.buffer || playback.buffer.updating || playback.failed) return;
+  try {
+    if(playback.queue.length) {
+      playback.buffer.appendBuffer(playback.queue.shift());
+      if(!playback.playAttempted) { playback.playAttempted=true; startPlayback(playback); }
+    } else if(playback.eof && !playback.appended) {
+      playback.source.endOfStream(); playback.appended=true;
+    }
+  } catch(_) { failPlayback(playback); }
+}
+async function readTurnStream(response, controller) {
+  if(!response.body) throw new Error(demoCopy().audioInvalid);
+  const playback=newPlayback(), reader=response.body.getReader(), decoder=new TextDecoder("utf-8",{fatal:true});
+  playback.reader=reader;
+  let pending="", wireBytes=0, totalAudio=0, seq=0, lines=0, reply=null, done=null, replyNode=null;
+  const invalid=()=>{throw new Error(demoCopy().audioInvalid);};
+  const consume=line=>{
+    if(!line.trim()) return;
+    if(line.length>256*1024 || ++lines>8192 || done) invalid();
+    let event; try { event=JSON.parse(line); } catch(_) { invalid(); }
+    if(!event || Array.isArray(event) || typeof event!=="object" || typeof event.type!=="string" || (event.type!=="done" && Object.hasOwn(event,"recap_delivery_id"))) invalid();
+    if(event.type==="reply") {
+      if(reply || seq || Object.keys(event).some(key=>!["type","reply","language","audio_type"].includes(key)) || typeof event.reply!=="string" || !event.reply.length || event.reply.length>32768 || !["et","en","ru"].includes(event.language) || event.audio_type!=="audio/mpeg") invalid();
+      reply=event; state.replyLanguage=event.language; replyNode=addMessage(demoCopy().assistant,event.reply);
+    } else if(event.type==="audio") {
+      if(!reply || event.seq!==seq || Object.keys(event).some(key=>!["type","seq","audio_b64"].includes(key))) invalid();
+      const bytes=audioBytes(event.audio_b64,128*1024); totalAudio+=bytes.length;
+      if(totalAudio>MAX_REPLY_AUDIO) invalid(); seq++; appendStreamAudio(playback,bytes);
+    } else if(event.type==="done") {
+      if(!reply || event.reply!==reply.reply || event.language!==reply.language || event.audio_type!=="audio/mpeg" || event.audio_b64!=="" || !["ok","tools_ok","tools_failed","unknown_outcome","fallback","tts_failed"].includes(event.outcome) || (event.booking_changes!==undefined && !Array.isArray(event.booking_changes)) || (event.tts_failed!==undefined && typeof event.tts_failed!=="boolean") || (event.recap_delivery_id!=null && (!/^[a-f0-9]{32}$/.test(event.recap_delivery_id) || !seq || event.tts_failed || event.outcome==="tts_failed"))) invalid();
+      done=event;
+    } else invalid();
+  };
+  const abort=()=>reader.cancel().catch(()=>{});
+  controller.signal.addEventListener("abort",abort,{once:true});
+  try {
+    while(true) {
+      const part=await reader.read();
+      if(controller.signal.aborted || !currentPlayback(playback)) throw new DOMException("Playback retired","AbortError");
+      if(part.done) break;
+      wireBytes+=part.value.byteLength; if(wireBytes>MAX_REPLY_WIRE) invalid();
+      pending+=decoder.decode(part.value,{stream:true});
+      let newline;
+      while((newline=pending.indexOf("\n"))!==-1) { consume(pending.slice(0,newline)); pending=pending.slice(newline+1); }
+      if(pending.length>256*1024) invalid();
+    }
+    pending+=decoder.decode();
+    if(pending.length || !reply || !done) invalid();
+    playback.reader=null;
+    if(done.tts_failed || done.outcome==="tts_failed" || !seq) { stopAudio(); }
+    else { playback.complete=playback.eof=true; pumpStreamAudio(playback); }
+    return {...done,_stream:{playback,replyNode}};
+  } catch(error) { if(currentPlayback(playback)) stopAudio(); throw error; }
+  finally { controller.signal.removeEventListener("abort",abort); await reader.cancel().catch(()=>{}); reader.releaseLock(); }
+}
+function finishStreamPlayback(data) {
+  const playback=data._stream.playback;
+  if(!currentPlayback(playback)) return;
+  armRecap(data,playback);
+  if(!playback.source && playback.chunks.length) {
+    playback.appended=true;
+    bindPlayback(playback,new Blob(playback.chunks,{type:"audio/mpeg"})); playback.chunks.length=0;
+    startPlayback(playback);
   }
 }
 function stopMic() {
@@ -189,8 +370,9 @@ function controls() {
   $("refresh").disabled = !state.connected || state.readBusy;
   const connecting = !!state.credential && !state.connected;
   $("demo-language").disabled = connecting || !!state.sessionId || state.turnBusy || !!state.mic || state.micStarting;
+  $("demo-voice").disabled = !state.connected || !!state.sessionId || state.turnBusy || !!state.mic || state.micStarting;
   $("demo-start").disabled = connecting || !!state.sessionId || state.turnBusy;
-  $("demo-end").disabled = !state.sessionId || state.turnBusy;
+  $("demo-end").disabled = !state.sessionId || state.demoEnding;
   for (const id of ["demo-text", "demo-send"]) $(id).disabled = !state.sessionId || state.turnBusy || state.micStarting;
   $("demo-mic").disabled = connecting || state.turnBusy || state.micStarting;
   if (!state.mic) $("demo-mic").textContent = state.sessionId ? demoCopy().micReady : demoCopy().micStart;
@@ -208,7 +390,8 @@ function logout(message="Ühendus lõpetatud. Privaatseid andmeid enam ei kuvata
   state.generation++;
   state.controllers.forEach(controller => controller.abort()); state.controllers.clear();
   stopMic(); stopAudio();
-  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, bookingError:false, retryAt:0, failures:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, micStarting:false});
+  Object.assign(state, {credential:"", connected:false, bookings:[], fetchedAt:null, hasMore:false, readBusy:false, bookingError:false, retryAt:0, failures:0, highlightId:null, sessionId:null, callId:null, turnBusy:false, demoEnding:false, micStarting:false});
+  state.voiceCatalog=null; state.demoVoice="azure"; state.endpointingMs=650; renderVoices(); $("demo-voice-result").textContent="";
   resetBookingUi();
   $("token").value = ""; $("demo-text").value = "";
   $("demo-warning").hidden=true; $("demo-warning").textContent=""; $("demo-timings").hidden=true; $("demo-timings").textContent="";
@@ -227,7 +410,9 @@ async function api(path, opts={}) {
   const isPrivate = path !== "/api/status";
   if (isPrivate && !state.credential) throw new DOMException("Signed out", "AbortError");
   const generation = state.generation;
+  const streaming=path==="/api/turn" && new Headers(opts.headers || {}).get("Accept")==="application/x-ndjson", epoch=state.audioEpoch, session=state.sessionId;
   const controller = new AbortController();
+  if(streaming) state.turnController=controller;
   let timedOut = false;
   const deadline = setTimeout(()=>{timedOut=true; controller.abort();}, path === "/api/turn" ? 120000 : 30000);
   if (isPrivate) state.controllers.add(controller);
@@ -246,13 +431,15 @@ async function api(path, opts={}) {
       if (isPrivate && (response.status === 403 || response.status === 401)) logout(error.message, "error");
       throw error;
     }
-    const data = await response.json();
+    if(streaming && (epoch!==state.audioEpoch || session!==state.sessionId)) throw new DOMException("Playback retired","AbortError");
+    const data = streaming && response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase()==="application/x-ndjson" ? await readTurnStream(response,controller) : await response.json();
     if (isPrivate && generation !== state.generation) throw new DOMException("Signed out", "AbortError");
+    if(streaming && !data._stream && (epoch!==state.audioEpoch || session!==state.sessionId)) throw new DOMException("Playback retired","AbortError");
     return data;
   } catch (error) {
     if (timedOut && generation === state.generation) throw new Error(path === "/api/turn" ? "Vastuse ooteaeg sai läbi. Tulemus võib olla ebaselge; ära korda kinnitust ega tühistust enne taustsüsteemi kontrolli." : "Ühenduse ooteaeg sai läbi. Kontrolli ühendust ja proovi hiljem uuesti.");
     throw error;
-  } finally { clearTimeout(deadline); state.controllers.delete(controller); }
+  } finally { clearTimeout(deadline); state.controllers.delete(controller); if(state.turnController===controller)state.turnController=null; }
 }
 async function connect() {
   const credential = $("token").value.trim();
@@ -265,9 +452,9 @@ async function connect() {
     if(generation!==state.generation || !state.credential) return;
     state.connected = true; $("token").value = "";
     renderCalls(data.calls || []); status("auth-status", "Operaator ühendatud. Tunnus on ainult lehe mälus.");
-      status("new-booking-status","Vali kuupäev, Tallinna kellaaeg ja inimeste arv. Saadavus kontrollitakse taustsüsteemist.");
+    status("new-booking-status","Vali kuupäev, Tallinna kellaaeg ja inimeste arv. Saadavus kontrollitakse taustsüsteemist.");
     status("demo-status", demoCopy().ready); controls();
-    await Promise.allSettled([loadBookings(true), loadCatalogue(), loadHistory(), loadStatus()]);
+    await Promise.allSettled([loadBookings(true), loadCatalogue(), loadHistory(), loadStatus(), loadVoices()]);
   } catch (error) {
     if (error.name !== "AbortError") logout(error.message, "error");
   }
@@ -385,6 +572,7 @@ function addMessage(label, text) {
   item.setAttribute("lang", state.replyLanguage);
   author.textContent=label; content.textContent=text; item.append(author,content); $("demo-messages").append(item);
   $("demo-messages").scrollTop=$("demo-messages").scrollHeight;
+  return item;
 }
 function requireDemoConnection() {
   if (state.connected) return true;
@@ -395,32 +583,36 @@ function requireDemoConnection() {
 async function startDemo() {
   if (state.turnBusy || state.sessionId || !requireDemoConnection()) return;
   state.turnBusy=true; controls();
-  const generation=state.generation;
+  const generation=state.generation, demoEpoch=++state.demoEpoch;
   try {
-    const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({language:state.demoLanguage})});
-    if(generation!==state.generation || !state.connected) return;
+    const data=await api("/api/demo/session", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({language:state.demoLanguage,voice:state.demoVoice})});
+    if(generation!==state.generation || demoEpoch!==state.demoEpoch || !state.connected) return;
     state.sessionId=data.session_id;
     state.replyLanguage=["et","en","ru"].includes(data.language) ? data.language : state.demoLanguage === "en" ? "en" : "et";
     state.callId=/^[a-f0-9]{32}$/.test(data.call_id || "") ? data.call_id : null;
     $("demo-messages").replaceChildren();
     addMessage(demoCopy().assistant, data.greeting);
     status("demo-status", data.tts_failed ? demoCopy().greetingFailed : demoCopy().started, data.tts_failed ? "error" : "");
+    renderVoiceResult(data);
     stopAudio(); playReply(data); await loadHistory();
   }
   catch(error) { if(error.name!=="AbortError" && state.connected) status("demo-status", demoError(error), "error"); }
-  finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
+  finally { if(generation===state.generation && demoEpoch===state.demoEpoch) { state.turnBusy=false; controls(); } }
 }
 async function sendTurn(input) {
   if (!state.sessionId || state.turnBusy || state.micStarting || !state.connected) return;
-  const generation=state.generation;
+  const generation=state.generation, session=state.sessionId, demoEpoch=++state.demoEpoch;
   const receipt=state.recapDeliveryId;
   state.turnBusy=true; controls(); stopAudio(); status("demo-status", demoCopy().responding);
   try {
-    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, ...input, language:state.demoLanguage, ...(receipt ? {recap_delivery_id:receipt} : {})})});
-    if(generation!==state.generation || !state.connected) return;
+    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json","Accept":"application/x-ndjson"}, body:JSON.stringify({session_id:state.sessionId, ...input, language:state.demoLanguage, ...(receipt ? {recap_delivery_id:receipt} : {})})});
+    if(generation!==state.generation || demoEpoch!==state.demoEpoch || session!==state.sessionId || !state.connected) return;
     if (["et","en","ru"].includes(data.language)) state.replyLanguage=data.language;
-    addMessage(demoCopy().you, data.text_heard || (data.input_status === "stt_unavailable" ? demoCopy().heardFailed : demoCopy().heardNothing)); addMessage(demoCopy().assistant, data.reply);
+    const heard=addMessage(demoCopy().you, data.text_heard || (data.input_status === "stt_unavailable" ? demoCopy().heardFailed : demoCopy().heardNothing));
+    if(data._stream) $("demo-messages").insertBefore(heard,data._stream.replyNode);
+    else addMessage(demoCopy().assistant, data.reply);
     renderTurnDiagnostics(data);
+    renderVoiceResult(data);
     $("demo-text").value="";
     const completedWrite=(data.booking_changes || []).some(change=>["confirmed","cancelled"].includes(change.action));
     const copy=demoCopy(), outcome=copy.outcome;
@@ -429,29 +621,29 @@ async function sendTurn(input) {
     status("demo-status", result + (data.tts_failed ? " " + copy.textFallback : "") + expiry, ["tools_failed","unknown_outcome","tts_failed"].includes(data.outcome) ? "error" : "");
     if (data.input_status === "stt_unavailable") status("demo-status", copy.sttFailed,"error");
     else if (data.input_status === "no_speech") status("demo-status", copy.noSpeech,"stale");
-    playReply(data);
+    if(data._stream) finishStreamPlayback(data); else playReply(data);
     const change=(data.booking_changes || []).find(item=>item.kind==="table" && ["confirmed","cancelled"].includes(item.action) && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && /^table_[a-f0-9]{32}$/.test(item.id));
     if(change) { $("booking-date").value=change.date; await changeView(1,change.action==="confirmed" ? change.id : null); }
     else await loadBookings(true);
     await loadCalls();
   } catch(error) {
-    if(error.name!=="AbortError" && state.connected) { status("demo-status", demoError(error) + " " + demoCopy().noRetry, "error"); if(error.status===410 || error.status===404) state.sessionId=null; }
-  } finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
+    if(error.name!=="AbortError" && generation===state.generation && demoEpoch===state.demoEpoch && state.connected) { status("demo-status", demoError(error) + " " + demoCopy().noRetry, "error"); if(error.status===410 || error.status===404) state.sessionId=null; }
+  } finally { if(generation===state.generation && demoEpoch===state.demoEpoch) { state.turnBusy=false; controls(); } }
 }
 async function endDemo() {
-  if(!state.sessionId || state.turnBusy) return;
+  if(!state.sessionId || state.demoEnding) return;
   stopMic(); stopAudio(); state.micStarting=false;
-  const id=state.sessionId, generation=state.generation; state.turnBusy=true; controls();
-  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", demoCopy().ended); await loadHistory(); }
+  const id=state.sessionId, generation=state.generation, demoEpoch=++state.demoEpoch; state.turnBusy=state.demoEnding=true; controls();
+  try { await api("/api/demo/session/"+encodeURIComponent(id), {method:"DELETE"}); if(generation!==state.generation || demoEpoch!==state.demoEpoch || id!==state.sessionId || !state.connected) return; state.sessionId=null; $("demo-messages").replaceChildren(); status("demo-status", demoCopy().ended); await loadHistory(); }
   catch(error) {
-    if(error.name!=="AbortError" && generation===state.generation && state.connected) {
+    if(error.name!=="AbortError" && generation===state.generation && demoEpoch===state.demoEpoch && id===state.sessionId && state.connected) {
       if(error.status===410 || error.status===404) {
         state.sessionId=null;
         status("demo-status", demoCopy().expired, "error");
       } else status("demo-status", demoError(error),"error");
     }
   }
-  finally { if(generation===state.generation) { state.turnBusy=false; controls(); } }
+  finally { if(generation===state.generation && demoEpoch===state.demoEpoch) { state.turnBusy=state.demoEnding=false; controls(); } }
 }
 function encodeWav(input, rate=16000) {
   const frames=Math.min(240000,input.length), buffer=new ArrayBuffer(44+frames*2), view=new DataView(buffer);
@@ -486,18 +678,19 @@ async function toggleMic() {
   }
   if(state.turnBusy || state.micStarting || !requireDemoConnection()) return;
   const generation=state.generation, micEpoch=state.micEpoch;
-  if(!state.sessionId) await startDemo();
+  if(!state.sessionId) { await startDemo(); if(state.playback && $("demo-audio").src && $("demo-audio").paused===false && !$("demo-audio").ended) return; }
   if(generation!==state.generation || micEpoch!==state.micEpoch || !state.connected || !state.sessionId || state.turnBusy || state.micStarting || document.hidden) return;
   const session=state.sessionId;
   let stream=null, context=null;
   state.micStarting=true; controls(); $("demo-audio").pause(); status("demo-status", demoCopy().micPermission);
+  if(state.playback) state.playback.interrupted=true;
   try {
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     if(generation!==state.generation || session!==state.sessionId || micEpoch!==state.micEpoch || state.mic || state.turnBusy || document.hidden) { stream.getTracks().forEach(track=>track.stop()); return; }
     $("demo-audio").pause();
     context=new (window.AudioContext || window.webkitAudioContext)();
     const source=context.createMediaStreamSource(stream), processor=context.createScriptProcessor(4096,1,1), gain=context.createGain(); gain.gain.value=0;
-    const mic={stream,context,source,processor,gain,chunks:[],frames:0,peak:0,speechFrames:0,silenceFrames:0}; state.mic=mic;
+    const mic={stream,context,source,processor,gain,chunks:[],frames:0,peak:0,speechFrames:0,silenceFrames:0,endpointingMs:state.endpointingMs}; state.mic=mic;
     // ponytail: energy endpointing, not semantic VAD; manual stop and 15s cap remain.
     processor.onaudioprocess=event=>{
       if(state.mic!==mic)return;
@@ -507,7 +700,7 @@ async function toggleMic() {
       const rms=Math.sqrt(energy/Math.max(1,kept.length)), level=Math.min(1,rms*5); $("mic-level").value=level;
       $("mic-feedback-text").textContent=`${Math.floor(mic.frames/context.sampleRate)} / 15 s. ` + (level < .005 ? demoCopy().micQuiet : demoCopy().micSignal);
       if(rms>=.008) { mic.speechFrames+=kept.length; mic.silenceFrames=0; } else mic.silenceFrames+=kept.length;
-      if(mic.frames>=Math.floor(context.sampleRate*15) || (mic.speechFrames>=context.sampleRate*.2 && mic.silenceFrames>=context.sampleRate*1.5)) toggleMic();
+      if(mic.frames>=Math.floor(context.sampleRate*15) || (mic.speechFrames>=context.sampleRate*.2 && mic.silenceFrames>=context.sampleRate*mic.endpointingMs/1000)) toggleMic();
     };
     source.connect(processor); processor.connect(gain); gain.connect(context.destination); await context.resume();
     if(generation!==state.generation || micEpoch!==state.micEpoch || state.mic!==mic) return;
@@ -537,11 +730,12 @@ $("booking-prev").addEventListener("click",()=>{if(state.page>1)changeView(state
 $("booking-next").addEventListener("click",()=>{if(state.hasMore && state.page<100)changeView(state.page+1);});
 $("demo-start").addEventListener("click",startDemo); $("demo-end").addEventListener("click",endDemo);
 $("demo-language").addEventListener("change",changeDemoLanguage);
+$("demo-voice").addEventListener("change",changeDemoVoice);
 $("demo-form").addEventListener("submit", event=>{event.preventDefault(); const text=$("demo-text").value.trim(); if(text) { stopMic(); sendTurn({text}); }});
 $("demo-mic").addEventListener("click",toggleMic);
 $("demo-history").addEventListener("click",async()=>{const id=state.callId; if(!state.connected || !id)return; location.hash="calls-section"; await loadHistory(); if(state.connected) await selectHistory(id);});
 $("demo-recap-read").addEventListener("click",()=>{
-  if(!state.awaitingRecapId || state.turnBusy) return;
+  if(!state.connected || !state.awaitingRecapId || state.turnBusy || !state.playback || !currentPlayback(state.playback) || !state.playback.complete || !state.playback.eof || state.playback.failed || state.playback.receipt!==state.awaitingRecapId) return;
   state.recapDeliveryId=state.awaitingRecapId; $("demo-recap-read").hidden=true;
   status("demo-status", recapPlayedMessage());
 });

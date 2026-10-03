@@ -222,6 +222,11 @@ def reconcile(repository, state, base):
         payload = run(git + ["archive", "--format=tar", sha], base).stdout
         with tarfile.open(fileobj=io.BytesIO(payload)) as archive:
             archive.extractall(release, filter="data")
+        # The data filter leaves directory modes to our private service umask.
+        # COPY preserves those modes, but the image runs as a different user.
+        for directory in release.rglob("*"):
+            if directory.is_dir() and not directory.is_symlink():
+                directory.chmod(0o755)
         spec = importlib.util.spec_from_file_location(
             "release_manage", release / "deploy/telephony/manage.py"
         )
@@ -275,7 +280,10 @@ def reconcile(repository, state, base):
         profile = {
             k: v
             for k, v in resolved.items()
-            if k.startswith(("AZURE_", "GROQ_", "VOICEBOT_"))
+            if (
+                k.startswith(("AZURE_", "GROQ_", "VOICEBOT_"))
+                or k in {"RESTAURANT_STATE_DB", "CALLS_DB"}
+            )
             and not k.endswith(("KEY", "SECRET", "TOKEN"))
         }
         require(profile)
@@ -296,6 +304,25 @@ def reconcile(repository, state, base):
             base,
         )
         require(re.fullmatch(r"sha256:[0-9a-f]{64}", image))
+        run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--read-only",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--entrypoint",
+                "python",
+                image,
+                "-c",
+                "import app.worker; import app.twilio_bridge",
+            ],
+            base,
+            timeout=60,
+        )
         try:
             _, fresh_sha = source(base, web["Id"])
             existing = targets(base, old)

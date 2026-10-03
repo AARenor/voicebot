@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+from inspect import getattr_static
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ else:
 def build_stack() -> dict:
     """Construct providers/adapters from env. Never logs or returns keys."""
     from .providers.azure_tts import AzureTtsClient
+    from .providers.demo_voices import DemoVoices
     from .providers.gemini import GeminiClient
     from .providers.groq import GroqClient
     from .providers.voice_config import SpeechConfig
@@ -43,6 +45,7 @@ def build_stack() -> dict:
         "llm_primary": None,
         "llm_secondary": None,
         "tts": None,
+        "voices": DemoVoices.from_env(),
         "stay": None,
         "slot": None,
         "table": None,
@@ -186,10 +189,17 @@ def create_app():
 
     stack = build_stack()
     sessions = DemoSessions()
+    producers = set()
+    streams = set()
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        # Disconnect never cancels a to_thread write/TTS. Drain ownership first.
+        for stream in tuple(streams):
+            stream.disconnect()
+        if producers:
+            await asyncio.gather(*producers, return_exceptions=True)
         sessions.clear()
         # Release provider sockets on shutdown/reload (no behavior change).
         seen = set()
@@ -198,6 +208,7 @@ def create_app():
             "llm_primary",
             "llm_secondary",
             "tts",
+            "voices",
             "slot",
             "stay",
             "table",
@@ -224,6 +235,8 @@ def create_app():
     app = FastAPI(title="voicebot-et", lifespan=lifespan)
     app.state.stack = stack
     app.state.demo_sessions = sessions
+    app.state.turn_producers = producers
+    app.state.turn_streams = streams
 
     @app.middleware("http")
     async def private_responses(request, call_next):
@@ -417,10 +430,43 @@ def create_app():
         reader = reader_or_raise(authorization)
         return await private_read(reader.get_operator_catalogue())
 
+    @app.get("/api/demo/voices")
+    def demo_voices(authorization: str | None = Header(default=None)):
+        from .hackathon import voice_metadata
+
+        dashboard_api._require_operator(authorization)
+        stack = app.state.stack
+        registry = stack.get("voices")
+        rows = (
+            registry.catalog(azure=stack["tts"])
+            if registry is not None
+            else [
+                {
+                    "id": "azure",
+                    "label": "Azure",
+                    "languages": ["et", "en", "ru"],
+                    "configured": stack["tts"] is not None,
+                    "available": stack["tts"] is not None,
+                    "disabled_reason": None
+                    if stack["tts"] is not None
+                    else "not_configured",
+                    "streaming": voice_metadata(stack["tts"], "et")["streaming"],
+                }
+            ]
+        )
+        try:
+            silence_ms = int(os.environ.get("VOICEBOT_MIC_SILENCE_MS", "650"))
+        except ValueError:
+            silence_ms = 650
+        return {
+            "voices": rows,
+            "endpointing_ms": silence_ms if 300 <= silence_ms <= 2000 else 650,
+        }
+
     @app.post("/api/turn")
     async def voice_turn(
         request: Request, authorization: str | None = Header(default=None)
-    ) -> dict:
+    ):
         """Fictional HTTP turn. Optional session_id owns multi-turn state.
 
         Auth before providers; only text/audio, language and session_id pass.
@@ -432,6 +478,7 @@ def create_app():
         from .hackathon import (
             SESSION_TTL,
             DemoSession,
+            choose_speaker,
             operator_scope,
             read_turn_body,
             run_demo_turn,
@@ -449,13 +496,18 @@ def create_app():
         else:
             from .telephone import CallTools
 
+            # Check an explicit standalone profile before constructing call state.
+            selected = choose_speaker(stack, body.get("voice", "azure"))
             session = DemoSession(
                 operator_scope(authorization),
                 CallTools(stack["dispatcher"]),
                 time.monotonic() + SESSION_TTL,
                 turn_count=1,
+                voice_id=body.get("voice", "azure"),
             )
         try:
+            if key is not None:
+                selected = choose_speaker(stack, session.voice_id)
             if key is None:
                 callslog.history_safe(
                     call_history.start,
@@ -463,32 +515,84 @@ def create_app():
                     "browser",
                     session.tools.language if language == "auto" else language,
                 )
-            response = await run_demo_turn(
-                session,
-                stack,
-                audio,
-                text,
-                language,
-                recap_delivery_id=body.get("recap_delivery_id"),
-            )
-        finally:
+        except BaseException:
             if key is not None:
                 sessions.release(session)
-            else:
-                callslog.history_safe(call_history.end, session.tools.call_id)
-        response["session_id"] = key
-        response["call_id"] = session.tools.call_id
-        try:
-            callslog.log_call(
-                callslog.get_default(),
-                response["language"],
-                "",
-                "HTTP voice turn",
-                response["outcome"],
-            )
-        except Exception:
-            pass
-        return response
+            raise
+
+        streaming = any(
+            part.split(";", 1)[0].strip().lower() == "application/x-ndjson"
+            for part in request.headers.get("accept", "").split(",")
+        )
+        events = None
+        if streaming:
+            from .browser_audio import AudioEvents, StreamingSpeaker
+
+            originating_turn = session.turn_count
+
+            def invalidate_receipt():
+                with sessions.lock:
+                    if session.turn_count == originating_turn:
+                        session.recap_delivery = None
+
+            events = AudioEvents(invalidate_receipt)
+            streams.add(events)
+            selected = StreamingSpeaker(selected, events)
+
+        async def produce():
+            try:
+                response = await run_demo_turn(
+                    session,
+                    stack,
+                    audio,
+                    text,
+                    language,
+                    recap_delivery_id=body.get("recap_delivery_id"),
+                    tts_override=selected,
+                    emit=events.emit if events is not None else None,
+                )
+                response["session_id"] = key
+                response["call_id"] = session.tools.call_id
+                try:
+                    callslog.log_call(
+                        callslog.get_default(),
+                        response["language"],
+                        "",
+                        "HTTP voice turn",
+                        response["outcome"],
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                if events is None:
+                    raise
+                session.recap_delivery = None
+                response = {
+                    "detail": "private_operation_failed",
+                    "tts_failed": True,
+                    "recap_delivery_id": None,
+                    "audio_type": "audio/mpeg",
+                    "session_id": key,
+                    "call_id": session.tools.call_id,
+                }
+            finally:
+                if events is not None and events.closed.is_set():
+                    invalidate_receipt()
+                if key is not None:
+                    sessions.release(session)
+                else:
+                    callslog.history_safe(call_history.end, session.tools.call_id)
+            if events is not None:
+                await events.finish(response)
+            return response
+
+        if events is None:
+            return await produce()
+        producer = asyncio.create_task(produce())
+        producers.add(producer)
+        producer.add_done_callback(producers.discard)
+        producer.add_done_callback(lambda _: streams.discard(events))
+        return events.response()
 
     @app.post("/api/demo/session")
     async def start_demo_session(
@@ -497,20 +601,27 @@ def create_app():
         import base64
         from fastapi import HTTPException
 
-        from .hackathon import operator_scope, read_session_language
-        from .providers.azure_tts import AzureTtsClient
+        from .hackathon import (
+            choose_speaker,
+            operator_scope,
+            read_session_settings,
+            voice_metadata,
+        )
         from .turn import _speak
 
         dashboard_api._require_operator(authorization)
-        language = await read_session_language(request)
+        language, voice_id = await read_session_settings(request)
         stack = app.state.stack
         if stack["llm_primary"] is None or stack["tts"] is None:
             raise HTTPException(503, "voice_stack_not_configured")
+        speaker = choose_speaker(stack, voice_id)
         data = sessions.create(
-            stack["dispatcher"], operator_scope(authorization), language=language
+            stack["dispatcher"],
+            operator_scope(authorization),
+            language=language,
+            voice_id=voice_id,
         )
-        speaker = stack["tts"]
-        if isinstance(speaker, AzureTtsClient):
+        if callable(getattr_static(speaker, "for_language", None)):
             speaker = speaker.for_language(data["language"])
         try:
             audio = await asyncio.wait_for(_speak(speaker, data["greeting"]), 25)
@@ -520,6 +631,7 @@ def create_app():
             audio_b64=base64.b64encode(audio).decode(),
             audio_type="audio/mpeg",
             tts_failed=not bool(audio),
+            voice=voice_metadata(speaker, data["language"], voice_id),
         )
         return data
 

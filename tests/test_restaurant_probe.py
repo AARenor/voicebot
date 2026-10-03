@@ -36,6 +36,19 @@ def test_probe_requests_exact_table_time_and_headcount_in_supported_languages():
         assert data["consent"] and data["cancel"]
 
 
+@pytest.mark.parametrize("language", ["et", "en", "ru"])
+def test_probe_recognizes_actual_canonical_table_recap(language):
+    from datetime import date
+    from tests.test_table_policy import prepare_table, table_state
+
+    state, _ = table_state(language=language)
+    asyncio.run(prepare_table(state))
+    assert (
+        module().scenario(language, date(2026, 11, 2))["recap_marker"]
+        in state.render_recap()
+    )
+
+
 @pytest.mark.parametrize("call_id", ["", "a' OR 1=1 --", "0" * 33, None])
 def test_probe_rejects_invalid_scope_before_docker(call_id):
     probe = module()

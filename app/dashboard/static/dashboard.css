@@ -143,7 +143,8 @@ tr.highlight { background: var(--wash); }
 .conversation-intro h3 { font-size: 19px; }
 .conversation-intro p { max-width: 40ch; margin: 6px auto 0; color: var(--muted); font-size: 12px; }
 .demo-actions { justify-content: center; }
-.demo-language { max-width: 360px; margin: 0 auto 20px; }
+.demo-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.demo-language { min-width: 0; }
 .demo-language select { width: 100%; min-height: 44px; }
 .demo-language .sub { margin-top: 6px; line-height: 1.5; }
 .demo-language select:disabled { opacity: .7; cursor: not-allowed; }
@@ -273,6 +274,7 @@ footer .icon { width: 16px; height: 16px; color: var(--teal); }
   .panel-body { padding-inline: 17px; }
   .conversation-intro h3 { font-size: 18px; }
   .demo-form { grid-template-columns: 1fr; }
+  .demo-selectors { grid-template-columns: 1fr; }
   .demo-form input { font-size: 16px; }
   .demo-form .button { justify-self: stretch; }
   .demo-form .mic-button { grid-column: auto; min-height: 42px; }

@@ -94,7 +94,7 @@ def scenario(language, day):
             "request": f"Please reserve a table for four people on {spoken_date(day.isoformat())} at six in the evening.",
             "decline": "No, do not confirm the booking.",
             "cancel": "Please cancel this test booking.",
-            "recap_marker": "Fictional test booking:",
+            "recap_marker": "Fictional table test booking:",
         }
     elif language == "et":
         months = (
@@ -117,7 +117,7 @@ def scenario(language, day):
             "request": f"Palun laud neljale inimesele {day.day}. {months[day.month - 1]} {day.year} kell kaheksateist.",
             "decline": "Ei, ära kinnita broneeringut.",
             "cancel": "Jah, tühista.",
-            "recap_marker": "Fiktiivne testbroneering:",
+            "recap_marker": "Fiktiivne laua testbroneering:",
         }
     elif language == "ru":
         months = (
@@ -140,7 +140,7 @@ def scenario(language, day):
             "request": f"Пожалуйста, столик на четырёх человек {day.day} {months[day.month - 1]} {day.year} года в восемнадцать часов.",
             "decline": "Нет, не подтверждайте бронирование.",
             "cancel": "Да, отмените.",
-            "recap_marker": "Вымышленное тестовое бронирование:",
+            "recap_marker": "Тестовое бронирование столика в вымышленном ресторане:",
         }
     else:
         raise ValueError("unsupported probe language")
@@ -153,7 +153,10 @@ def scenario(language, day):
 
 
 async def run(container, env, language="et"):
-    day = datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(days=14)
+    # Declined holds expire naturally; separate language probes must not compete.
+    day = datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(
+        days=14 + ("et", "en", "ru").index(language)
+    )
     phrases = scenario(language, day)
     name = "voicebot-restaurant-probe-" + uuid.uuid4().hex
     client = api.LiveKitAPI(

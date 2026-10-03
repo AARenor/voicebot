@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+from inspect import getattr_static
 import json
 import re
 import threading
@@ -19,7 +20,6 @@ from fastapi import HTTPException, Request
 from .telephone import CallTools
 from .languages import LANGUAGES
 from .booking_response import trusted_booking_response
-from .providers.azure_tts import AzureTtsClient
 from . import call_history, callslog
 from .providers.errors import PROVIDER_FAILURE_REASONS, ProviderError
 
@@ -27,6 +27,7 @@ SESSION_TTL = 600
 MAX_SESSIONS = 16
 MAX_TURNS = 24
 MAX_TURN_BODY_BYTES = 750_000  # accommodates the bounded base64 audio envelope
+VOICE_IDS = ("azure", "elevenlabs", "google", "cartesia")
 
 
 @dataclass
@@ -41,6 +42,7 @@ class DemoSession:
     expiry: object = None
     recap_delivery: dict | None = None
     booking_recap_delivery: dict | None = None
+    voice_id: str = "azure"
 
 
 def operator_scope(authorization):
@@ -83,7 +85,9 @@ class DemoSessions:
             else:
                 self._remove(key, expired=True)
 
-    def create(self, dispatcher, owner, *, language: str = "et"):
+    def create(
+        self, dispatcher, owner, *, language: str = "et", voice_id: str = "azure"
+    ):
         with self.lock:
             self._prune()
             if len(self.sessions) >= MAX_SESSIONS:
@@ -98,6 +102,7 @@ class DemoSessions:
                         dispatcher, language="et" if language == "auto" else language
                     ),
                     time.monotonic() + SESSION_TTL,
+                    voice_id=voice_id,
                 )
             except Exception:
                 raise HTTPException(503, "demo_profile_unavailable") from None
@@ -168,7 +173,7 @@ class DemoSessions:
                 self._remove(key, interrupted=True)
 
 
-async def read_session_language(request: Request) -> str:
+async def read_session_settings(request: Request) -> tuple[str, str]:
     """Optional bounded session settings; routes authenticate before parsing."""
     body = bytearray()
     async for chunk in request.stream():
@@ -176,17 +181,86 @@ async def read_session_language(request: Request) -> str:
             raise HTTPException(413, "demo_session_arguments_too_large")
         body.extend(chunk)
     if not body:
-        return "auto"  # Preserve existing clients that send no JSON body.
+        return "auto", "azure"  # Preserve clients that send no JSON body.
     try:
         data = json.loads(body)
     except (ValueError, UnicodeError, RecursionError):
         raise HTTPException(400, "demo_session_arguments_invalid") from None
-    if not isinstance(data, dict) or set(data) - {"language"}:
+    if not isinstance(data, dict) or set(data) - {"language", "voice"}:
         raise HTTPException(400, "demo_session_arguments_invalid")
     language = data.get("language", "auto")
     if not isinstance(language, str) or language not in ("auto", *LANGUAGES):
         raise HTTPException(400, "demo_session_language_invalid")
+    return language, validate_voice(data.get("voice", "azure"))
+
+
+async def read_session_language(request: Request) -> str:
+    language, _ = await read_session_settings(request)
     return language
+
+
+def validate_voice(value):
+    if not isinstance(value, str) or value not in VOICE_IDS:
+        raise HTTPException(422, "voice_profile_invalid")
+    return value
+
+
+def choose_speaker(stack, voice_id="azure"):
+    """Resolve against the current injected Azure client, never a captured one."""
+    validate_voice(voice_id)
+    registry = stack.get("voices")
+    # Legacy injected Azure speakers may expose only synthesize(), not views.
+    if (
+        voice_id == "azure"
+        and stack["tts"] is not None
+        and not callable(getattr_static(stack["tts"], "for_language", None))
+    ):
+        return stack["tts"]
+    if registry is None:
+        if voice_id == "azure":
+            return stack["tts"]
+        raise HTTPException(503, "voice_profile_unavailable")
+    try:
+        return registry.choose(voice_id, azure=stack["tts"])
+    except ValueError:
+        raise HTTPException(503, "voice_profile_unavailable") from None
+
+
+def voice_metadata(provider, language, voice_id="azure"):
+    info = (
+        getattr(provider, "voice_info", None)
+        if getattr_static(provider, "voice_info", None) is not None
+        else None
+    )
+    if callable(info):
+        info = info()
+    if not isinstance(info, dict):
+        return {
+            "requested": voice_id,
+            "effective": voice_id,
+            "language": language,
+            "fallback": False,
+            "reason": None,
+            "streaming": getattr(provider, "streaming") is True
+            if getattr_static(provider, "streaming", None) is not None
+            else callable(getattr_static(provider, "stream", None)),
+        }
+    # Only closed metadata crosses the private API, never arbitrary config fields.
+    reason = info.get("reason")
+    return {
+        "requested": info.get("requested")
+        if info.get("requested") in VOICE_IDS
+        else voice_id,
+        "effective": info.get("effective")
+        if info.get("effective") in VOICE_IDS
+        else voice_id,
+        "language": language,
+        "fallback": info.get("fallback") is True,
+        "reason": reason
+        if reason in ("unsupported_language", "provider_failure")
+        else None,
+        "streaming": info.get("streaming") is True,
+    }
 
 
 async def read_turn_body(request):
@@ -213,8 +287,10 @@ def validate_input(body, stack):
         "language",
         "session_id",
         "recap_delivery_id",
+        "voice",
     }:
         raise HTTPException(400, "turn_arguments_invalid")
+    validate_voice(body.get("voice", "azure"))
     audio_b64, text = body.get("audio_b64", ""), body.get("text", "")
     receipt = body.get("recap_delivery_id")
     if receipt is not None and (
@@ -499,10 +575,11 @@ class _TrustedLlm:
 
 
 class _SafeSpeaker:
-    def __init__(self, provider, turn_tools):
+    def __init__(self, provider, turn_tools, emit=None):
         self.provider, self.tools, self.reply = provider, turn_tools, None
         self.recap_id = None
         self.latency_ms = 0.0
+        self.emit = emit
 
     def normalize(self, text):
         outcome = result_outcome(
@@ -539,6 +616,15 @@ class _SafeSpeaker:
 
     def synthesize(self, text):
         self.reply = self.normalize(text)
+        if self.emit is not None:
+            self.emit(
+                {
+                    "type": "reply",
+                    "reply": self.reply,
+                    "language": self.tools.session.tools.language,
+                    "audio_type": "audio/mpeg",
+                }
+            )
         started = time.perf_counter()
         try:
             return self.provider.synthesize(self.reply)
@@ -547,7 +633,15 @@ class _SafeSpeaker:
 
 
 async def run_demo_turn(
-    session, stack, audio, text, language, *, recap_delivery_id=None
+    session,
+    stack,
+    audio,
+    text,
+    language,
+    *,
+    recap_delivery_id=None,
+    tts_override=None,
+    emit=None,
 ):
     from .turn import MAX_HISTORY_TURNS, recognize_audio, run_turn
 
@@ -581,10 +675,10 @@ async def run_demo_turn(
         call_history.record_input, session.tools.call_id, recognition_status, language
     )
     tools = _TurnTools(session)
-    provider = stack["tts"]
-    if isinstance(provider, AzureTtsClient):
+    provider = tts_override if tts_override is not None else stack["tts"]
+    if callable(getattr_static(provider, "for_language", None)):
         provider = provider.for_language(session.tools.language)
-    speaker = _SafeSpeaker(provider, tools)
+    speaker = _SafeSpeaker(provider, tools, emit)
     primary = _TrustedLlm(stack["llm_primary"], session)
     secondary = (
         _TrustedLlm(stack["llm_secondary"], session)
@@ -668,12 +762,20 @@ async def run_demo_turn(
         "tts": round(speaker.latency_ms, 1),
         "total": round((time.perf_counter() - started) * 1000, 1),
     }
+    first_audio_ms = (
+        getattr(provider, "first_audio_ms", None)
+        if getattr_static(provider, "first_audio_ms", None) is not None
+        else None
+    )
+    if type(first_audio_ms) in (int, float) and first_audio_ms >= 0:
+        timings["tts_first_audio_ms"] = first_audio_ms
     return {
         "text_heard": result["text_heard"],
         "language": language,
         "reply": result["reply"],
         "audio_b64": base64.b64encode(result["audio"]).decode(),
         "audio_type": "audio/mpeg",
+        "voice": voice_metadata(provider, language, session.voice_id),
         "tools_used": len(result["tool_results"]),
         "fallback_used": result["fallback_used"],
         "tts_failed": result["tts_failed"],

@@ -286,9 +286,14 @@ def test_restaurant_direct_controls_reject_legacy_kinds(client, kind):
 
 
 def test_restaurant_mode_does_not_enable_old_demo_queue_mutations(client):
+    from app.dashboard import demo
+
+    before = [dict(row) for row in demo.STORE["holds"]]
+    assert client.get("/api/holds").json() == {"holds": []}
     for action in ("confirm", "cancel"):
         response = client.post("/api/holds/hold_demo_sea12/" + action, headers=AUTH)
         assert response.status_code == 503, response.text
+    assert demo.STORE["holds"] == before
 
 
 def test_restaurant_property_never_reads_accidentally_wired_spa_catalogue(client):

@@ -34,6 +34,8 @@ route.
 Minimum (demo runs without providers):
 ```
 PORT=8000
+VOICEBOT_BUSINESS=restaurant
+RESTAURANT_STATE_DB=/data/restaurant-booking.db
 OPERATOR_TOKEN=<long random string>   # required to confirm/cancel holds
 ```
 Later (live voice — mirrors `.env.example` exactly):
@@ -42,11 +44,6 @@ GROQ_API_KEY=...
 GEMINI_API_KEY=...
 LIVEKIT_URL=...  LIVEKIT_API_KEY=...  LIVEKIT_API_SECRET=...  # all three required for configured media status
 SIP_TRUNK_ADDRESS=...  SIP_AUTH_USERNAME=...  SIP_AUTH_PASSWORD=...  SIP_INBOUND_NUMBER=...
-APALEO_CLIENT_ID=...  APALEO_CLIENT_SECRET=...
-MEWS_CLIENT_TOKEN=...  MEWS_ACCESS_TOKEN=...  MEWS_CLIENT=...  MEWS_API_BASE_URL=...
-CLOUDBEDS_API_KEY=...  ZENOTI_API_KEY=...
-EASY_BASE_URL=http://voicebot-easyappointments  EASY_API_KEY=...
-EASY_DEMO_WRITES=1  EASY_STATE_DB=/data/easy-booking.db
 AZURE_SPEECH_KEY=...  AZURE_REGION=...  AZURE_VOICE=et-EE-AnuNeural  AZURE_LANG=et-EE
 LANGFUSE_PUBLIC_KEY=...  LANGFUSE_SECRET_KEY=...  OTEL_EXPORTER_OTLP_ENDPOINT=...
 CALLS_DB=/data/calls.db
@@ -54,28 +51,27 @@ VOICEBOT_PROD=1
 ```
 Never commit these — Coolify env only (mirrors `.env.example`).
 
-The Easy values above enable **only the synthetic, operator-authenticated demo**.
-Leave `EASY_DEMO_WRITES=0` for an unverified instance or real guest/property
-traffic. The separately deployed booking stack joins the `coolify` network;
-PHP/MySQL are not embedded in the voicebot image. Its admin UI binds only to
-loopback port 8088. [Booking runbook](deploy/easyappointments/README.md).
+Restaurant mode does not depend on or activate the archived hotel/spa credentials.
+Keep existing booking databases/services intact during the pivot. Their
+[historical runbook](deploy/easyappointments/README.md) is not an active restaurant
+connector or authorization for real customer traffic.
 
 Single-process assumption: in-memory search/hold snapshots + demo STORE diverge if
 replicas scale past 1 — keep Coolify replicas at exactly 1.
 
 Scale continuous-call **agent workers** separately from this web/API container.
-The fictional room demo uses `STAY_STATE_DB=/data/stay-booking.db` on this same
-volume. `STAY_DEMO_WRITES` follows `EASY_DEMO_WRITES` when absent; explicit `0`
-disables it. The native worker uses the identical room database path. The room
-inventory and receipts must survive replacement alongside the Easy journal;
-never initialize a different worker volume for this feature. Public hotel
+The fictional table ledger uses `RESTAURANT_STATE_DB=/data/restaurant-booking.db`
+on this same volume. The native worker uses the identical restaurant database
+path. Existing room/spa receipts and history survive unchanged alongside the new
+ledger; never initialize a different worker volume for this feature. Public restaurant
 pitching content is served at `https://meretuule.arleserver.cfd/`, using the
 internal `/hotel` handler; its contact number comes from
 `PUBLIC_PHONE_NUMBER`, or the configured Twilio/SIP number. The public DTOs
 contain catalogue/property information, and all booking writes retain operator
 authentication and call-owned confirmation rules.
-The Easy write journal persists on `/data` and its file lock coordinates a
-shared single-host journal. This does not make search/hold state distributed.
+The restaurant SQLite transactions coordinate table holds across web/native
+processes on this shared single-host volume. HTTP sessions still live in one
+web process; database persistence does not distribute their consent ownership.
 
 **Required:** configure `/data` explicitly under application **Persistent Storage**.
 Dockerfile `VOLUME ["/data"]` alone creates an anonymous volume per replacement
@@ -130,14 +126,18 @@ new web release, so synchronization waits for the next ordinary deployment.
 
 - `https://robot.arleserver.cfd/health` → `{"ok": true}`
 - `https://robot.arleserver.cfd/` → disclosed fictional operator dashboard
-  (provider-backed bookings, catalogue, text/microphone demo, technical calls).
-- `https://meretuule.arleserver.cfd/` → public fictional hotel and spa website;
+   (restaurant ledger, catalogue, text/microphone demo and technical calls).
+- `https://meretuule.arleserver.cfd/` → public fictional restaurant website;
   its homepage links use this exact canonical root.
 - Public robot `/hotel` and `/hotel/` → HTTP 301 with the exact canonical
   Meretuule root in `Location` (query strings preserved). A direct app request
   using the robot hostname → HTTP 410 with no `Location` header.
 - Confirm/cancel without or with a wrong client token → 403. 503 means
   the server itself has no `OPERATOR_TOKEN` configured — check Coolify env.
+- `/api/tables` and `/api/table-bookings` require operator authentication and
+  return `Cache-Control: no-store`. Availability, delivered recap, later consent,
+  independent readback and owned cancellation must all pass; a healthy container
+  does not verify them. Preserve the signed incoming telephone routes unchanged.
 
 ## 5. Local mirror (same as Coolify builds)
 
@@ -152,6 +152,11 @@ docker run --rm -p 8000:8000 -e OPERATOR_TOKEN=demo-token voicebot:local
 - The [natural conversation profile](docs/operations/natural-conversation.md)
   shares voice pacing and pronunciation across HTTP/native speech. Browser
   replies use high-fidelity 48 kHz / 96 kbit/s MP3; native PCM remains 24 kHz.
+- Optional [modern website voice profiles](docs/operations/modern-voices.md)
+  use server-only provider credentials and a locked session selector. Azure
+  remains the default/fallback. Incremental MP3 playback improves buffering on
+  supported browsers; Google REST stays explicitly buffered. An available
+  configuration does not prove live audio quality or telephone activation.
 - Mutations, demo sessions, `/api/turn`, `/api/calls`, `/api/bookings` and
   `/api/catalogue` require operator authorization; responses/errors are `no-store`.
   The operator token exists only in page memory; logout clears private content,

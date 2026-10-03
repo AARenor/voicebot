@@ -16,7 +16,7 @@ from typing import Literal
 from . import demo
 
 try:
-    from fastapi import APIRouter, Header, HTTPException
+    from fastapi import APIRouter, Header, HTTPException, Request
     from pydantic import BaseModel
 
     class BookingRow(BaseModel):
@@ -127,7 +127,9 @@ try:
             raise HTTPException(403, "forbidden")
 
     @router.get("/holds")
-    def list_holds() -> dict:
+    def list_holds(request: Request) -> dict:
+        if request.app.state.stack["business"] == "restaurant":
+            return {"holds": []}  # Archived samples are not restaurant inventory.
         now = time.time()
         with _LOCK:
             rows = list(demo.STORE["holds"])

@@ -188,6 +188,8 @@ class ExternalCommands:
             operation = argv[argv.index("-f") + 2]
             if operation == "up":
                 operation = "up-" + argv[-1]
+        if operation == "run" and argv[argv.index("--network") + 1] == "none":
+            operation = "artifact-check"
         if self.fail == "timeout-" + operation:
             raise subprocess.TimeoutExpired(argv, kwargs["timeout"], PRIVATE, PRIVATE)
         if self.fail == operation:
@@ -228,6 +230,11 @@ class ExternalCommands:
             assert argv[2:5] == ["inspect", "--format", "{{.Id}}"]
             assert argv[-1] == "voicebot-telephone:" + SHA
             out = (self.artifact + "\n").encode()
+        elif operation == "artifact-check":
+            assert "--rm" in argv and "--read-only" in argv
+            assert ARTIFACT in argv
+            assert argv[-1] == "import app.worker; import app.twilio_bridge"
+            assert not any(k in argv for k in REQUIRED[:2])
         elif operation == "run":
             assert "--rm" in argv and "--network" in argv
             assert argv[argv.index("--network") + 1] == "coolify"
@@ -359,6 +366,30 @@ def test_success_replaces_only_worker_and_bridge_from_exact_archived_revision(
     git_commands = [c for c, _ in lane.external.calls if c[0] == "git"]
     assert any("fetch" in c and "origin" in c for c in git_commands)
     assert any(c[-3:] == ["archive", "--format=tar", SHA] for c in git_commands)
+
+
+def test_private_service_umask_does_not_make_packaged_modules_unreadable(lane):
+    def check_context():
+        command = next(c for c, _ in lane.external.calls if "build" in c)
+        manifest = Path(command[command.index("-f") + 1])
+        release = manifest.parents[2]
+        assert release.stat().st_mode & 0o077 == 0
+        for directory in (release / "deploy", release / "deploy/telephony"):
+            assert directory.stat().st_mode & 0o555 == 0o555
+
+    lane.external.after_build = check_context
+    previous = os.umask(0o077)
+    try:
+        assert lane.run() == 0
+    finally:
+        os.umask(previous)
+
+
+def test_packaged_image_import_failure_never_replaces_live_services(lane, capsys):
+    lane.external.fail = "artifact-check"
+    assert lane.run() == 1
+    assert not any("up" in command for command in lane.external.mutations())
+    assert capsys.readouterr().err.strip() == "FAIL: release_sync_failed"
 
 
 @pytest.mark.parametrize(
@@ -667,6 +698,31 @@ def test_matching_release_labels_do_not_hide_language_model_drift(lane, capsys):
     assert capsys.readouterr().out.strip() == "PASS: release_synced"
     assert (
         "VOICEBOT_TELEPHONE_LANGUAGE=en"
+        in lane.external.containers[WORKER]["Config"]["Env"]
+    )
+
+
+def test_matching_release_never_hides_restaurant_database_drift(lane, capsys):
+    desired = "/data/restaurant-booking.db"
+    lane.external.profiles.update(
+        VOICEBOT_BUSINESS="restaurant", RESTAURANT_STATE_DB=desired
+    )
+    for name in (WORKER, BRIDGE):
+        config = lane.external.containers[name]["Config"]
+        config["Image"] = "voicebot-telephone:" + SHA
+        config["Labels"].update({"voicebot.release": SHA, "voicebot.web-source": WEB})
+        lane.external.containers[name]["Image"] = ARTIFACT
+    env = lane.external.containers[WORKER]["Config"]["Env"]
+    env[:] = [
+        item for item in env if item.split("=", 1)[0] not in lane.external.profiles
+    ]
+    env.extend(key + "=" + value for key, value in lane.external.profiles.items())
+    env.remove("RESTAURANT_STATE_DB=" + desired)
+    env.append("RESTAURANT_STATE_DB=/data/incorrect-table-ledger.db")
+    assert lane.run() == 0
+    assert capsys.readouterr().out.strip() == "PASS: release_synced"
+    assert (
+        "RESTAURANT_STATE_DB=" + desired
         in lane.external.containers[WORKER]["Config"]["Env"]
     )
 
