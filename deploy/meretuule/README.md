@@ -1,7 +1,7 @@
 # Meretuule public domain
 
 `https://meretuule.arleserver.cfd/` is the canonical guest address for the
-fictional hotel website, including homepage links from local previews.
+fictional Meretuule Köök restaurant presentation.
 `https://robot.arleserver.cfd/` remains the operator dashboard; booking and
 voice-demo links explicitly use that management domain.
 The former guest addresses `https://robot.arleserver.cfd/hotel` and
@@ -43,9 +43,9 @@ retains the same service name, so the separate router survives redeployments.
 ## Verify
 
 - Meretuule `/`, versioned assets and `/api/public/*`: 200.
-- Root browser title: `Meretuule — hotelli ja spaa demo`, with live synthetic
-  room and spa catalogues. Homepage links use the exact Meretuule root;
-  booking/demo links use the robot domain.
+- Root browser title: `Meretuule Köök — rannarestorani demo`, with a sample
+  restaurant menu and demo assistant links. Restaurant hours and table booking
+  are not configured.
 - Robot `/` and `/health` remain healthy; private `/api/bookings` without
   authorization returns 403 with `Cache-Control: no-store` on both domains.
 - Public robot `/hotel` and `/hotel/`: HTTP 301 with `Location` set to the exact
@@ -53,6 +53,6 @@ retains the same service name, so the separate router survives redeployments.
   requests using the robot hostname: HTTP 410 with no `Location` header.
 - Run `tests/meretuule_browser_checks.js` through a Node.js Playwright browser-code
   runner for public HTTPS, canonical links, retired paths, asset hashes,
-  catalogue and authorization checks.
+  menu and authorization checks.
 - Run `tests/hotel_browser_checks.js` against the existing local browser fixture
-  for selected-room links, mobile layout, unsafe provider text and API failures.
+  for restaurant content, mobile layout, external links and API behavior.

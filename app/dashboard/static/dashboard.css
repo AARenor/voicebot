@@ -9,9 +9,9 @@
   unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
 }
 :root {
-  color-scheme: light; --navy: #183e32; --ink: #20392f; --muted: #63756b;
-  --teal: #25704f; --teal-dark: #19583c; --mist: #f3f6f1; --wash: #edf5ed;
-  --line: #dce6dc; --white: #fff; --danger: #a33443; --warning: #805c1c;
+  color-scheme: light; --navy: #173a33; --ink: #2b3b34; --muted: #69766d;
+  --teal: #bd6248; --teal-dark: #9e4d38; --mist: #f5f0e8; --wash: #f7e9df;
+  --line: #e2d9cd; --white: #fff; --danger: #a33443; --warning: #805c1c;
   --sidebar-width: 232px;
 }
 * { box-sizing: border-box; }

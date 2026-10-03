@@ -1,12 +1,13 @@
-# Voicebot — fictional Estonian hotel and spa demo
+# Voicebot — restaurant-focused voice assistant demo
 
 LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
-**1.6.0**. The dashboard reads actual provider bookings and offers a protected
-text/microphone demo, direct spa and room booking, and a public hotel pitch at
-`https://meretuule.arleserver.cfd/`. Room inventory is a finite, persistent
-fictional PMS; Easy!Appointments
-continues to supply spa services, working plans and appointment availability.
-Only fictional guests and approved fictional FAQ data.
+**1.6.0**. The restaurant-themed dashboard reads configured provider bookings
+and offers a protected text/microphone demo, plus a public fictional restaurant
+presentation at `https://meretuule.arleserver.cfd/`.
+
+The current booking adapters still represent spa appointments and synthetic
+rooms. Restaurant table capacity, party size and restaurant-specific
+availability are not configured; the public menu is illustrative only.
 Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
@@ -110,7 +111,7 @@ voicebot/
     knowledge/        # SQLite FTS FAQ ingest + retrieve + ET seed
     callslog.py       # SQLite turn/call log (masked peers, 30d retention)
     dashboard/        # protected provider bookings/catalogue + text/microphone UI
-    hotel/            # public fictional hotel/spa pitching website
+    hotel/            # public fictional restaurant presentation
 ```
 
 ## Quickstart

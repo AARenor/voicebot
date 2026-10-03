@@ -1,4 +1,4 @@
-"""Hotel presentation stays local, public, and connected to server-owned data."""
+"""Restaurant presentation stays fictional, public, and credential-free."""
 
 import hashlib
 from html.parser import HTMLParser
@@ -14,13 +14,11 @@ from app.server import create_app
 STATIC = Path(__file__).resolve().parents[1] / "app/hotel/static"
 
 
-def test_hotel_assets_are_local_and_content_versioned() -> None:
+def test_restaurant_assets_are_local_and_content_versioned() -> None:
     assets: list[str] = []
 
     class Parser(HTMLParser):
-        def handle_starttag(
-            self, tag: str, attrs: list[tuple[str, str | None]]
-        ) -> None:
+        def handle_starttag(self, tag, attrs):
             values = dict(attrs)
             if tag == "script":
                 assets.append(values["src"])
@@ -39,35 +37,28 @@ def test_hotel_assets_are_local_and_content_versioned() -> None:
                 hashlib.sha256(content).hexdigest()[:12]
             ]
             assert client.get(url).content == content
-        illustration = client.get("/hotel/coastal-hotel.svg")
-        assert illustration.status_code == 200
-        assert illustration.headers["content-type"].startswith("image/svg+xml")
 
 
-def test_public_hotel_does_not_embed_credentials_inventory_or_phone() -> None:
+def test_restaurant_page_describes_a_fictional_menu_and_does_not_claim_booking() -> None:
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "hotel.js").read_text(encoding="utf-8")
-    assert "/api/public/property" in script
-    assert "/api/public/catalogue" in script
     assert "Authorization" not in script
     assert "innerHTML" not in script
     assert "sessionStorage" not in script and "localStorage" not in script
     assert "+1202555" not in html + script
-    assert 'href="https://robot.arleserver.cfd/?book=stay"' in html
-    assert 'href="https://robot.arleserver.cfd/?book=spa"' in html
-    assert "FIKTIIVNE HOTELL" in html
-    assert "Päris külastuskohta pole" in html
-    assert 'id="room-grid"></div>' in html
-    assert 'id="phone-number" hidden' in html
+    assert "Meretuule Köök" in html
+    assert "NÄIDISMENÜÜ" in html
+    assert "Menüü on näidis" in html
+    assert "Päris restorani ega külastuskohta pole" in html
+    assert "Restorani lahtiolekuaegu pole demo jaoks kinnitatud" in script
+    assert "Päris restoraninumbrit pole seadistatud" in script
 
 
-def test_hotel_operator_links_keep_the_management_domain() -> None:
+def test_restaurant_operator_links_keep_the_management_domain() -> None:
     links: list[str] = []
 
     class Parser(HTMLParser):
-        def handle_starttag(
-            self, tag: str, attrs: list[tuple[str, str | None]]
-        ) -> None:
+        def handle_starttag(self, tag, attrs):
             if tag == "a":
                 href = dict(attrs).get("href")
                 if href:
@@ -84,8 +75,6 @@ def test_hotel_operator_links_keep_the_management_domain() -> None:
         href for href in links if urlsplit(href).hostname == "robot.arleserver.cfd"
     } == {
         "https://robot.arleserver.cfd/",
-        "https://robot.arleserver.cfd/?book=stay",
-        "https://robot.arleserver.cfd/?book=spa",
         "https://robot.arleserver.cfd/#demo-section",
     }
 

@@ -49,8 +49,9 @@ async (page) => {
       if (version) require(sha256.slice(0, 12) === version, `Stale versioned asset: ${url}`);
       assets.push({url, status: asset.status(), bytes: content.length, sha256});
     }
-    await tab.waitForFunction(() => document.querySelectorAll('.room-card').length > 0);
-    require(await tab.locator('#service-list li').count() > 0, 'Public spa catalogue did not load');
+    require(await tab.locator('.menu-item').count() === 4, 'Restaurant sample menu is incomplete');
+    require(await tab.locator('#faq-list details').count() === 4, 'Restaurant demo FAQ did not render');
+    require(await tab.locator('#hours-status').textContent().then(text => /pole demo jaoks kinnitatud/i.test(text)), 'Restaurant hours were presented as configured');
     const operatorLinks = await tab.locator('a[href]').evaluateAll(elements =>
       elements.filter(el => /book=|demo-section/.test(el.href) || /operaatori töölaud/i.test(el.textContent || '')).map(el => el.href)
     );
@@ -63,7 +64,7 @@ async (page) => {
     }
     const robot = await tab.request.get('https://robot.arleserver.cfd/');
     const robotHtml = await robot.text();
-    require(robot.status() === 200 && robotHtml.includes('<title>Vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
+    require(robot.status() === 200 && robotHtml.includes('<title>Restorani vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
     const dashboardHotelLinks = await tab.evaluate(html =>
       [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.hotel-link, .heading-actions a.button:not(.primary)')].map(el => el.getAttribute('href')),
     robotHtml);
@@ -77,11 +78,11 @@ async (page) => {
       require(await demoLinks.count() === 2, 'Dashboard demo links do not point directly to the public root');
       await demoLinks.first().click();
       await management.waitForURL('https://meretuule.arleserver.cfd/');
-      require(/Meretuule/.test(await management.title()), 'Dashboard demo link did not open the hotel website');
+      require(/Meretuule/.test(await management.title()), 'Dashboard demo link did not open the restaurant website');
     } finally { await management.close(); }
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,
-      rooms: await tab.locator('.room-card').count(), services: await tab.locator('#service-list li').count(),
+      menuItems: await tab.locator('.menu-item').count(), faqItems: await tab.locator('#faq-list details').count(),
       homepageLinks, dashboardHotelLinks, operatorLinks, legacyRedirects, dashboardDemoLinkVerified: true,
       privateRoutesDenied: true, robotHealthy: true, errors};
   } finally {
