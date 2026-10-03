@@ -105,7 +105,7 @@ def test_http_audio_faq_uses_the_server_transcript_and_canonical_speech(client):
     class Stt:
         def transcribe(self, audio, *, language):
             assert audio == b"RIFF-fixture"
-            assert language == "et"
+            assert language == "auto"
             return question
 
     client.app.state.stack["stt"] = Stt()

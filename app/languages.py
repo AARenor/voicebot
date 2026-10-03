@@ -5,10 +5,23 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from typing import Any
+from .russian import detect_language
 
-LANGUAGES = ("et", "en")
+LANGUAGES = ("et", "en", "ru")
 ENGLISH_INVITATION = "You can also speak English. How can I help you?"
-CONSENT = {"et": "Jah, kinnitan.", "en": "Yes, I confirm."}
+CONSENT = {"et": "Jah, kinnitan.", "en": "Yes, I confirm.", "ru": "Да, подтверждаю."}
+AFFIRMATIONS_RU = {
+    "да подтверждаю",
+    "да подтверждаю это тестовое бронирование",
+    "да подтверждаю тестовое бронирование",
+}
+CANCELLATIONS_RU = {
+    "да отмените",
+    "пожалуйста отмените это тестовое бронирование",
+    "отмените это тестовое бронирование",
+    "да отмените это тестовое бронирование",
+    "пожалуйста отмените бронирование которое мы только что сделали в этом звонке",
+}
 AFFIRMATIONS_EN = {
     "yes i confirm",
     "yes confirm",
@@ -141,6 +154,10 @@ def language_code(value: object) -> str | None:
         "et": "et",
         "estonian": "et",
         "est": "et",
+        "ru": "ru",
+        "russian": "ru",
+        "rus": "ru",
+        "русский": "ru",
     }.get(value)
 
 
@@ -150,6 +167,7 @@ def requested_language(text: object) -> str | None:
         return None
     text = " ".join(text.casefold().strip(' .!?"“”').replace(",", " ").split())
     patterns = {
+        "ru": r"(?:russian(?: please)?|(?:please )?(?:speak|answer|continue)(?: to me)? in russian|(?:can|could) (?:we|you) (?:speak|continue)(?: to me)? (?:in )?russian(?: please)?|(?:please )?use russian|(?:palun )?(?:räägi|vastake|vasta|jätka)(?: palun)? vene keeles|(?:palun )?vene keeles|(?:пожалуйста )?(?:говорите|говори|отвечайте|отвечай|продолжайте|продолжай) (?:по-русски|на русском(?: языке)?)(?: пожалуйста)?|(?:по-русски|на русском(?: языке)?|русский)(?: пожалуйста)?)",
         "en": r"(?:english(?: please)?|(?:please )?(?:speak|answer|continue)(?: to me)? in english|(?:can|could) (?:we|you) (?:speak|continue)(?: to me)? (?:in )?english(?: please)?|(?:please )?use english|(?:palun )?(?:räägi|vastake|vasta|jätka)(?: palun)? inglise keeles|(?:palun )?inglise keeles)",
         "et": r"(?:estonian(?: please)?|(?:please )?(?:speak|answer|continue)(?: to me)? in estonian|(?:can|could) (?:we|you) (?:speak|continue)(?: to me)? (?:in )?estonian(?: please)?|(?:please )?use estonian|(?:palun )?(?:räägi|vastake|vasta|jätka)(?: palun)? eesti keeles|(?:palun )?eesti keeles)",
     }
@@ -169,6 +187,8 @@ def select_language(text: str, detected: object, current: str) -> str:
     normalized = " ".join(re.sub(r"[.,!]", " ", text.casefold()).split())
     if normalized in AFFIRMATIONS_EN | CANCELLATIONS_EN:
         return "en"
+    if normalized in AFFIRMATIONS_RU | CANCELLATIONS_RU:
+        return "ru"
     if normalized in {"jah kinnitan", "jah tühista"}:
         return "et"
     if not re.search(r"[^\W\d_]", text) or normalized in {
@@ -178,9 +198,22 @@ def select_language(text: str, detected: object, current: str) -> str:
         "okay",
         "jah",
         "ei",
+        "да",
+        "нет",
     }:
         return current
-    return code or current
+    # Cyrillic is strong evidence for Russian when HTTP STT has no metadata.
+    # Otherwise retain the existing provider language and weak-turn rules.
+    if code:
+        return code
+    inferred = detect_language(text, "en")
+    if inferred == "ru":
+        return "ru"
+    if inferred == "et":
+        return "et"
+    if re.search(r"\b(?:hello|hi|please|where|when|what|how|book|booking|want|need|reserve|thank)\b", text, re.I):
+        return "en"
+    return current
 
 
 def english_clarification(text: object) -> str | None:

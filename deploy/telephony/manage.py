@@ -55,6 +55,8 @@ def environment(source):
         "AZURE_LANG",
         "AZURE_EN_VOICE",
         "AZURE_EN_LANG",
+        "AZURE_RU_VOICE",
+        "AZURE_RU_LANG",
         "VOICEBOT_TELEPHONE_LANGUAGE",
         "VOICEBOT_SPEAKING_STYLE",
         "VOICEBOT_SPEECH_RATE",

@@ -23,9 +23,14 @@ INTENTS = {
         "good afternoon",
         "good evening",
         "tere hommikust",
+        "привет",
+        "здравствуйте",
+        "добрый день",
+        "доброе утро",
+        "добрый вечер",
     },
-    "thanks": {"aitäh", "suur tänu", "tänan", "thanks", "thank you", "thanks a lot"},
-    "goodbye": {"head aega", "nägemist", "bye", "goodbye", "bye bye"},
+    "thanks": {"aitäh", "suur tänu", "tänan", "thanks", "thank you", "thanks a lot", "спасибо", "большое спасибо", "спасибо большое", "благодарю"},
+    "goodbye": {"head aega", "nägemist", "bye", "goodbye", "bye bye", "до свидания", "пока", "всего доброго"},
     "decline": {
         "ei",
         "ei aitäh",
@@ -34,6 +39,10 @@ INTENTS = {
         "no thanks",
         "no thank you",
         "no don't confirm",
+        "нет",
+        "нет спасибо",
+        "нет не подтверждайте",
+        "не подтверждайте",
     },
     "repeat": {
         "korda palun",
@@ -52,12 +61,27 @@ INTENTS = {
         "please repeat the date",
         "what was the time",
         "please repeat the time",
+        "повторите пожалуйста",
+        "пожалуйста повторите",
+        "повторите",
+        "можете повторить",
+        "повторите ещё раз",
+        "повторите еще раз",
+        "я не понял",
+        "я не поняла",
+        "повторите дату",
+        "какая была дата",
+        "повторите время",
+        "какое было время",
     },
     "frustrated": {
         "see on segane",
         "see ei tööta",
         "this is confusing",
         "this isn't working",
+        "непонятно",
+        "это непонятно",
+        "это не работает",
     },
     "identity": {
         "kes sa oled",
@@ -66,13 +90,20 @@ INTENTS = {
         "who are you",
         "are you a robot",
         "are you human",
+        "кто вы",
+        "кто ты",
+        "вы робот",
+        "вы человек",
     },
-    "how_are_you": {"kuidas sul läheb", "how are you", "how are you doing"},
+    "how_are_you": {"kuidas sul läheb", "how are you", "how are you doing", "как дела", "как у вас дела"},
     "human": {
         "soovin inimesega rääkida",
         "kas saan inimesega rääkida",
         "can i speak to a person",
         "can i speak to a human",
+        "можно поговорить с человеком",
+        "хочу поговорить с человеком",
+        "можно поговорить с сотрудником",
     },
 }
 
@@ -132,6 +163,38 @@ REPLIES = {
             "This demo can't transfer calls to a person. I can help with a test booking. Would you like to try that?",
         ),
     },
+    "ru": {
+        "greeting": (
+            "Здравствуйте! Чем могу помочь?",
+            "Здравствуйте! Что вы хотите сделать?",
+        ),
+        "thanks": (
+            "Пожалуйста! Могу помочь ещё чем-нибудь?",
+            "Пожалуйста! Есть ещё вопросы?",
+        ),
+        "goodbye": (
+            "Спасибо за звонок. Хорошего дня!",
+            "До свидания! Всего доброго!",
+        ),
+        "decline": (
+            "Хорошо. Чем ещё могу помочь?",
+            "Понятно. Хотите спросить что-нибудь ещё?",
+        ),
+        "repeat": (
+            "Конечно. Какую часть повторить?",
+            "Какой именно момент нужно повторить?",
+        ),
+        "frustrated": (
+            "Извините, получилось непонятно. Давайте по одному вопросу. С чего хотите начать?",
+        ),
+        "identity": (
+            "Я помощник на основе искусственного интеллекта в демонстрации Meretuule. Могу помочь с вопросами и тестовыми бронированиями.",
+        ),
+        "how_are_you": ("Могу помочь. Что вы хотите сделать?",),
+        "human": (
+            "В этой демонстрации я не могу перевести звонок сотруднику. Могу помочь с тестовым бронированием. Хотите попробовать?",
+        ),
+    },
 }
 
 # Alternatives are reviewed questions, not a permit to improvise booking facts.
@@ -166,11 +229,27 @@ QUESTIONS = {
         "room": ("Which room type would you prefer?",),
         "guest": ("Which demo guest would you like to use?",),
     },
+    "ru": {
+        "booking_kind": ("Вы хотите забронировать спа-процедуру или номер в отеле?",),
+        "spa_service": (
+            "Какую спа-процедуру хотите забронировать?",
+            "Какая процедура вас интересует?",
+        ),
+        "date": ("Какая дата вам подходит?", "На какой день хотите записаться?"),
+        "time": ("Какое время вам подходит?", "Какое время вам удобнее?"),
+        "arrival": ("Когда хотите заехать?",),
+        "departure": ("Когда хотите выехать?",),
+        "adults": ("Сколько взрослых будет всего?",),
+        "children": ("Сколько детей будет с вами?",),
+        "room": ("Какой тип номера вы предпочитаете?",),
+        "guest": ("Какого тестового гостя хотите выбрать?",),
+    },
 }
 
 STYLE_INSTRUCTIONS = {
     "et": "Räägi sõbraliku abilisena, lühikeste kõnelausete ja ühe küsimusega korraga. Vali puuduvate andmete küsimus natural_questions valikutest. Ära küsi uuesti juba antud detaili. Ära korda tervitust ega demo tutvustust igas voorus. Väldi bürokraatlikku sõnastust, loetelude ettelugemist, täitesõnu ja väljamõeldud naeru. Ära väida, et oled inimene. Vastused ja küsimused ei tohi lubada kinnitamata broneeringut, hinda, saadavust ega inimesele suunamist. Serveri kokkuvõte ja nõusoleku sõnad jäävad täpseks. Vali kõigepealt üks täpsustav küsimus; ära loe korraga kõiki puuduvate andmete küsimusi ette.",
     "en": "Speak like a friendly assistant, with short spoken sentences and one question at a time. Choose missing-detail questions from natural_questions. Keep details the caller already supplied. Do not restart the greeting or repeat the demo disclosure every turn. Avoid bureaucratic wording, long lists, filler noises and invented laughter. Do not pretend to be human. Never add an unverified booking, price, availability or transfer claim. The server's recap and consent wording stay exact. Pick one clarification question; do not read out the whole list of missing details.",
+    "ru": "Говори как дружелюбный помощник: короткими фразами и по одному вопросу за раз. Выбирай вопросы о недостающих данных из natural_questions. Сохраняй сведения, которые собеседник уже сообщил. Не начинай каждый ответ с приветствия и не повторяй описание демонстрации в каждом ходе. Избегай канцелярских оборотов, длинных списков, слов-паразитов и выдуманного смеха. Не выдавай себя за человека. Не обещай неподтверждённое бронирование, цену, наличие мест или перевод звонка сотруднику. Серверный текст итогов бронирования и слова согласия должны оставаться точными. Задавай один уточняющий вопрос, а не весь список вопросов о недостающих данных.",
 }
 
 
@@ -183,10 +262,10 @@ def intent_for(text: str) -> str | None:
 
 def read_focus(text: str) -> str | None:
     value = normalize(text)
-    if re.search(r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours)\b", value):
+    if re.search(r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b", value):
         return "hours"
     if re.search(
-        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*)\b", value
+        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*|спа\w*|процедур\w*|услуг\w*|массаж\w*)\b", value
     ):
         return "services"
     return None

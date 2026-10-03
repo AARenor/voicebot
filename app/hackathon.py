@@ -207,8 +207,8 @@ def validate_input(body, stack):
             raise HTTPException(503, "stt_not_configured")
     if stack["llm_primary"] is None or stack["tts"] is None:
         raise HTTPException(503, "voice_stack_not_configured")
-    language = body.get("language", "et")
-    return audio, text, language if language in ("et", "en", "ru") else "et"
+    language = body.get("language", "auto")
+    return audio, text, language if language in ("auto", "et", "en", "ru") else "auto"
 
 
 def result_outcome(result):
@@ -369,6 +369,10 @@ class _TrustedLlm:
                     return {"content": "Hello! How can I help you?"}
                 if state.language == "et" and question == "tere":
                     return {"content": "Tere! Kuidas saan aidata?"}
+                if state.language == "ru" and question in {
+                    "привет", "здравствуйте", "добрый день", "доброе утро", "добрый вечер",
+                }:
+                    return {"content": "Здравствуйте! Чем могу помочь?"}
                 suffix = state.language
                 for entry in state.demo["faq"]:
                     approved_question = entry.get("question_" + suffix)
@@ -483,7 +487,10 @@ async def run_demo_turn(
     ):
         session.tools.mark_recap_delivered(receipt["pending"]["hold_id"])
     # The server observes the final transcript before any LLM-generated tool call.
-    session.tools.observe_user_text(text, is_final=True, language=language)
+    session.tools.observe_user_text(
+        text, is_final=True, language=None if language == "auto" else language,
+    )
+    language = session.tools.language
     callslog.history_safe(
         call_history.record_input, session.tools.call_id, recognition_status, language
     )
@@ -577,6 +584,7 @@ async def run_demo_turn(
     }
     return {
         "text_heard": result["text_heard"],
+        "language": language,
         "reply": result["reply"],
         "audio_b64": base64.b64encode(result["audio"]).decode(),
         "audio_type": "audio/mpeg",

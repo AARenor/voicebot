@@ -303,7 +303,7 @@ async function sendTurn(input) {
   const receipt=state.recapDeliveryId;
   state.turnBusy=true; controls(); stopAudio(); status("demo-status", "Demoabiline vastab… Ära saada sama kinnitust uuesti.");
   try {
-    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, language:"et", ...input, ...(receipt ? {recap_delivery_id:receipt} : {})})});
+    const data=await api("/api/turn", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({session_id:state.sessionId, language:"auto", ...input, ...(receipt ? {recap_delivery_id:receipt} : {})})});
     if(generation!==state.generation || !state.connected) return;
     addMessage("Sina", data.text_heard || (data.input_status === "stt_unavailable" ? "Kõnetuvastus ei olnud saadaval" : "Kõnet ei tuvastatud")); addMessage("Demoabiline", data.reply);
     renderTurnDiagnostics(data);

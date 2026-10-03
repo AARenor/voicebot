@@ -58,7 +58,7 @@ def build_stack() -> dict:
             os.environ["AZURE_REGION"],
             os.environ.get("AZURE_VOICE", "et-EE-AnuNeural"),
             os.environ.get("AZURE_LANG", "et-EE"),
-            languages={lang: speech.voice_for(lang) for lang in ("et", "en")},
+            languages={lang: speech.voice_for(lang) for lang in ("et", "en", "ru")},
             delivery=SpeechDelivery.from_env(),
         )
     # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
@@ -299,7 +299,8 @@ def create_app():
                 "stt": {
                     "provider": "groq",
                     "model": config.stt_model,
-                    "language": "et",
+                    "language": "auto",
+                    "languages": ["et", "en", "ru"],
                 },
                 "llm": {"provider": "groq", "model": config.chat_model},
                 "tts": {
@@ -310,8 +311,9 @@ def create_app():
             "capabilities": app.state.capabilities,
             "telephone": {
                 "language_mode": speech.mode,
-                "supported_languages": ["et", "en"],
+                "supported_languages": ["et", "en", "ru"],
                 "english_voice": speech.english_voice,
+                "russian_voice": speech.voice_for("ru")[0],
                 "speaking_style": delivery.mode,
                 "speech_rate": delivery.rate,
                 "recap_rate": delivery.recap_rate,
@@ -427,7 +429,8 @@ def create_app():
         try:
             if key is None:
                 callslog.history_safe(
-                    call_history.start, session.tools.call_id, "browser", language
+                    call_history.start, session.tools.call_id, "browser",
+                    session.tools.language if language == "auto" else language,
                 )
             response = await run_demo_turn(
                 session,
@@ -447,7 +450,7 @@ def create_app():
         try:
             callslog.log_call(
                 callslog.get_default(),
-                language,
+                response["language"],
                 "",
                 "HTTP voice turn",
                 response["outcome"],
