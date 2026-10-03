@@ -173,7 +173,7 @@ generation-owned history and speech-handle delivery repair. A real SSE
 disconfirming test failed when the original Estonian-only empty-stream seed
 was used for an English call; the language-aware guarded seed passes. Real
 generated/say recap completion and cached apology PCM/history now cover both
-languages. The latest integrated suites supersede the earlier counts:
+languages. The suites for this `0088edf` application snapshot supersede the earlier counts:
 **1026 media tests / 4 skipped / 36 subtests**, **822 core tests / 43 skipped /
 36 subtests**. This is compatibility verification, not an independent English
 ASR benchmark or physical English telephone acceptance claim.
@@ -189,7 +189,7 @@ correction was self-reviewed and followed by the full suites above.
 ### Deployed website and native boundaries
 
 Application commits `86a4dd3` and merge `0088edf` were pushed to both the repair
-branch and `master`. Public web commit `0088edf` is healthy; six changed source
+branch and `master`. At the rollout check, public web commit `0088edf` was healthy; six changed source
 files match the integration checkout. The served dashboard JavaScript has the
 same SHA256 and cache version `1796afa1f928`. Only the idle native worker was
 replaced, after confirming zero live rooms. Its five checked source hashes
@@ -251,6 +251,42 @@ this is explicitly **not** an eight-hour continuous labor/soak assertion.
 Health, incoming signed route and SQLite integrity remain true; journal **29**,
 calls **96**, all baseline main rows retained. No owned failure clone or RTC
 room remains. Proofs: `live-public-session-expiry.json`, `final-closeout-proof.json`.
+
+### Concurrent releases preserved during evidence delivery
+
+Before the documentation push, `master` advanced through `42c421a`, including
+natural conversation, guarded Russian speech and higher-fidelity browser
+audio, then `8d2a733` (direct spa-hours inquiries). The atomic documentation
+push was rejected safely; no force push or rollback was attempted. Normal
+merges retain those published changes. Relative to `8d2a733`, this close-out
+adds only this evidence document and `tests/test_call_history.py`.
+
+Two legacy history-fixture failures expected `language="et"` for requests
+that omit language; the newer public contract intentionally defaults to
+automatic recognition. The test now checks omitted/automatic and explicit
+Estonian input separately, while requiring Estonian reply/history and private
+metadata in both cases. No production language behavior was changed to make
+the test pass. The scoped history check passes **27 tests**. On the preceding
+`42c421a` integration, full suites pass **1195 media / 4 skipped / 36 subtests**
+and **970 core / 49 skipped / 36 subtests**; all five browser suites also pass.
+The final `8d2a733` integration then passes **1249 media / 4 skipped /
+36 subtests** and **1024 core / 49 skipped / 36 subtests** in the same clean
+environments. These overlapping suites are not added together as unique tests.
+
+A fresh bounded public-origin check at **10:15:06Z** completed two microphone
+turns with real providers, nonempty PCM, completed playback and zero JavaScript
+errors. It is separate from the earlier six-turn measurements. At **10:20:08Z**
+the served web commit is `8d2a733`; its six checked source hashes and served
+dashboard asset `eeaac7942487` match that commit. The native worker still
+matches `0088edf`, not the newer upstream native features. All three services,
+public health and incoming route are healthy; existing configuration-field
+hashes, shared volume and baseline main-row hashes are retained. Journal/call
+counts are now **31/112**; extra rows do not establish their writer or convert
+the earlier no-mutation public probes into booking acceptance. Durable proofs:
+`live-http-public-latest-check-speech-summary.json`,
+`latest-integration-preservation-proof.json`. Earlier native booking failures
+and six-turn/expiry measurements remain dated to their tested source, not
+silently promoted to acceptance for the newer release.
 
 ## Research round 3 — opposing evidence and privacy
 

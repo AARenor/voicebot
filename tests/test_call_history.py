@@ -234,8 +234,9 @@ def test_http_turns_share_one_session_until_explicit_end(client, db):
 
 @pytest.mark.parametrize("user_text", ["Tere!", "Kas see on päris spaa?"])
 @pytest.mark.parametrize("input_kind", ["typed", "recognized"])
+@pytest.mark.parametrize("language", [None, "et"])
 def test_canonical_response_keeps_session_history_and_private_call_metadata(
-    client, db, user_text, input_kind
+    client, db, user_text, input_kind, language
 ):
     started = client.post("/api/demo/session", headers=AUTH).json()
     from app.telephone import GREETING
@@ -249,6 +250,8 @@ def test_canonical_response_keeps_session_history_and_private_call_metadata(
         else session.tools.demo["faq"][0]["answer_et"]
     )
     payload = {"session_id": started["session_id"]}
+    if language is not None:
+        payload["language"] = language
     if input_kind == "recognized":
         client.app.state.stack["stt"] = Mock()
         client.app.state.stack["stt"].transcribe.return_value = user_text
@@ -264,8 +267,9 @@ def test_canonical_response_keeps_session_history_and_private_call_metadata(
     assert result["warnings"] == []
     if input_kind == "recognized":
         client.app.state.stack["stt"].transcribe.assert_called_once_with(
-            b"RIFF-fixture", language="et"
+            b"RIFF-fixture", language="auto" if language is None else "et"
         )
+    assert result["language"] == "et"
     client.app.state.stack["llm_primary"].chat.assert_not_called()
     client.app.state.stack["tts"].synthesize.assert_called_once_with(expected)
     assert session.history[-1] == {"role": "assistant", "content": expected}
