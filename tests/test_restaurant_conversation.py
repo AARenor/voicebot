@@ -10,8 +10,8 @@ import pytest
 from app.booking.restaurant import RestaurantAdapter
 from app.booking_response import trusted_booking_response
 from app.business import restaurant_dispatcher
-from app.languages import CONSENT
-from app.restaurant_call import COPY, parse_restaurant_request
+from app.languages import AFFIRMATIONS_ET, CONSENT, select_language
+from app.restaurant_call import COPY, parse_restaurant_request, restaurant_spoken_date
 from app.restaurant_data import load_restaurant_data
 from app.call_factory import make_call_tools
 
@@ -160,6 +160,119 @@ def test_language_change_requires_new_recap_delivery(make_state):
         )["error"] == "consent_required"
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("utterance", sorted(AFFIRMATIONS_ET))
+def test_estonian_natural_confirmation_and_known_asr_spellings(make_state, utterance):
+    async def run():
+        state = make_state("et")
+        proposal = await prepare(state)
+        assert state.mark_recap_delivered(proposal["hold_id"])
+        # A short Estonian commitment outweighs incorrect provider metadata.
+        assert select_language(utterance, "english", "et") == "et"
+        state.observe_user_text(utterance, detected_language="english")
+        action = trusted_booking_response(state)
+        assert action["name"] == "confirm_slot_booking"
+        result = await state.dispatch(action["name"], action["arguments"])
+        assert result["ok"] and result["booking"]["party_size"] == 4
+        assert (
+            state.guard_reply("invented success", state.results)
+            == COPY["et"]["confirmed"]
+        )
+        rows = await state.dispatcher._slot.get_operator_bookings(tomorrow())
+        assert len(rows["items"]) == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "jah",
+        "ja",
+        "ei kinnita",
+        "ei, ja kinnitää",
+        "ära kinnita",
+        "jah kinnitää?",
+        "kas ma ütlen ja kinnitää",
+        '"ja kinnitää"',
+        "ütle ja kinnitää",
+        "ja kinnitää homme kell 18",
+        "jah aga viiele",
+        "ja kinnitää, aga muuda kellaaega",
+        "ma ei öelnud ja kinnitää",
+        "jah kinnitää või mitte",
+        "kinnitää",
+        "ja kinnitöö",
+    ],
+)
+def test_confirmation_tolerance_never_accepts_negatives_questions_or_changes(
+    make_state, utterance
+):
+    async def run():
+        state = make_state("et")
+        proposal = await prepare(state)
+        assert state.mark_recap_delivered(proposal["hold_id"])
+        state.observe_user_text(utterance, language="et")
+        result = await state.dispatch(
+            "confirm_slot_booking", {"hold_id": proposal["hold_id"]}
+        )
+        assert result["error"] == "consent_required"
+        assert not state.bookings
+        assert not (await state.dispatcher._slot.get_operator_bookings(tomorrow()))[
+            "items"
+        ]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("boundary", ["undelivered", "expired", "language_change"])
+def test_asr_confirmation_requires_current_delivered_recap(make_state, boundary):
+    async def run():
+        state = make_state("en" if boundary == "language_change" else "et")
+        proposal = await prepare(state)
+        if boundary != "undelivered":
+            assert state.mark_recap_delivered(proposal["hold_id"])
+        if boundary == "expired":
+            state.pending["expires_at"] = 0
+        state.observe_user_text("ja kinnitää")
+        result = await state.dispatch(
+            "confirm_slot_booking", {"hold_id": proposal["hold_id"]}
+        )
+        assert result["error"] == "consent_required"
+        assert not state.bookings
+
+    asyncio.run(run())
+
+
+def test_partial_asr_confirmation_waits_for_final_user_turn(make_state):
+    async def run():
+        state = make_state("et")
+        proposal = await prepare(state)
+        assert state.mark_recap_delivered(proposal["hold_id"])
+        state.observe_user_text("ja kinnitää", is_final=False)
+        assert state.pending["delivery"] and not state.pending["approved"]
+        state.observe_user_text("ei, ära kinnita", is_final=True, language="et")
+        assert (
+            await state.dispatch(
+                "confirm_slot_booking", {"hold_id": proposal["hold_id"]}
+            )
+        )["error"] == "consent_required"
+        assert not state.bookings
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("et", "4. oktoober 2026"),
+        ("en", "Sunday, 4 October 2026"),
+        ("ru", "4 октября 2026"),
+    ],
+)
+def test_recap_speaks_month_names_from_the_trusted_date(language, expected):
+    assert restaurant_spoken_date("2026-10-04", language) == expected
 
 
 @pytest.mark.parametrize(
