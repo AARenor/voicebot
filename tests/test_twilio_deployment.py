@@ -431,6 +431,14 @@ def test_opt_in_media_probe_checks_real_protocol_without_any_provider(
                 )
             else:
                 assert module.main(["--media"]) == 1
+
+        async def wait_for_cleanup():
+            # Peer close is acknowledged before the handler finishes cleanup.
+            async with asyncio.timeout(3):
+                while server.app.state.sockets:
+                    await asyncio.sleep(0.01)
+
+        server.run(wait_for_cleanup())
         assert len(NativeCall.opened) == 1, "replay dispatched another native call"
         assert server.app.state.bindings.active_count == 0
     output = capsys.readouterr()
