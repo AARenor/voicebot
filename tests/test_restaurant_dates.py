@@ -250,3 +250,40 @@ def test_combining_characters_and_unrelated_words():
     for text in ("hommikusöök", "homsaurus", "neljakümnene", "oktoobrilill"):
         result = resolve_restaurant_date(text, NOW)
         assert result.value is None and result.issue is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Kas homseks olete avatud?",
+        "Kas neljandal oktoobril on köök avatud?",
+        "Aga homsele?",
+    ],
+)
+def test_schedule_questions_use_the_same_date_vocabulary(text):
+    from app.restaurant_answers import RestaurantQuestion, match_question
+
+    question = match_question(text, previous=RestaurantQuestion(("hours",)), now=NOW)
+    assert question.date == "2026-10-04" and question.days == (6,)
+    assert question.date_issue is None
+
+
+@pytest.mark.parametrize(
+    "text,issue",
+    [
+        ("Kas 31 veebruar olete avatud?", "date_invalid"),
+        ("Mis kell homseks või ülehomseks köök avatud on?", "date_ambiguous"),
+    ],
+)
+def test_schedule_questions_do_not_hide_bad_dates_in_a_weekly_schedule(text, issue):
+    from app.restaurant_answers import match_question
+
+    question = match_question(text, now=NOW)
+    assert question.date is None and question.date_issue == issue
+
+
+def test_guest_count_is_not_a_human_handoff_but_a_handoff_request_still_is():
+    from app.restaurant_answers import match_question
+
+    assert match_question("Soovin lauaks homseks nelja inimesega", now=NOW) is None
+    assert match_question("Palun ühenda mind inimesega", now=NOW).topics == ("staff",)

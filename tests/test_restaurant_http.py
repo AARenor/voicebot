@@ -371,6 +371,16 @@ def test_bad_dates_clarify_without_a_hold_and_can_be_corrected(client, text, iss
     assert tools.pending["recap"]["party_size"] == 2
 
 
+def test_schedule_bad_date_returns_clarification_without_booking(client):
+    session = start(client, "et")["session_id"]
+    answer = turn(client, session, "Kas 31 veebruar olete avatud?", language="et")
+    assert answer["reply"] == COPY["et"]["date_invalid"]
+    assert answer["booking_changes"] == []
+    assert not client.app.state.demo_sessions.sessions[session].tools.holds
+    fixed = turn(client, session, "Aga homseks?", language="et")
+    assert fixed["booking_changes"] == [] and "31" not in fixed["reply"]
+
+
 def test_audio_language_is_sent_to_recognition_and_restaurant_reply(client):
     session = start(client, "en")["session_id"]
     response = client.post(

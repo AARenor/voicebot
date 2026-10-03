@@ -173,7 +173,7 @@ const TEXT = {
   message: ["Sõnum abilisele", "Message the assistant", "Сообщение помощнику"],
   send: ["Saada", "Send", "Отправить"],
   placeholder: [
-    "Näiteks: soovin homme lauda neljale kell 19.00",
+    "Näiteks: soovin homseks lauda nelja inimesega kell 19.00",
     "For example: a table for four tomorrow at 19:00",
     "Например: столик на четверых завтра в 19:00",
   ],
