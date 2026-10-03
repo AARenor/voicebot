@@ -1,0 +1,65 @@
+/* The original reception shell; the public restaurant keeps its own stylesheet. */
+.sidebar, .breadcrumb { display: none; }
+.icon-library { position: absolute; width: 0; height: 0; overflow: hidden; }
+:root.operator-dashboard {
+  color: #19333f; background: #f2f6f7; color-scheme: light;
+  --green: #1b6e78; --line: #dce6e9; --muted: #61747e; --sidebar-width: 232px;
+}
+.operator-dashboard body { font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.operator-dashboard :is(button, a, input, select, summary) { touch-action: manipulation; }
+.operator-dashboard :focus-visible { outline-color: #288c9b; }
+.operator-dashboard .skip { z-index: 20; }
+.operator-dashboard .icon { width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.operator-dashboard .sidebar {
+  position: fixed; inset: 0 auto 0 0; z-index: 10; display: flex; flex-direction: column;
+  width: var(--sidebar-width); padding: 34px 20px 25px; overflow-y: auto;
+  color: white; background: #173844;
+}
+.operator-dashboard .sidebar .brand { display: flex; align-items: center; gap: 11px; padding: 0 9px; color: white; font-size: 27px; font-weight: 600; letter-spacing: -1.1px; line-height: 1.1; }
+.operator-dashboard .sidebar .brand span { display: block; margin-left: 0; color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
+.operator-dashboard .sidebar .brand .brand-caption { margin-top: 7px; font-size: 11px; font-weight: 400; letter-spacing: .2px; color: #b5cbd3; }
+.operator-dashboard .brand-mark { width: 34px; height: 34px; color: #99d5d4; stroke-width: 2.3; }
+.operator-dashboard .property { display: flex; align-items: center; gap: 11px; padding: 16px 12px; margin-top: 39px; border: 1px solid #3d5963; border-radius: 10px; }
+.operator-dashboard .property .icon { color: #a4d4d3; }
+.operator-dashboard .property strong { display: block; font-size: 13px; font-weight: 500; }
+.operator-dashboard .property span { display: block; margin-top: 3px; font-size: 10px; color: #b5cbd3; }
+.operator-dashboard .navigation { display: grid; gap: 6px; margin-top: 27px; }
+.operator-dashboard .navigation a { display: flex; align-items: center; gap: 13px; min-height: 47px; padding: 10px 14px; border-radius: 8px; color: #c5d5db; font-size: 14px; text-decoration: none; }
+.operator-dashboard .navigation a:hover, .operator-dashboard .navigation a:focus-visible { background: #345661; color: white; }
+.operator-dashboard .sidebar-bottom { margin-top: auto; padding: 40px 12px 0; color: #91adb7; font-size: 12px; }
+.operator-dashboard .coastal-lines { width: 100%; height: 80px; margin-bottom: 18px; stroke: #50737b; stroke-width: 1.2; }
+.operator-dashboard .dashboard-workspace { margin-left: var(--sidebar-width); min-width: 0; }
+.operator-dashboard .site-header { min-height: 74px; padding: 18px 40px; }
+.operator-dashboard .site-header > .brand { display: none; }
+.operator-dashboard .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); }
+.operator-dashboard .breadcrumb .icon { width: 17px; height: 17px; }
+.operator-dashboard .breadcrumb strong { color: #19333f; font-weight: 500; }
+.operator-dashboard main { max-width: 1480px; padding: 34px 40px 28px; }
+.operator-dashboard h1 { font-size: clamp(28px, 2.4vw, 36px); font-weight: 600; letter-spacing: -1.35px; line-height: 1.2; }
+.operator-dashboard h2 { font-size: 18px; font-weight: 600; letter-spacing: -.35px; }
+.operator-dashboard .demo-notice { background: #eaf2f4; border: 1px solid #d4e6e7; color: #42616d; border-radius: 9px; }
+.operator-dashboard .panel { min-width: 0; scroll-margin-top: 24px; }
+.operator-dashboard .panel-heading { padding-bottom: 18px; border-bottom: 1px solid #e5ecef; }
+.operator-dashboard :is(input, select) { border-color: #ccdadf; color: #19333f; }
+.operator-dashboard :is(input, select):disabled { background: #f7f9fa; }
+.operator-dashboard button.secondary { color: #19333f; }
+.operator-dashboard button:hover:not(:disabled) { background: #145660; border-color: #145660; }
+.operator-dashboard button.secondary:hover:not(:disabled) { background: #f4f8f9; border-color: #9fbec5; }
+.operator-dashboard :is(.connection, .badge, #reservation-recap-text) { background: #eaf4f4; }
+.operator-dashboard .message { background: #eff5f6; }
+.operator-dashboard .message.user { background: #f4f5f5; }
+.operator-dashboard .message strong { color: #42616d; }
+.operator-dashboard footer { max-width: 1480px; padding: 0 40px 32px; flex-wrap: wrap; }
+@media (max-width: 1100px) {
+  .operator-dashboard .workspace { grid-template-columns: 1fr; }
+}
+@media (max-width: 800px) {
+  .operator-dashboard .sidebar { position: static; width: auto; padding: 20px 18px 12px; overflow: visible; }
+  .operator-dashboard .dashboard-workspace { margin-left: 0; }
+  .operator-dashboard .property, .operator-dashboard .sidebar-bottom { display: none; }
+  .operator-dashboard .navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+  .operator-dashboard .navigation a { padding: 10px 8px; gap: 8px; font-size: 12px; }
+  .operator-dashboard .site-header { padding: 12px 18px; }
+  .operator-dashboard main { padding: 28px 18px; }
+  .operator-dashboard footer { padding-inline: 18px; }
+}
