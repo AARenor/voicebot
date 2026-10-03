@@ -144,7 +144,7 @@
       },
       {
         "question_et": "Kas pean midagi maksma?",
-        "answer_et": "See demo ei kogu makseid ega kinnita päris teenuse hinda.",
+        "answer_et": "See demo ei kogu makseid.",
         "question_en": "Do I need to pay anything?",
         "answer_en": "This demo does not collect payments. It cannot provide a quote for a real service.",
         "question_ru": "Нужно ли что-нибудь платить?",
