@@ -58,6 +58,17 @@
 
 ## Deployment and remaining verification
 
+PR [#2](https://github.com/Parnuhakk/voicebot/pull/2) merged at 07:30 UTC on
+2026-10-03 as `0254e7222330dd727975b0f64362ed35fcd9bc1a`. The public website
+subsequently served the new history panel and byte-identical `dashboard.css`,
+`dashboard.js` and `call-history.js` assets. `/health` returned 200; anonymous
+`/api/call-history` returned 403 with `Cache-Control: no-store`. A fresh
+Playwright session against the deployed page passed at 1440 px and 390 px with
+no JavaScript exceptions, no horizontal overflow and no anonymous private API
+requests. Computed history layouts had two desktop columns and one mobile
+column. This is public web verification, not an authenticated history read or
+native worker/container revision check.
+
 The web application deploys from `master` through its existing Coolify push
 hook. The separate native worker must also be rebuilt/restarted using the
 existing deployment workflow, with the exact web/worker `/data` volume
