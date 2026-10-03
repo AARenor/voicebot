@@ -547,6 +547,18 @@ class Dispatcher:
             _require_str({"hold_id": hold_id}, "hold_id"),
         )
 
+    async def release_table_hold(self, hold_id: str):
+        """Trusted policy cleanup only; never advertised as a model tool."""
+        if self.business != "restaurant":
+            raise ProviderError("tools: table booking not configured")
+        table = _require_table(self._table)
+        release = getattr(table, "release_hold", None)
+        if not callable(release):
+            return False
+        return await _guarded(
+            "hold_invalid", release, _require_str({"hold_id": hold_id}, "hold_id")
+        )
+
     async def dispatch(self, name: str, args: dict) -> dict:
         if isinstance(args, str):
             # Real LLM wire shape sends arguments as a JSON string.

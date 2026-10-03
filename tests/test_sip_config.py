@@ -32,6 +32,17 @@ def test_trunk_and_random_individual_dispatch():
     assert rule.room_config.agents[0].agent_name == "voicebot"
 
 
+def test_sip_dispatch_targets_the_configured_worker_name():
+    _, rule = specifications({**ENV, "VOICEBOT_AGENT_NAME": "fixture-alternate"})
+    assert rule.room_config.agents[0].agent_name == "fixture-alternate"
+
+
+@pytest.mark.parametrize("name", ["", "bad name", "x" * 49, None])
+def test_invalid_sip_worker_name_fails_before_provisioning(name):
+    with pytest.raises(ValueError, match="worker name"):
+        specifications({**ENV, "VOICEBOT_AGENT_NAME": name})
+
+
 def test_existing_trunk_without_duration_limits_fails_closed():
     import asyncio
     from types import SimpleNamespace

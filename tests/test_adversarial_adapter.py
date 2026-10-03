@@ -12,7 +12,6 @@ import pytest
 
 from app.booking.base import HoldLedger
 from app.booking.easyappointments import EasyAppointmentsAdapter
-from app.providers.errors import ProviderError
 
 DAY = "2099-11-02"
 GUEST = {
@@ -220,8 +219,10 @@ def test_invalid_end_range_has_no_customer_side_effect(tmp_path, duration, day):
         api = adapter(backend, tmp_path / "writes.db")
         try:
             selected = await hold(api, day)
-            with pytest.raises(ProviderError):
-                await api.confirm(selected.hold_id, GUEST, "bad-range")
+            assert await api.confirm(selected.hold_id, GUEST, "bad-range") == {
+                "ok": False,
+                "error": "confirm_failed",
+            }
             assert backend.posts == 0 and backend.customers == 0
         finally:
             await api.close()

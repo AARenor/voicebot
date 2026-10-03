@@ -22,6 +22,7 @@ from app.worker import TelephoneAgent
 from tests.test_demo_delivery import raw_prepared
 from tests.test_demo_plan import LiveSlots
 from tests.test_demo_plan import REQUEST
+from tests.test_native_booking_terminals import finalized
 
 
 class UnusedTTS(tts.TTS):
@@ -271,7 +272,9 @@ def test_tool_chunk_is_preserved_without_spurious_question():
 
         agent = TelephoneAgent(CallTools(Dispatcher()))
         with patch("livekit.agents.Agent.default.llm_node", tools):
-            assert [p async for p in agent.llm_node(llm.ChatContext(), [], None)] == [tool]
+            assert [p async for p in agent.llm_node(llm.ChatContext(), [], None)] == [
+                tool
+            ]
 
     asyncio.run(run())
 
@@ -356,7 +359,10 @@ def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(
                 state.observe_user_text(request)
                 if generated:
                     await asyncio.wait_for(
-                        session.generate_reply(user_input=request), 3
+                        session.generate_reply(
+                            user_input=await finalized(agent, request)
+                        ),
+                        3,
                     )
                 else:
                     assert (await state.dispatch("plan_demo_booking", REQUEST))["ok"]
@@ -365,11 +371,20 @@ def test_real_sdk_playback_delivers_only_the_preparation_before_new_consent(
                     "completed native PCM did not deliver its recap"
                 )
                 assert not state.pending["approved"] and not state.bookings
-                state.observe_user_text(consent)
-                await asyncio.wait_for(session.generate_reply(user_input=consent), 3)
+                await asyncio.wait_for(
+                    session.generate_reply(user_input=await finalized(agent, consent)),
+                    3,
+                )
                 assert state.bookings == {"42"}
                 assert sum(name == "confirm" for name, _ in backend.calls) == 1
-                assert len(requests) == (4 if generated else 2)
+                # Canonical recap and subsequent consent still pass through the
+                # real SDK tools, without redundant model follow-up requests.
+                assert len(requests) == (1 if generated else 0)
+                assert session.history.items[-1].text_content == (
+                    "Your test booking is confirmed."
+                    if language == "en"
+                    else "Testbroneering on kinnitatud."
+                )
             finally:
                 await session.aclose()
                 await model.aclose()

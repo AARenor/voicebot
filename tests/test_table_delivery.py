@@ -188,7 +188,7 @@ def test_native_old_speech_handle_cannot_deliver_a_replacement_table_proposal(
         async def synthesize(agent, text, settings):
             async for _ in text:
                 pass
-            yield rtc.AudioFrame(b"\x00" * 480, 24000, 1, 240)
+            yield rtc.AudioFrame(b"\x01\x00" * 240, 24000, 1, 240)
 
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
             with patch.object(agent, "_current_speech", return_value=old_speech):

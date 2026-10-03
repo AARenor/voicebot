@@ -10,7 +10,11 @@ import pytest
 
 from app.booking.tools import Dispatcher
 from app.hackathon import (
-    DemoSession, _SafeSpeaker, _TurnTools, result_outcome, run_demo_turn,
+    DemoSession,
+    _SafeSpeaker,
+    _TurnTools,
+    result_outcome,
+    run_demo_turn,
 )
 from app.telephone import CallTools, CONSENT_TEXT
 from tests.test_demo_plan import LiveSlots, REQUEST
@@ -107,9 +111,9 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
 
         stack["llm_primary"] = Plan()
         recap = await run_demo_turn(session, stack, b"", "Soovin aega", "et")
-        assert (
-            "backend-hold" not in recap["reply"]
-        ), "caller-facing recap is not a tool-ID channel"
+        assert "backend-hold" not in recap["reply"], (
+            "caller-facing recap is not a tool-ID channel"
+        )
         assert state.pending["hold_id"] == "backend-hold"
         assert state.pending["delivery"] is False
         assert recap["recap_delivery_id"]
@@ -148,7 +152,9 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
         text = (
             "Jah, tühista."
             if condition == "cancel"
-            else "Ei, aitäh." if condition == "declined" else CONSENT_TEXT
+            else "Ei, aitäh."
+            if condition == "declined"
+            else CONSENT_TEXT
         )
         result = await run_demo_turn(
             session,
@@ -156,10 +162,13 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
             b"",
             text,
             "et",
-            recap_delivery_id=recap["recap_delivery_id"],
+            recap_delivery_id=recap["recap_delivery_id"]
+            if condition not in {"expired", "uncertain"}
+            else None,
         )
         if condition == "approved":
             assert not contexts, "trusted consent unnecessarily requested the model"
+            assert "backend-hold" in state.confirmed_holds
             assert result["booking_ids"] == ["42"]
             assert result["booking_changes"][0]["action"] == "confirmed"
             assert (
@@ -169,15 +178,16 @@ def test_http_owned_state_survives_prose_history_without_redundant_model_calls(
                 == "backend-hold"
             )
         elif condition in {"uncertain", "cancel", "declined"}:
-            assert (
-                not contexts
-            ), "trusted terminal state unnecessarily requested the model"
+            assert not contexts, (
+                "trusted terminal state unnecessarily requested the model"
+            )
             assert state.pending is None
             if condition == "uncertain":
                 assert state.mutation_uncertain and result["booking_changes"] == []
         elif condition == "expired":
             assert contexts[0]["pending"] is None
         if condition == "uncertain":
+            assert state.mutation_uncertain
             assert result["outcome"] == "unknown_outcome"
             assert result["booking_changes"] == []
         if condition == "cancel":
@@ -222,7 +232,11 @@ def test_completed_write_truth_survives_read_failure_and_skips_model_followup(
         state = session.tools
         if cancel:
             confirmed = await run_demo_turn(
-                session, stack, b"", CONSENT_TEXT, "et",
+                session,
+                stack,
+                b"",
+                CONSENT_TEXT,
+                "et",
                 recap_delivery_id=recap["recap_delivery_id"],
             )
             assert confirmed["booking_changes"][0]["action"] == "confirmed"

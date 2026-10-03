@@ -41,7 +41,7 @@ async page => {
   const early=await page.evaluate(async()=>({
     firstPlaybackMs:Math.round(performance.now()-window.syntheticTiming.sent),
     currentTime:document.getElementById('demo-audio').currentTime,
-    awaitingReceipt:state.awaitingRecapId,
+    awaitingReceipt:state.recap?.id || null,
     ...(await fetch('/test/stream/state',{headers:{Authorization:'Bearer fixture-operator'}}).then(r=>r.json()))
   }));
   assert(early.started && !early.completed,'first playback waited for synthesis completion');
@@ -52,7 +52,7 @@ async page => {
   await wait('resumed complete playback',()=>!state.turnBusy && document.getElementById('demo-audio').ended);
   const final=await page.evaluate(async()=>({
     automaticReceipt:state.recapDeliveryId,
-    textReceipt:state.awaitingRecapId,
+    textReceipt:state.recap?.id || null,
     waiting:window.syntheticTiming.waiting,
     ...(await fetch('/test/stream/state',{headers:{Authorization:'Bearer fixture-operator'}}).then(r=>r.json()))
   }));
@@ -61,7 +61,7 @@ async page => {
   assert.equal(final.writes,0);assert.equal(final.records,0);
   assert(await page.locator('#demo-recap-read').isVisible());
   await page.locator('#demo-recap-read').click();
-  assert(await page.evaluate(()=>state.recapDeliveryId===state.awaitingRecapId),'explicit text reading was lost');
+  assert(await page.evaluate(()=>state.recapDeliveryId===state.recap?.id),'explicit text reading was lost');
   await page.locator('#demo-end').click();
   await wait('owned session cleanup',()=>!state.sessionId);
   await page.locator('#logout').click();

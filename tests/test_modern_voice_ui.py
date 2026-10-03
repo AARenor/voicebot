@@ -59,14 +59,19 @@ VM_CHECKS = r"""
 const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 const root=process.argv[1], group=process.argv[2];
 class Element {
-  constructor(){Object.assign(this,{value:'',textContent:'',hidden:false,disabled:false,children:[],dataset:{},listeners:{},paused:true,ended:false,duration:2,currentTime:0,played:{length:0},classList:{add(){},remove(){}}});}
+  constructor(tag='div'){Object.assign(this,{tagName:tag.toUpperCase(),value:'',textContent:'',hidden:false,disabled:false,children:[],dataset:{},listeners:{},src:'',currentSrc:'',paused:true,ended:false,duration:2,currentTime:0,played:{length:0},classList:{add(){},remove(){}}});}
   addEventListener(t,f){this.listeners[t]=f;} removeEventListener(t){delete this.listeners[t];}
-  setAttribute(){} removeAttribute(){} replaceChildren(...v){this.children=v;this.textContent='';}
+  setAttribute(){} removeAttribute(name){if(name==='src')this.src='';} replaceChildren(...v){this.children=v;this.textContent='';}
   append(...v){this.children.push(...v);} appendChild(v){this.append(v);}
+  contains(node){return this===node || this.children.some(child=>child===node || child?.contains?.(node));}
+  querySelector(tag){for(const child of this.children){if(child?.tagName===tag.toUpperCase())return child;const nested=child?.querySelector?.(tag);if(nested)return nested;}return null;}
   insertBefore(v,b){this.children=this.children.filter(x=>x!==v);this.children.splice(this.children.indexOf(b),0,v);}
-  pause(){this.paused=true;} load(){} focus(){} play(){this.paused=false;this.onplaying?.();return Promise.resolve();}
+  pause(){const playing=!this.paused;this.paused=true;if(playing)this.onpause?.();}
+  load(){this.currentSrc=this.src;this.currentTime=0;this.played={length:0};this.ended=false;this.paused=true;}
+  focus(){} play(){this.currentSrc=this.src;this.ended=false;this.paused=false;this.onplaying?.();return Promise.resolve();}
 }
 const elements=new Map(), el=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
+el('demo-recap-actions').hidden=true;
 const requests=[], timers=new Map(), urls=[], revoked=[];let timerId=0;
 const profiles=['azure','elevenlabs','google','cartesia'].map(id=>({id,label:id,languages:id==='cartesia'?['en','ru']:['et','en','ru'],configured:id!=='google',available:id!=='google',disabled_reason:id==='google'?'missing_credentials':null,streaming:id!=='google'}));
 let catalog={voices:profiles,endpointing_ms:650}, turnResponse=null;
@@ -81,7 +86,7 @@ let holdAppends=false;const appends=[];
 const URLStub=class extends URL {};
 URLStub.createObjectURL=o=>{urls.push(o);return 'blob:fixture/'+urls.length;};URLStub.revokeObjectURL=u=>revoked.push(u);
 const context=vm.createContext({console,Headers,Response,ReadableStream,TextDecoder,TextEncoder,URL:URLStub,URLSearchParams,AbortController,DOMException,Intl,Date,JSON,Math,Promise,Uint8Array,ArrayBuffer,DataView,Float32Array,Blob,atob,btoa,queueMicrotask,
-  document:{hidden:false,getElementById:el,createElement:()=>new Element(),createTextNode:t=>t,querySelector:el,querySelectorAll:()=>[],addEventListener(){}},
+  document:{hidden:false,getElementById:el,createElement:tag=>new Element(tag),createTextNode:t=>t,querySelector:el,querySelectorAll:()=>[],addEventListener(){}},
   window:{MediaSource:MSE},navigator:{},location:{search:'',href:'http://127.0.0.1:8765/'},history:{replaceState(){}},sessionStorage:{removeItem(){}},localStorage:{removeItem(){}},
   setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;},clearTimeout:id=>timers.delete(id),
   fetch:async(path,opts={})=>{requests.push({path,opts});if(path==='/api/demo/voices')return json(catalog);if(path==='/api/turn')return turnResponse;
@@ -95,24 +100,33 @@ const run=s=>vm.runInContext(s,context), flush=async()=>{for(let i=0;i<40;i++)aw
 const connected=()=>run("state.credential='fixture-operator';state.connected=true;state.sessionId='fixture';state.demoLanguage='en';controls()");
 const receipt='a'.repeat(32), reply={type:'reply',reply:'<img onerror=bad> guarded recap',language:'en',audio_type:'audio/mpeg'};
 const chunk={type:'audio',seq:0,audio_b64:'SUQz'};
-const done={type:'done',reply:reply.reply,language:'en',text_heard:'fixture question',audio_type:'audio/mpeg',audio_b64:'',outcome:'ok',recap_delivery_id:receipt,booking_changes:[],voice:{requested:'azure',effective:'azure',language:'en',fallback:false,reason:null,streaming:true}};
+const done={type:'done',reply:reply.reply,language:'en',text_heard:'fixture question',audio_type:'audio/mpeg',audio_b64:'',outcome:'ok',recap_delivery_id:receipt,recap_expires_in_s:60,expires_in_s:600,booking_changes:[],voice:{requested:'azure',effective:'azure',language:'en',fallback:false,reason:null,streaming:true}};
+function playRecap(data={...done,audio_b64:'SUQz'}){
+  context.data=data;
+  return run('{stopAudio();state.replyLanguage=data.language;const message=addMessage(demoCopy().assistant,data.reply);const recap=renderRecap(data,message);playReply(data,recap);controls();recap;}');
+}
 function streamed(){let controller;const body=new ReadableStream({start(c){controller=c;}});turnResponse=new Response(body,{headers:{'Content-Type':'application/x-ndjson'}});return {write:e=>controller.enqueue(new TextEncoder().encode(typeof e==='string'?e:JSON.stringify(e)+'\n')),close:()=>controller.close()};}
-function ended(start=0,end=2){const audio=el('demo-audio');audio.currentTime=2;audio.ended=true;audio.played={length:1,start:()=>start,end:()=>end};audio.onended?.();}
+function ended(start=0,end=2){const audio=el('demo-audio');audio.currentTime=2;audio.ended=true;audio.played={length:1,start:()=>start,end:()=>end};audio.pause();audio.onended?.();}
 async function streamTurn(events,tail=''){const s=streamed(), task=run("sendTurn({text:'fixture'})");for(const e of events)s.write(e);if(tail)s.write(tail);s.close();await task;await flush();return task;}
 async function checks(){
   if(group==='underrun'){
-    connected();context.data={audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt};
-    run('playReply(data)');const audio=el('demo-audio');audio.currentTime=.2;audio.onwaiting?.();
+    connected();playRecap();const audio=el('demo-audio');audio.currentTime=.2;audio.onwaiting?.();
     audio.onplaying?.();ended();assert.equal(run('state.recapDeliveryId'),null,'resumed underrun granted automatic recap receipt');
-    assert.equal(el('demo-recap-read').hidden,false,'underrun removed explicit text-reading acknowledgment');
-    const staleWaiting=audio.onwaiting;run('stopAudio();playReply(data)');staleWaiting?.();ended();
+    assert.equal(el('demo-recap-actions').hidden,false,'underrun removed explicit text-reading acknowledgment');
+    assert.equal(el('demo-recap-read').disabled,false,'underrun disabled exact canonical reading');
+    const beforeRead=requests.length;el('demo-recap-read').listeners.click();
+    assert.equal(run('state.recapDeliveryId'),receipt,'deliberate reading after underrun lost receipt');
+    assert.equal(el('demo-recap-actions').hidden,true,'acknowledged reading actions remained open');
+    assert.equal(requests.length,beforeRead,'reading sent a turn or redundant acknowledgment');
+    const staleWaiting=audio.onwaiting;playRecap();staleWaiting?.();ended();
     assert.equal(run('state.recapDeliveryId'),receipt,'old underrun callback disqualified newer playback');
     run('stopAudio()');assert.equal(audio.onwaiting,null,'cleanup retained underrun handler');assert.equal(audio.onstalled,null,'cleanup retained stalled handler');
   }
   if(group==='wire'){
     connected();const chunks=Array.from({length:256},(_,seq)=>({type:'audio',seq,audio_b64:Buffer.alloc(32768).toString('base64')}));
     await streamTurn([reply,...chunks,done]);
-    assert.equal(run('state.awaitingRecapId'),receipt,'server-valid 8 MiB MP3 was rejected after base64 expansion');
+    assert.equal(run('state.recap?.id'),receipt,'server-valid 8 MiB MP3 was rejected after base64 expansion');
+    assert.equal(run('currentRecap(state.recap) && state.playback.recap===state.recap'),true,'maximum stream recap lost canonical DOM ownership');
     assert.equal(run('state.playback.complete && state.playback.eof'),true,'bounded maximum stream lost terminal metadata');
     ended();assert.equal(run('state.recapDeliveryId'),receipt);
   }
@@ -133,14 +147,32 @@ async function checks(){
    run("renderVoiceResult({tts_failed:true,voice:{requested:'elevenlabs',effective:'elevenlabs',language:'en',fallback:false,reason:null,streaming:true}})");assert(!el('demo-voice-result').textContent.includes('ElevenLabs'),'failed speech pretends selected voice was used');
  }
  if(group==='receipt'){
-   connected();const data={audio_b64:'SUQz',audio_type:'audio/mpeg',recap_delivery_id:receipt};
-   context.data=data;run('playReply(data)');ended(1.9);assert.equal(run('state.recapDeliveryId'),null,'seek-to-end granted playback receipt');
-   run('stopAudio();playReply(data)');const stale=el('demo-audio').onended;ended();assert.equal(run('state.recapDeliveryId'),receipt,'full coverage did not grant receipt');
-   run('stopAudio();playReply(data)');stale();assert.equal(run('state.recapDeliveryId'),null,'same-session stale epoch granted receipt');
-   run('stopAudio();playReply(data)');el('demo-audio').src='blob:fixture/foreign';ended();assert.equal(run('state.recapDeliveryId'),null,'foreign audio identity granted receipt');
-   run('stopAudio();playReply(data)');ended(0,1.97);assert.equal(run('state.recapDeliveryId'),null,'missing final audio coverage granted receipt');
-   el('demo-audio').play=()=>Promise.reject(Error('blocked'));run('stopAudio();playReply(data)');await flush();ended();assert.equal(run('state.recapDeliveryId'),null,'blocked play granted receipt');
-   assert.equal(el('demo-recap-read').hidden,false,'blocked play removed explicit reading');
+   connected();const data={...done,audio_b64:'SUQz'};
+   context.data=data;run('playReply(data)');ended();assert.equal(run('state.recapDeliveryId'),null,'implicit playReply minted an unrendered receipt');
+   assert.equal(el('demo-recap-actions').hidden,true,'implicit playback opened unrendered reading');
+   playRecap(data);ended(1.9);assert.equal(run('state.recapDeliveryId'),null,'seek-to-end granted playback receipt');
+   playRecap(data);const stale=el('demo-audio').onended;ended();assert.equal(run('state.recapDeliveryId'),receipt,'full coverage did not grant receipt');
+   assert.equal(run('currentRecap(state.recap) && state.playback.recap===state.recap'),true,'full coverage bypassed canonical recap ownership');
+   playRecap(data);stale();assert.equal(run('state.recapDeliveryId'),null,'same-session stale epoch granted receipt');
+   playRecap(data);el('demo-audio').src='blob:fixture/foreign';ended();assert.equal(run('state.recapDeliveryId'),null,'foreign audio identity granted receipt');
+   playRecap(data);el('demo-audio').currentSrc='blob:fixture/foreign';ended();assert.equal(run('state.recapDeliveryId'),null,'foreign currentSrc granted receipt');
+   playRecap(data);ended(0,1.97);assert.equal(run('state.recapDeliveryId'),null,'missing final audio coverage granted receipt');
+   const nativePlay=el('demo-audio').play;
+   el('demo-audio').play=()=>Promise.reject(Error('blocked'));playRecap(data);await flush();ended();assert.equal(run('state.recapDeliveryId'),null,'blocked play granted receipt');
+   assert.equal(el('demo-recap-actions').hidden,false,'blocked play removed explicit reading');
+   assert.equal(el('demo-recap-read').disabled,false,'blocked play disabled exact canonical reading');
+   el('demo-audio').play=nativePlay;
+   for(const metadata of [{recap_delivery_id:'invalid'},{reply:''},...[-1,0,undefined,NaN,Infinity].map(recap_expires_in_s=>({recap_expires_in_s})),...['fallback','tools_failed','unknown_outcome'].map(outcome=>({outcome}))]){
+     playRecap({...data,...metadata});assert.equal(run('state.recap'),null,'unsafe or unscoped metadata rendered an authorizing recap');ended();
+     el('demo-recap-read').listeners.click();assert.equal(run('state.recapDeliveryId'),null,'unsafe or unscoped metadata granted delivery');assert.equal(el('demo-recap-actions').hidden,true,'unsafe metadata opened reading');
+   }
+   for(const invalidate of ["state.recap.message.querySelector('span').textContent='changed'","$('demo-messages').replaceChildren()","state.recap.expiresAt=Date.now()-1","state.recap.sessionId='foreign'","state.recap.generation--"]){
+     playRecap(data);run(invalidate+';controls()');ended();el('demo-recap-read').listeners.click();
+     assert.equal(run('currentRecap(state.recap)'),false,'stale or foreign recap remained current');assert.equal(run('state.recapDeliveryId'),null,'stale or foreign canonical recap granted delivery');
+     assert.equal(el('demo-recap-read').disabled,true,'stale or foreign recap enabled reading');
+   }
+   playRecap(data);const deadline=timers.get(run('state.recap.timer'));assert(deadline.delay>0 && deadline.delay<=60000,'preparation deadline used the session TTL');deadline.fn();ended();
+   assert.equal(run('state.recap'),null,'preparation deadline did not retire recap');assert.equal(run('state.recapDeliveryId'),null,'expired preparation granted receipt');assert.equal(el('demo-recap-actions').hidden,true,'expired preparation retained reading');
    run('logout()');stale();assert.equal(run('state.recapDeliveryId'),null,'logout callback revived receipt');assert.equal(run('state.audioUrl'),null);
  }
  if(group==='stream'){
@@ -148,13 +180,15 @@ async function checks(){
    assert.equal(requests.find(r=>r.path==='/api/turn').opts.headers.get('Accept'),'application/x-ndjson','turn does not negotiate streaming');
    assert.equal(el('demo-messages').children.length,1,'guarded text did not render before done');assert.equal(el('demo-messages').children[0].children[1].textContent,reply.reply,'reply text was not rendered safely');
    assert.equal(appends.length,1,'first native MP3 append waited for done');assert.equal(el('demo-audio').paused,false,'native playback did not start before done');
-   assert.equal(run('state.awaitingRecapId'),null,'first chunk armed a receipt');s.write(done);await flush();assert.equal(run('state.awaitingRecapId'),null,'done before EOF armed receipt');s.close();await task;await flush();
+   assert.equal(run('state.recap'),null,'first chunk armed a receipt');s.write(done);await flush();assert.equal(run('state.recap'),null,'done before EOF armed receipt');s.close();await task;await flush();
    assert.equal(el('demo-messages').children.length,2,'done duplicated guarded reply');assert.equal(run('state.recapDeliveryId'),null,'EOF alone granted receipt');ended();assert.equal(run('state.recapDeliveryId'),receipt,'complete native playback lost receipt');
-   const stale=el('demo-audio').onended;await streamTurn([reply,chunk],'{');stale();assert.equal(run('state.recapDeliveryId'),null,'truncation granted receipt');assert.equal(run('state.awaitingRecapId'),null,'truncation enabled reading');
+   const stale=el('demo-audio').onended;await streamTurn([reply,chunk],'{');stale();assert.equal(run('state.recapDeliveryId'),null,'truncation granted receipt');assert.equal(run('state.recap'),null,'truncation enabled reading');
+   assert.equal(JSON.parse(requests.filter(r=>r.path==='/api/turn').at(-1).opts.body).recap_delivery_id,receipt,'separate next input lost completed receipt');
    for(const events of [[reply,{...chunk,seq:1},done],[reply,chunk,done,done],[reply,chunk,{...done,reply:'different'}],[reply,{...chunk,audio_b64:'%%%'} ,done],[{...reply,recap_delivery_id:receipt},chunk,done],[reply,done],[reply,chunk,{...done,tts_failed:true}],[reply,chunk,{...done,audio_b64:'SUQz'}]]){
-     await streamTurn(events);ended();assert.equal(run('state.recapDeliveryId'),null,'invalid/failed stream granted receipt');assert.equal(run('state.awaitingRecapId'),null,'invalid/failed stream enabled reading');
+     await streamTurn(events);ended();assert.equal(run('state.recapDeliveryId'),null,'invalid/failed stream granted receipt');assert.equal(run('state.recap'),null,'invalid/failed stream enabled reading');
+     assert.equal(Object.hasOwn(JSON.parse(requests.filter(r=>r.path==='/api/turn').at(-1).opts.body),'recap_delivery_id'),false,'consumed receipt replayed');
    }
-   await streamTurn([reply], 'x'.repeat(300000));assert.equal(run('state.awaitingRecapId'),null,'unbounded line accepted');
+   await streamTurn([reply], 'x'.repeat(300000));assert.equal(run('state.recap'),null,'unbounded line accepted');
    holdAppends=true;const queued=streamed(), queuedTask=run("sendTurn({text:'fixture'})");queued.write(reply);queued.write(chunk);queued.write(done);queued.close();await queuedTask;ended();assert.equal(run('state.recapDeliveryId'),null,'unfinished append granted receipt');holdAppends=false;
    const source=urls.at(-1);source.buffer.updating=false;source.buffer.onupdateend?.();assert.equal(run('state.recapDeliveryId'),null,'append completion reused premature ended');
    context.window.MediaSource=undefined;const count=urls.length, blob=streamed(), blobTask=run("sendTurn({text:'fixture'})");blob.write(reply);blob.write(chunk);await flush();assert.equal(urls.length,count,'Blob fallback played partial stream');blob.write(done);blob.close();await blobTask;await flush();assert(urls.at(-1) instanceof Blob,'unsupported MSE did not use native Blob');ended();assert.equal(run('state.recapDeliveryId'),receipt);
@@ -187,9 +221,9 @@ async function checks(){
    try {bytes=run('audioBytes(largeAudio)');}catch(e){error=e.message;}
    assert.equal(error,null,'bounded maximum-size base64 overflowed the validator');assert.equal(bytes.length,8*1024*1024);
    context.tooLarge=Buffer.alloc(8*1024*1024+1).toString('base64');assert.throws(()=>run('audioBytes(tooLarge)'));
-   await streamTurn([reply,chunk,{...done,tts_failed:true,recap_delivery_id:null}]);assert.equal(run('state.awaitingRecapId'),null);assert(el('demo-status').textContent.includes('Speech synthesis') || el('demo-status').textContent.includes('Audio'),'canonical provider failure was lost');
+   await streamTurn([reply,chunk,{...done,tts_failed:true,recap_delivery_id:null}]);assert.equal(run('state.recap'),null);assert(el('demo-status').textContent.includes('Speech synthesis') || el('demo-status').textContent.includes('Audio'),'canonical provider failure was lost');
    const huge={...chunk,audio_b64:Buffer.alloc(128*1024+1).toString('base64')};await streamTurn([reply,huge,done]);assert.equal(run('state.audioUrl'),null,'oversized chunk accepted');
-   const many=Array.from({length:257},(_,seq)=>({type:'audio',seq,audio_b64:Buffer.alloc(32768).toString('base64')}));await streamTurn([reply,...many,done]);assert.equal(run('state.awaitingRecapId'),null,'over-8MiB audio accepted');
+   const many=Array.from({length:257},(_,seq)=>({type:'audio',seq,audio_b64:Buffer.alloc(32768).toString('base64')}));await streamTurn([reply,...many,done]);assert.equal(run('state.recap'),null,'over-8MiB audio accepted');
  }
  if(group==='lifecycle'){
    connected();let endResolve, deletes=0;const originalFetch=context.fetch;

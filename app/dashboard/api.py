@@ -231,7 +231,17 @@ try:
         return item
 
     @router.get("/config")
-    def get_config() -> dict:
+    def get_config(request: Request) -> dict:
+        if request.app.state.stack["business"] == "restaurant":
+            from ..demo import load_demo_data
+
+            return {
+                "config": {
+                    "business": "restaurant",
+                    "venue": load_demo_data(business="restaurant")["profile"]["name"],
+                    "data_mode": "synthetic",
+                }
+            }
         return {"config": demo.STORE["config"]}
 
     @router.get("/metrics")

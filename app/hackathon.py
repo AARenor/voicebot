@@ -44,6 +44,45 @@ class DemoSession:
     booking_recap_delivery: dict | None = None
     voice_id: str = "azure"
 
+    def _recap_is_current(self, pending, text):
+        state = self.tools
+        if (
+            pending is None
+            or pending is not state.pending
+            or state.mutation_uncertain
+            or state.outcome == "write_outcome_unknown"
+            or time.monotonic() >= self.expires_at
+        ):
+            return False
+        held = {
+            "slot": state.held_slots,
+            "stay": state.held_stays,
+            "table": state.held_tables,
+        }.get(pending.get("kind"), {})
+        hold_id = pending.get("hold_id")
+        return (
+            hold_id in state.holds
+            and hold_id in held
+            and hold_id not in state.confirmed_holds
+            and isinstance(text, str)
+            and bool(text)
+            and state.render_recap(hold_id) == text
+        )
+
+    def consume_recap_delivery(self, delivery_id):
+        # One receipt, one next input; not a remembered yes or a generic hold ID.
+        delivery, self.recap_delivery = self.recap_delivery, None
+        if delivery_id is None:
+            return
+        if (
+            delivery is None
+            or delivery_id != delivery["id"]
+            or delivery["language"] != self.tools.language
+            or not self._recap_is_current(delivery["pending"], delivery["text"])
+            or not self.tools.mark_recap_delivered(delivery["pending"]["hold_id"])
+        ):
+            raise HTTPException(409, "recap_delivery_expired_or_unknown")
+
 
 def operator_scope(authorization):
     return hashlib.sha256((authorization or "").encode()).hexdigest()
@@ -290,13 +329,17 @@ def validate_input(body, stack):
         "voice",
     }:
         raise HTTPException(400, "turn_arguments_invalid")
+    language = body.get("language", "auto")
+    if not isinstance(language, str) or language not in ("auto", *LANGUAGES):
+        raise HTTPException(400, "language_not_supported")
+    if "recap_delivery_id" in body:
+        receipt = body["recap_delivery_id"]
+        if not isinstance(receipt, str) or not re.fullmatch(r"[a-f0-9]{32}", receipt):
+            raise HTTPException(400, "recap_delivery_invalid")
+        if body.get("session_id") is None:
+            raise HTTPException(400, "recap_delivery_requires_session")
     validate_voice(body.get("voice", "azure"))
     audio_b64, text = body.get("audio_b64", ""), body.get("text", "")
-    receipt = body.get("recap_delivery_id")
-    if receipt is not None and (
-        not isinstance(receipt, str) or not re.fullmatch(r"[a-f0-9]{32}", receipt)
-    ):
-        raise HTTPException(400, "recap_delivery_invalid")
     if not isinstance(audio_b64, str) or len(audio_b64) > 700_000:
         raise HTTPException(413, "audio_b64_too_large")
     if not isinstance(text, str) or len(text) > 500:
@@ -317,8 +360,7 @@ def validate_input(body, stack):
             raise HTTPException(503, "stt_not_configured")
     if stack["llm_primary"] is None or stack["tts"] is None:
         raise HTTPException(503, "voice_stack_not_configured")
-    language = body.get("language", "auto")
-    return audio, text, language if language in ("auto", "et", "en", "ru") else "auto"
+    return audio, text, language
 
 
 def result_outcome(result):
@@ -577,11 +619,13 @@ class _TrustedLlm:
 class _SafeSpeaker:
     def __init__(self, provider, turn_tools, emit=None):
         self.provider, self.tools, self.reply = provider, turn_tools, None
-        self.recap_id = None
+        self.recap_pending = None
+        self.invalid_audio = False
         self.latency_ms = 0.0
         self.emit = emit
 
     def normalize(self, text):
+        self.recap_pending = None
         outcome = result_outcome(
             {"tool_results": [{"result": r} for r in self.tools.results]}
         )
@@ -607,11 +651,16 @@ class _SafeSpeaker:
             if recap and self.tools.session.tools.pending:
                 canonical = self.tools.session.tools.render_recap()
                 if canonical:
-                    self.recap_id = self.tools.session.tools.pending["hold_id"]
+                    self.recap_pending = self.tools.session.tools.pending
                     text = canonical
         normalized = self.tools.session.tools.guard_reply(text, self.tools.results)
         if normalized != text and self.tools.session.tools.pending:
             self.tools.session.tools.pending = None
+        pending = self.tools.session.tools.pending
+        if pending and normalized == self.tools.session.tools.render_recap():
+            # Repeats and language switches need a fresh receipt too; they do
+            # not execute another preparation tool or acknowledge delivery.
+            self.recap_pending = pending
         return normalized
 
     def synthesize(self, text):
@@ -627,7 +676,9 @@ class _SafeSpeaker:
             )
         started = time.perf_counter()
         try:
-            return self.provider.synthesize(self.reply)
+            audio = self.provider.synthesize(self.reply)
+            self.invalid_audio = not isinstance(audio, bytes)
+            return audio
         finally:
             self.latency_ms += (time.perf_counter() - started) * 1000
 
@@ -646,6 +697,8 @@ async def run_demo_turn(
     from .turn import MAX_HISTORY_TURNS, recognize_audio, run_turn
 
     started = time.perf_counter()
+    # Receipt validation precedes paid recognition and observation of this input.
+    session.consume_recap_delivery(recap_delivery_id)
     stt_started = started
     recognition_status = "typed"
     if audio:
@@ -655,15 +708,6 @@ async def run_demo_turn(
     if not isinstance(text, str) or len(text) > 500:
         session.tools.observe_user_text("", is_final=True)
         raise HTTPException(413, "transcript_too_large")
-    # A trusted operator-client asserts playback or explicit reading, not TTS.
-    # One-use and bound to this exact preparation, not merely a reusable hold.
-    receipt, session.recap_delivery = session.recap_delivery, None
-    if (
-        receipt
-        and receipt["id"] == recap_delivery_id
-        and receipt["pending"] is session.tools.pending
-    ):
-        session.tools.mark_recap_delivered(receipt["pending"]["hold_id"])
     # The server observes the final transcript before any LLM-generated tool call.
     session.tools.observe_user_text(
         text,
@@ -704,19 +748,27 @@ async def run_demo_turn(
     )
     result["tts_failed"] = not bool(result["audio"])
     result["fallback_used"] = result.get("fallback_used", False)
-    if result["tts_failed"] or result["fallback_used"]:
-        session.tools.pending = None
-    elif speaker.recap_id and result_outcome(result) not in (
-        "unknown_outcome",
-        "tools_failed",
-    ):
-        pending = session.tools.pending
-        if pending and pending["hold_id"] == speaker.recap_id:
-            session.recap_delivery = {"id": uuid.uuid4().hex, "pending": pending}
     # run_turn's last-resort catch may discard its local tool list after a
     # failed model follow-up. Native execution truth still owns the outcome.
     result["tool_results"] = [{"result": value} for value in tools.results]
     result["mutation_uncertain"] = session.tools.mutation_uncertain
+    if (
+        not result["fallback_used"]
+        and not speaker.invalid_audio
+        and (not result["tts_failed"] or emit is None)
+        and result_outcome(result) not in ("unknown_outcome", "tools_failed")
+        and session._recap_is_current(speaker.recap_pending, result["reply"])
+    ):
+        # Synthesis is not delivery. JSON's canonical text remains deliberately
+        # readable if audio failed; incomplete NDJSON never grants a receipt.
+        session.recap_delivery = {
+            "id": uuid.uuid4().hex,
+            "pending": speaker.recap_pending,
+            "text": result["reply"],
+            "language": session.tools.language,
+        }
+    elif speaker.invalid_audio or result["tts_failed"] or result["fallback_used"]:
+        session.tools.pending = None
     callslog.history_safe(
         call_history.record_result,
         session.tools.call_id,
@@ -779,6 +831,18 @@ async def run_demo_turn(
         "tools_used": len(result["tool_results"]),
         "fallback_used": result["fallback_used"],
         "tts_failed": result["tts_failed"],
+        "recap_delivery_id": (
+            session.recap_delivery["id"] if session.recap_delivery else None
+        ),
+        "recap_expires_in_s": (
+            max(
+                0,
+                min(session.expires_at, session.recap_delivery["pending"]["expires_at"])
+                - time.monotonic(),
+            )
+            if session.recap_delivery
+            else None
+        ),
         "input_status": result.get("input_status", recognition_status),
         "outcome": result_outcome(result),
         "turn_count": session.turn_count,
@@ -787,7 +851,4 @@ async def run_demo_turn(
         "booking_changes": tools.changes,
         "warnings": warnings,
         "timings_ms": timings,
-        "recap_delivery_id": (
-            session.recap_delivery["id"] if session.recap_delivery else None
-        ),
     }

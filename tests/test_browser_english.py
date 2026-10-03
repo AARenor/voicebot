@@ -212,6 +212,9 @@ def test_english_session_preserves_booking_delivery_confirmation_and_cancellatio
 
     model = BookingLlm()
     client.app.state.stack["llm_primary"] = model
+    from tests.test_table_http import Speaker as AudioSpeaker
+
+    client.app.state.stack["tts"] = AudioSpeaker()
     session = client.post(
         "/api/demo/session", headers=AUTH, json={"language": "en"}
     ).json()["session_id"]

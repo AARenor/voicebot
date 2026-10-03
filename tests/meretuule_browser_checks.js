@@ -25,7 +25,7 @@ async (page) => {
     require(response?.status() === 200, `Meretuule root returned ${response?.status()}, expected 200`);
     const title = await tab.title();
     const headings = await tab.locator('h1').allTextContents();
-    require(/Meretuule/i.test(title), `Website title missing Meretuule: ${title}`);
+    require(title === 'Meretuule — restorani demo', `Wrong restaurant website title: ${title}`);
     require(!/Vastuvõtulaud/i.test(title), 'Public domain served the operator dashboard');
     require(tab.url() === 'https://meretuule.arleserver.cfd/', 'Website root redirected elsewhere');
     const homepageLinks = await tab.locator('a.wordmark, a.footer-brand').evaluateAll(elements =>
@@ -65,6 +65,8 @@ async (page) => {
     const robot = await tab.request.get('https://robot.arleserver.cfd/');
     const robotHtml = await robot.text();
     require(robot.status() === 200 && robotHtml.includes('<title>Vastuvõtulaud'), 'Robot root no longer serves the operator dashboard');
+    require(robotHtml.includes('Uus lauabroneering') && robotHtml.includes('Meretuule restoran'), 'Robot did not serve the restaurant dashboard');
+    require(!robotHtml.includes('id="booking-kind-slot"') && !robotHtml.includes('id="booking-kind-stay"'), 'Retired hotel/spa composer remains active');
     const dashboardRestaurantLinks = await tab.evaluate(html =>
       [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('a.hotel-link, .heading-actions a.button:not(.primary)')].map(el => el.getAttribute('href')),
     robotHtml);
@@ -78,7 +80,7 @@ async (page) => {
       require(await demoLinks.count() === 2, 'Dashboard demo links do not point directly to the public root');
       await demoLinks.first().click();
       await management.waitForURL('https://meretuule.arleserver.cfd/');
-      require(/Meretuule/.test(await management.title()), 'Dashboard demo link did not open the restaurant website');
+      require(await management.title() === 'Meretuule — restorani demo', 'Dashboard demo link did not open the restaurant website');
     } finally { await management.close(); }
     require(errors.length === 0, `Website browser errors: ${errors.join('; ')}`);
     return {pass: true, url: tab.url(), status: response.status(), title, headings, assets,

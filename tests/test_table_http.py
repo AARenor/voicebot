@@ -3,6 +3,7 @@
 import base64
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,7 @@ AUTH = {"Authorization": "Bearer fixture-operator"}
 
 class Speaker:
     def synthesize(self, text):
-        return text.encode()
+        return (Path(__file__).parent / "fixtures/speech-tone.mp3").read_bytes()
 
 
 class Planner:
@@ -72,6 +73,64 @@ def client(monkeypatch, tmp_path):
         result.fixture_day = day
         yield result
     callslog.reset_default()
+
+
+def test_public_config_identifies_restaurant_without_archived_provider_claims(client):
+    response = client.get("/api/config")
+    assert response.status_code == 200
+    assert response.json() == {
+        "config": {
+            "business": "restaurant",
+            "venue": "Meretuule restoran",
+            "data_mode": "synthetic",
+        }
+    }
+
+
+@pytest.mark.parametrize("language", ["et", "en", "ru"])
+def test_streamed_table_recap_delivers_one_use_next_turn_receipt(client, language):
+    client.app.state.stack["tts"].stream = lambda text: iter(
+        [Speaker().synthesize(text)]
+    )
+    session = client.post(
+        "/api/demo/session", json={"language": language}, headers=AUTH
+    ).json()["session_id"]
+    response = client.post(
+        "/api/turn",
+        headers={**AUTH, "Accept": "application/x-ndjson"},
+        json={
+            "session_id": session,
+            "text": "table request",
+            "language": language,
+        },
+    )
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert [event["type"] for event in events] == ["reply", "audio", "done"]
+    done = events[-1]
+    assert done["language"] == language and done["recap_delivery_id"]
+    assert client.app.state.stack["llm_primary"].calls == 1
+    backend = client.app.state.stack["table"]
+    import asyncio
+
+    assert asyncio.run(backend.get_operator_bookings(client.fixture_day))["items"] == []
+    payload = {
+        "session_id": session,
+        "text": CONSENT[language],
+        "language": language,
+        "recap_delivery_id": done["recap_delivery_id"],
+    }
+    confirmed = client.post("/api/turn", headers=AUTH, json=payload)
+    assert confirmed.status_code == 200 and confirmed.json()["booking_ids"]
+    assert client.app.state.stack["llm_primary"].calls == 1
+    records = asyncio.run(backend.get_operator_bookings(client.fixture_day))["items"]
+    assert len(records) == 1 and records[0]["status"] == "confirmed"
+    replay = client.post("/api/turn", headers=AUTH, json=payload)
+    assert replay.status_code == 409
+    assert (
+        len(asyncio.run(backend.get_operator_bookings(client.fixture_day))["items"])
+        == 1
+    )
 
 
 def post(client, name, body):
@@ -217,7 +276,9 @@ def test_voice_restaurant_confirm_cancel_and_history_need_no_followup_model(
     proposed = turn(requests[language])
     assert proposed["recap_delivery_id"]
     assert proposed["booking_ids"] == []
-    assert base64.b64decode(proposed["audio_b64"]).decode() == proposed["reply"]
+    assert base64.b64decode(proposed["audio_b64"]) == Speaker().synthesize(
+        proposed["reply"]
+    )
     assert client.app.state.stack["llm_primary"].calls == 1
     confirmed = turn(
         CONSENT[language],

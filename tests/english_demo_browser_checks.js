@@ -55,7 +55,7 @@ async page => {
   assert.equal(requests.at(-1).body.language,'en');
   await page.evaluate(async()=>{englishFixtureAudio.source.stop();await englishFixtureAudio.context.close();});
   // Autoplay failure and reading a recap never consent automatically.
-  await page.route('**/api/turn',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({text_heard:'A test booking',language:'en',reply:'Test proposal. Say: Yes, I confirm.',outcome:'ok',recap_delivery_id:'b'.repeat(32),audio_b64:'',booking_changes:[],expires_in_s:590})}));
+  await page.route('**/api/turn',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({text_heard:'A test booking',language:'en',reply:'Test proposal. Say: Yes, I confirm.',outcome:'ok',recap_delivery_id:'b'.repeat(32),recap_expires_in_s:60,audio_b64:'',booking_changes:[],expires_in_s:590})}));
   await page.locator('#demo-text').fill('A test booking');await page.locator('#demo-send').click();
   await page.waitForFunction(()=>!state.turnBusy);
   assert(await page.locator('#demo-recap-read').isVisible());
@@ -76,6 +76,7 @@ async page => {
   assert((await page.locator('#demo-messages').textContent()).includes('Tere!'));
   await page.locator('#demo-end').click();await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
   await page.locator('#demo-language').selectOption('en');
+  assert.equal(await page.locator('#demo-voice-result').textContent(),'','idle language change retained the previous-language voice result');
   for (const [name,width,height] of [['desktop',1440,1000],['mobile',390,844]]) {
     await page.setViewportSize({width,height});await page.locator('#demo-section').scrollIntoViewIfNeeded();
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);

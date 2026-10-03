@@ -874,6 +874,7 @@ class CallTools:
         self.table_offers, self.held_tables = {}, {}
         self._hold_order = []
         self.booking_kinds = {}
+        self.booking_holds = {}
         self.pending: dict[str, Any] | None = None
         self.cancel_approval: dict[str, Any] | None = None
         self.last_booking = None
@@ -1139,6 +1140,10 @@ class CallTools:
 
     @property
     def direct_reply(self):
+        if self.pending and not self.pending["approved"]:
+            # Repeat/language-switch turns keep an owned proposal but revoke
+            # its delivery. Reuse its canonical recap, not a model paraphrase.
+            return self.guard_reply("", [])
         if self.conversation.reply is None:
             return None
         return self.guard_reply(self.conversation.reply, [])
@@ -1168,6 +1173,18 @@ class CallTools:
         )
         if language is None and detected_language is None:
             selected = question_language(text, selected, entries=faq_bank)
+            if self.business == "restaurant":
+                manual_languages = {
+                    candidate
+                    for candidate in LANGUAGES
+                    if any(
+                        normalize_question(text)
+                        == normalize_question(entry.get("question_" + candidate, ""))
+                        for entry in self.demo["faq"]
+                    )
+                }
+                if selected not in manual_languages and len(manual_languages) == 1:
+                    selected = next(iter(manual_languages))
         # A saved guest name is a selection, not a request to change language.
         named_fixture = " ".join(text.casefold().strip(" .!?").split()) in {
             *self.demo["guests"],
@@ -2177,6 +2194,29 @@ class CallTools:
             or guest_fixture_id not in self.demo["guests"]
         ):
             return {"error": "unknown_guest_fixture"}
+        for hold_id in reversed(self._hold_order):
+            owned = self.held_tables.get(hold_id, {})
+            if hold_id in self.confirmed_holds or any(
+                owned.get(key) != value
+                for key, value in (
+                    ("date", date),
+                    ("start_time", start_time),
+                    ("party_size", party_size),
+                )
+            ):
+                continue
+            hold = await self.dispatcher.get_table_hold(hold_id)
+            if self._turn_serial != turn_serial:
+                return {"error": "turn_superseded"}
+            if hold is not None and hold.expires_at > time.monotonic():
+                # Re-prepare the owned sitting, never renew its expiry or consent.
+                return await self.dispatch(
+                    "prepare_demo_table",
+                    {
+                        "hold_id": hold_id,
+                        "guest_fixture_id": guest_fixture_id,
+                    },
+                )
         catalogue = await self.dispatch("get_table_catalogue", {})
         if self._turn_serial != turn_serial:
             return {"error": "turn_superseded"}
@@ -2571,6 +2611,23 @@ class CallTools:
             )
             if error:
                 return {"error": error}
+            if not self.mutation_uncertain:
+                turn_serial = self._turn_serial
+                for hold_id in tuple(self.held_tables):
+                    if hold_id not in self.holds or hold_id in self.confirmed_holds:
+                        continue
+                    released = await self.dispatcher.release_table_hold(hold_id)
+                    if released is True:
+                        self.holds.discard(hold_id)
+                        self.held_tables.pop(hold_id, None)
+                        for key, receipt in tuple(self.actions.items()):
+                            if (
+                                receipt.get("hold_id") == hold_id
+                                and "booking" not in receipt
+                            ):
+                                self.actions.pop(key)
+                    if self._turn_serial != turn_serial:
+                        return {"error": "turn_superseded"}
         if name == "prepare_demo_table":
             return await self.prepare_demo_table(**args)
         if name == "plan_demo_table":
@@ -2867,6 +2924,7 @@ class CallTools:
             self.bookings.add(str(booking["id"]))
             self.booking_kinds[str(booking["id"])] = TOOL_KINDS.get(name, "slot")
             self.last_booking = str(booking["id"])
+            self.booking_holds[self.last_booking] = args["hold_id"]
             self.confirmed_holds.add(args["hold_id"])
             self.outcome = "booking_confirmed"
             slot = self.held_slots.get(args["hold_id"], {})
@@ -2923,6 +2981,12 @@ class CallTools:
                 return self._unknown_mutation(name)
             self.outcome = "booking_cancelled"
             self.cancelled_bookings.add(args["booking_id"])
+            cancelled_hold = self.booking_holds.get(args["booking_id"])
+            for held_action, held_result in list(self.actions.items()):
+                if cancelled_hold and held_result.get("hold_id") == cancelled_hold:
+                    # Only a new owned hold may rebook. Keep consumed holds,
+                    # confirmation receipts and cancellation facts intact.
+                    self.actions.pop(held_action)
             if args["booking_id"] in self.booking_details:
                 receipt = {
                     **self.booking_details[args["booking_id"]],

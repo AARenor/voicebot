@@ -96,6 +96,24 @@ DOCKER_CONFIG=/tmp/opencode/docker-voicebot python3 deploy/telephony/manage.py b
 python3 deploy/telephony/manage.py up --source-container "$VOICEBOT_WEB_CONTAINER"
 ```
 
+To update an **existing** deployment without restarting LiveKit/SIP/Redis, use
+`up --worker-only --source-container "$VOICEBOT_WEB_CONTAINER"` after the build.
+When the existing bridge supplies the agent name, also pass
+`--bridge-source-container voicebot-twilio-twilio-bridge-1`. A mismatched explicit
+website/bridge name fails closed before replacement. The worker retains the
+website's model, ET/EN voices, configured agent name and
+existing persistent volume. SIP dispatch honors that same configured agent name.
+For the separate bridge, validate and update with `--twilio` plus
+`--bridge-source-container voicebot-twilio-twilio-bridge-1`; the helper reuses its
+existing inbound configuration in memory, requires matching media credentials,
+and retains its HTTPS ingress settings. It does not purchase/provision a number
+or copy carrier credentials into the website. Set the website's
+`PUBLIC_PHONE_NUMBER` to the already configured, validated inbound contact when
+it should be displayed; this does not change carrier verification.
+
+Native empty model replies produce a guarded response, and empty/silent synthesis
+uses the independent cached failure audio without granting recap delivery.
+
 Temporary Docker config avoids this host's root-owned buildx activity file; it
 contains no registry login. Config checksums recreate LiveKit when its mounted
 config changes. Deploy after jobs finish; the 1000-second worker Docker stop grace

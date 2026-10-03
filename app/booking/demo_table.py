@@ -406,6 +406,23 @@ class DemoTableAdapter:
                 return None
             return self._hold(db, row)
 
+    async def release_hold(self, hold_id):
+        """Retire an abandoned unconfirmed allocation; retain its audit row."""
+        _identifier(hold_id, "hold")
+        return await self._run(self._release_hold, hold_id)
+
+    def _release_hold(self, hold_id):
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return (
+                db.execute(
+                    "UPDATE table_holds SET status='released' WHERE id=? AND status='held'"
+                    " AND NOT EXISTS(SELECT 1 FROM table_bookings WHERE hold_id=?)",
+                    (hold_id, hold_id),
+                ).rowcount
+                == 1
+            )
+
     def _guest(self, guest):
         if not isinstance(guest, dict) or set(guest) != {
             "firstName",
