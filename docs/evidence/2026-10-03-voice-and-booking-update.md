@@ -62,14 +62,33 @@ their phone number `+12025550109` is a fictional fixture.
 At 06:37 UTC on 2026-10-03, before any deployment of this change set, both
 `https://robot.arleserver.cfd/health` and `https://coolify.arleserver.cfd/`
 returned HTTP 530 with a Cloudflare Tunnel error page. Earlier site reads had
-succeeded. This prevents public deployment verification; the outage's cause
+succeeded. This prevented public deployment verification at that time; the outage's cause
 has not been established from application code.
+
+The tunnel subsequently recovered. At approximately 06:50 UTC, GitHub master
+and the published source matched commit `976d4b4d89072c0fe25b4ef158ec8853c324c5ac`.
+Public health returned 200; `/hotel`, the public property/catalogue APIs and
+`/api/status` returned 200. Both dashboard/hotel HTML files and all four
+content-versioned CSS/JS assets matched the source bytes exactly. The public
+status reports the new HTTP model configuration and room capability. This does
+not establish the separately deployed worker's version or provider acceptance.
+
+Read-only live Chromium checks found three room cards, one Easy service,
+weekday 09:00–12:00 / 13:00–17:00 spa hours, closed weekends, working FAQs and
+room/spa booking links. The public hotel and signed-out dashboard fit
+320–1440px without overflow, JavaScript errors or failed public requests.
+Private booking/stay reads and session creation without authorization returned
+403 with `no-store`; no live booking write was attempted. The live public phone
+DTO remains unconfigured (`number:null`), and the page reports that honestly.
 
 GitHub master pushes deploy only the Coolify web/API application. The native
 telephone worker and Twilio bridge require a separate server deployment.
-Existing server access and a restored tunnel are needed to inspect those
+Existing server access is still needed to inspect those
 services, preserve their exact shared volume, rebuild/restart them and test
-the actual incoming call. No successful public PSTN call is claimed here.
+the actual incoming call. It is also needed to supply the existing inbound
+number as `PUBLIC_PHONE_NUMBER` in the web application. Authenticated browser
+speech, volume/journal continuity and native deployment remain unverified.
+No successful public PSTN call is claimed here.
 
 See [Coolify deployment](../../COOLIFY.md),
 [native deployment](../../deploy/telephony/README.md) and
