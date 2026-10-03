@@ -38,7 +38,7 @@ async def prepared(state, search_args):
 def test_room_schema_contains_no_model_contacts_or_consent(state):
     names = {s["function"]["name"] for s in state.conversation_tools()}
     assert names == {"get_demo_profile", "get_stay_catalogue", "search_availability", "hold_offer",
-                     "prepare_demo_stay", "confirm_booking", "cancel_booking"}
+                     "prepare_demo_stay", "plan_demo_stay", "confirm_booking", "cancel_booking"}
     confirm = next(s for s in state.schemas if s["name"] == "confirm_booking")
     assert confirm["parameters"]["properties"] == {"hold_id": {"type": "string"}}
     assert "authorize_cancellation" not in names

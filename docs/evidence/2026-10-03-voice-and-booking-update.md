@@ -104,6 +104,18 @@ diagnostic patch passed 76 HTTP tests (6 native skips, 32 subtests), 43 native
 provider tests (32 subtests), lint/syntax checks and the Chromium dashboard
 suite at 320–1440px, including rate-limit/rejected-request guidance.
 
+Commit `529f461` was pushed to master and the live content-versioned dashboard
+asset matched its source exactly. Repeating the protected conversation then
+identified `rate_limited` / HTTP 429 after two tool executions; no booking was
+created. The subsequent fix uses compact backend planning and trusted canonical
+responses: preparation does not ask the model to rewrite its recap, and later
+server-authorized confirmation/cancellation uses the existing guarded tool
+executor. Focused HTTP tests verify one model request for an entire fictional
+spa or room prepare/confirm/cancel flow, with zero additional model requests
+for consent or cancellation. Failed recap audio and ambiguous consent still
+prevent writes. Room selection remains explicit when the requested type is
+missing or ambiguous.
+
 ## Remaining release gaps
 
 GitHub master pushes deploy only the Coolify web/API application. The native

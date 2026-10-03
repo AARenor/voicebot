@@ -16,6 +16,7 @@ from datetime import date, datetime
 from fastapi import HTTPException
 
 from .telephone import GREETING, CallTools
+from .booking_response import trusted_booking_response
 from . import call_history, callslog
 from .providers.errors import PROVIDER_FAILURE_REASONS, ProviderError
 
@@ -334,6 +335,19 @@ class _TrustedLlm:
 
     def chat(self, messages, tools=None):
         state = self.session.tools
+        # These replies/actions are already decided by trusted call state. A
+        # second provider request cannot improve the canonical recap/receipt,
+        # and can exhaust the shared provider limit after a successful tool.
+        response = trusted_booking_response(
+            state, after_tool=bool(messages and messages[-1].get("role") == "tool")
+        )
+        if response is not None:
+            if "content" in response:
+                return response
+            return {"content": None, "tool_calls": [{
+                "id": "call_" + uuid.uuid4().hex, "type": "function",
+                "function": {"name": response["name"], "arguments": json.dumps(response["arguments"])},
+            }]}
         # Standalone greetings/FAQs use approved text, not model paraphrases
         # that the shared speech guard would reject. Mixed requests use tools.
         if messages and messages[-1].get("role") == "user":

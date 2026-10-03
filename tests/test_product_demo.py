@@ -654,9 +654,15 @@ def test_failed_preparation_turn_does_not_arm_later_consent(client, tmp_path):
                         {"service": "6", "provider": "2", "date": self.day},
                     )["tool_calls"]
                 }
-            if self.step == 4:
-                self.step += 1
-                return call("confirm_slot_booking", {"hold_id": self.hold})
+            if self.step == 3:
+                self.hold = json.loads(messages[-1]["content"])["hold_id"]
+                self.step = 5
+                # Terminal recaps now skip model follow-up. A premature write
+                # can still be attempted in the same model tool-call batch.
+                return {"tool_calls":
+                    call("prepare_demo_booking", {"hold_id": self.hold})["tool_calls"]
+                    + call("confirm_slot_booking", {"hold_id": self.hold})["tool_calls"]
+                }
             if self.step >= 5:
                 self.step += 1
                 if messages[-1]["role"] != "tool":
