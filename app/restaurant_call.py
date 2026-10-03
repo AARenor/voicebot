@@ -25,7 +25,7 @@ from .turn import REPEAT_PROMPT, STT_UNAVAILABLE, TURN_UNAVAILABLE
 
 COPY: dict[str, dict[str, str]] = {
     "et": {
-        "greeting": "Tere! Olen restorani AI-abiline. P?ris lauda demo ei broneeri. Kuidas saan aidata?",
+        "greeting": "Tere! Olen restorani AI-abiline. Päris lauda demo ei broneeri. Kuidas saan aidata?",
         "date": "Mis kuupäevaks soovid lauda?",
         "time": "Mis kell soovid tulla?",
         "party": "Mitu teid tuleb, koos lastega?",
@@ -67,7 +67,7 @@ COPY: dict[str, dict[str, str]] = {
         "recap": "Your test reservation: {name}, {date} at {time}, Tallinn local time, for {party} guests. The table is for {duration} minutes, under {guest}. Shall I confirm it? You can say \"{consent}\""
     },
     "ru": {
-        "greeting": "????????????! ? ??-???????? ?????????????. ????????? ?????? ????? ?? ???????????. ??? ???????",
+        "greeting": "Здравствуйте! Я ИИ-помощник деморесторана. Настоящий столик здесь не бронируется. Чем помочь?",
         "date": "На какую дату нужен столик?",
         "time": "Во сколько хотите прийти?",
         "party": "Сколько вас будет, вместе с детьми?",
