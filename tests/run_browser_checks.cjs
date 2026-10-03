@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
-const available = ['dashboard_browser_checks.js', 'hotel_browser_checks.js', 'booking_browser_checks.js', 'voice_browser_checks.js', 'microphone_race_browser_checks.js', 'english_demo_browser_checks.js'];
+const available = ['dashboard_browser_checks.js', 'hotel_browser_checks.js', 'booking_browser_checks.js', 'voice_browser_checks.js', 'microphone_race_browser_checks.js', 'english_demo_browser_checks.js', 'modern_voice_browser_checks.js', 'streaming_voice_browser_checks.js'];
 (async()=>{
   fs.mkdirSync(path.join(root,'output/playwright'),{recursive:true});
   process.chdir(root);

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -148,4 +149,59 @@ def create_app():
         booking_read_ready=True,
         booking_view_source="easyappointments",
     )
+    return app
+
+
+def create_streaming_app():
+    """Gate synthetic audio on the actual guarded route for native browser tests.
+
+    The gate lets a real browser prove first playback precedes provider
+    completion. It is a synthetic fixture, not a provider latency benchmark.
+    """
+    from types import SimpleNamespace
+
+    from fastapi import Header, HTTPException
+    from tests.test_product_demo import BookingLlm, install_backend
+
+    gate = threading.Event()
+    progress = {"started": False, "completed": False}
+
+    class DelayedSpeech(FixtureSpeech):
+        def stream(self, text):
+            gate.clear()
+            progress.update(started=True, completed=False)
+            audio = self.synthesize(text)
+            split = len(audio) // 2
+            yield audio[:split]
+            if not gate.wait(10):
+                raise RuntimeError("synthetic browser gate expired")
+            yield audio[split:]
+            progress["completed"] = True
+
+        def for_language(self, language):
+            return self
+
+    app = create_app()
+    app.state.stack["slot"].close()
+    day, records, writes = install_backend(
+        SimpleNamespace(app=app), Path(_storage.name)
+    )
+    app.state.stack["llm_primary"] = BookingLlm(day)
+    app.state.stack["tts"] = DelayedSpeech()
+
+    def fixture_authorized(authorization):
+        if authorization != "Bearer fixture-operator":
+            raise HTTPException(status_code=403)
+
+    @app.get("/test/stream/state")
+    def stream_state(authorization: str | None = Header(default=None)):
+        fixture_authorized(authorization)
+        return {**progress, "writes": len(writes), "records": len(records)}
+
+    @app.post("/test/stream/release")
+    def release_stream(authorization: str | None = Header(default=None)):
+        fixture_authorized(authorization)
+        gate.set()
+        return {"ok": True}
+
     return app
