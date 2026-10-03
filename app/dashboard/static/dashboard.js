@@ -66,7 +66,7 @@ function controls() {
   $("refresh").disabled = !state.connected || state.readBusy;
   $("demo-start").disabled = !state.connected || !!state.sessionId || state.turnBusy;
   $("demo-end").disabled = !state.sessionId || state.turnBusy;
-  for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy;
+  for (const id of ["demo-text", "demo-send", "demo-mic"]) $(id).disabled = !state.sessionId || state.turnBusy || (id !== "demo-mic" && state.micStarting);
   $("demo-mic").disabled ||= state.micStarting;
   $("demo-history").hidden=!state.callId;
   $("demo-history").disabled=!state.connected;

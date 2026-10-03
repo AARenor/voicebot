@@ -388,6 +388,7 @@ select:disabled { color: var(--muted); background: #f7f9fa; }
   .heading-actions { width: 100%; }
   .heading-actions > .button { flex: 1; }
   .recap-actions { flex-direction: column; }
+}
 .navigation a:hover { background: #24513e; }
 .navigation a[aria-current] { background: #345c47; }
 .navigation a[aria-current] .icon, .brand-mark { color: #b4dbb8; }

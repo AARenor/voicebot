@@ -97,7 +97,7 @@ async (page) => {
   await page.waitForFunction(()=>document.querySelectorAll('.history-timeline li').length===4);
   assert((await page.locator('#history-detail').textContent()).includes('Broneering #101'),'confirmed booking link missing');
   await page.locator('.history-booking button').click();
-  await page.waitForFunction(()=>document.getElementById('booking-date').value==='2026-10-09');
+  await page.waitForFunction(()=>document.getElementById('booking-date').value==='2026-10-09' && document.querySelector('#bookings tbody tr.highlight'));
   assert(await page.locator('#bookings tbody tr.highlight').count()===1,'history did not highlight the authoritative booking');
   await page.locator('#history-channel').selectOption('browser');
   await page.waitForFunction(()=>document.querySelectorAll('#history-list li').length===1);
@@ -201,6 +201,9 @@ async (page) => {
     await page.setViewportSize({width,height:900});
     const size = await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));
     assert(size.scroll<=size.width,`horizontal overflow at ${width}px: ${size.scroll}`);
+    const historyLayout=await page.locator('.history-layout').evaluate(el=>({display:getComputedStyle(el).display,columns:getComputedStyle(el).gridTemplateColumns.split(' ').length}));
+    assert(historyLayout.display==='grid' && historyLayout.columns===(width>700?2:1),`history layout styles failed at ${width}px`);
+    assert(await page.locator('.stack-overview ol').evaluate(el=>getComputedStyle(el).display)==='grid','service configuration layout styles missing');
     layouts.push(size);
   }
   await page.setViewportSize({width:390,height:844});
