@@ -46,6 +46,8 @@ def load_restaurant_data(path=None):
             raise ValueError()
         for field in ("description", "policies", "allergy_notice"):
             _translations(data[field])
+        if "pet_policy" in data:
+            data["pet_policy"] = _translations(data["pet_policy"])
         ranges = {
             "reservation_duration_minutes": (30, 240),
             "slot_interval_minutes": (5, 60),

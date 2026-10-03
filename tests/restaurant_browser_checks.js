@@ -78,6 +78,18 @@ async page => {
       else assert(answer.includes('23') && answer.includes('20') && !answer.includes('21'));
       assert.equal(await page.evaluate(()=>state.recap), null);
     }
+    const petQuestions = {
+      et: ['Tahaks tulla koeraga.', 'Kas kutsuga võib tulla?', 'Jah, koeraga võib tulla.'],
+      en: ['Can I bring my dog?', 'Can we bring a puppy?', 'Yes, dogs are welcome.'],
+      ru: ['Можно прийти с собакой?', 'Можно с питомцем?', 'Да, можно прийти с собакой.'],
+    }[language.code];
+    for (const question of petQuestions.slice(0, 2)) {
+      await page.locator('#demo-text').fill(question);
+      await page.locator('#demo-send').click();
+      await page.waitForFunction(()=>!state.turnBusy);
+      assert.equal(await page.locator('#demo-messages .message').last().locator('span').textContent(), petQuestions[2]);
+      assert.equal(await page.evaluate(()=>state.recap), null);
+    }
     await page.locator('#demo-text').fill(language.menu);
     await page.locator('#demo-send').click();
     await page.waitForFunction(()=>!state.turnBusy);

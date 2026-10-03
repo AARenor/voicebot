@@ -90,6 +90,15 @@ Only bounded topic, day, date, dish and diet selectors survive a relevant
 follow-up; unrelated turns discard that context. General menu replies omit the
 long allergy notice, while allergy/ingredient questions retain it.
 
+An optional `pet_policy` object supplies a short approved answer in `et`, `en`
+and `ru` to questions about bringing dogs or other pets. For example, an operator
+can specify that dogs are allowed, not allowed, or allowed only on the terrace.
+All three translations must be nonempty; malformed policies fail configuration
+validation. If this field is absent, the assistant explicitly says the rule is
+unknown and asks the guest to check with staff. Caller claims never establish
+the rule. The public restaurant API includes the configured policy with the
+other venue data.
+
 Edit a copy of `data/demo/restaurant-demo.json` and place it on the persistent
 shared volume, for example `/data/restaurant.json`. Set
 `RESTAURANT_CONFIG_PATH=/data/restaurant.json` in web and native worker runtime
