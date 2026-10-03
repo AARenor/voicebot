@@ -7,6 +7,29 @@ async page => {
   });
   await page.setViewportSize({width:1440,height:1000});
   await page.goto('http://127.0.0.1:8766/', {waitUntil:'networkidle'});
+  const chooseLanguage = async code => page.locator('.language-option').filter({
+    has: page.locator('input[value="' + code + '"]'),
+  }).click();
+  assert.equal(await page.getByRole('radio').count(), 3);
+  assert(await page.getByRole('radio', {name:'Eesti', exact:true}).isChecked());
+  for (const [code, name] of [['en','English'], ['ru','Русский'], ['et','Eesti']]) {
+    assert(await page.getByRole('radio', {name, exact:true}).isVisible());
+    assert(await page.getByRole('radio', {name, exact:true}).isEnabled());
+    await chooseLanguage(code);
+    assert.equal(await page.locator('html').getAttribute('lang'), code);
+    assert.equal(await page.evaluate(()=>state.demoLanguage), code);
+    assert.equal(await page.evaluate(()=>state.connected), false);
+  }
+  // Native radio keyboard navigation changes the same authoritative selection.
+  await page.getByRole('radio', {name:'Eesti', exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  assert(await page.getByRole('radio', {name:'English', exact:true}).isChecked());
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+  await page.keyboard.press('ArrowRight');
+  assert(await page.getByRole('radio', {name:'Русский', exact:true}).isChecked());
+  assert.equal(await page.locator('html').getAttribute('lang'), 'ru');
+  await chooseLanguage('et');
+  assert.equal(requests.length, 0, 'choosing a language called a provider before sign-in');
   assert.equal(await page.locator('aside.sidebar').count(),1,'restaurant adaptation removed the dashboard sidebar');
   assert.equal(await page.locator('.sidebar nav a').count(),4,'dashboard navigation is missing');
   for (const href of await page.locator('.sidebar nav a').evaluateAll(links=>links.map(link=>link.getAttribute('href')))) {
@@ -33,7 +56,7 @@ async page => {
   await page.waitForFunction(()=>state.connected && !state.readBusy);
   await page.waitForFunction(()=>state.voiceCatalog);
   assert.equal(await page.locator('#demo-voice option:not(:disabled)').count(), 3);
-  await page.locator('#demo-language').selectOption('et');
+  await chooseLanguage('et');
   for (const profile of ['azure-male', 'azure-calm']) {
     await page.locator('#demo-voice').selectOption(profile);
     await page.locator('#demo-voice-preview').click();
@@ -58,7 +81,7 @@ async page => {
   await page.unroute('**/api/demo/voices/preview');
   await page.locator('#demo-voice').selectOption('azure');
   for (const language of languages) {
-    await page.locator('#demo-language').selectOption(language.code);
+    await chooseLanguage(language.code);
     assert.equal(await page.locator('html').getAttribute('lang'),language.code);
     await page.locator('#demo-start').click();
     await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
@@ -94,7 +117,14 @@ async page => {
     await page.locator('#demo-send').click();
     await page.waitForFunction(()=>!state.turnBusy);
     assert((await page.locator('#demo-messages').textContent()).includes(language.soup));
-    assert(await page.locator('#demo-language').isDisabled());
+    assert(await page.getByRole('radio', {name:'Eesti', exact:true}).isDisabled());
+    await page.evaluate(code => {
+      const input = document.querySelector('input[name="demo-language"][value="' + code + '"]');
+      input.checked = true;
+      input.dispatchEvent(new Event('change', {bubbles:true}));
+    }, language.code === 'et' ? 'en' : 'et');
+    assert.equal(await page.evaluate(()=>state.demoLanguage), language.code, 'active conversation language changed');
+    assert.equal(await page.locator('input[name="demo-language"]:checked').inputValue(), language.code);
     assert(await page.locator('#demo-voice-preview').isDisabled(), 'audition interrupted an active conversation');
     await page.locator('#demo-end').click();
     await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
@@ -104,7 +134,7 @@ async page => {
     await page.waitForFunction(()=>reservation.holdId && !reservation.busy);
     assert((await page.locator('#reservation-recap-text').textContent()).includes('4'));
     assert(await page.locator('#reservation-date').isDisabled(),'held recap allowed editable dates');
-    assert(await page.locator('#demo-language').isDisabled(),'owned booking language changed');
+    assert(await page.getByRole('radio', {name:'Eesti', exact:true}).isDisabled(),'owned booking language changed');
     assert(await page.locator('#reservation-confirm').isDisabled(),'recap automatically granted consent');
     await page.locator('#reservation-read').click();
     await page.waitForFunction(()=>reservation.acknowledged && !reservation.busy);
@@ -123,10 +153,10 @@ async page => {
     assert((await page.locator('#bookings').textContent()).includes(language.cancelled));
     await page.locator('#reservation-end').click();
     await page.waitForFunction(()=>!reservation.sessionId && !reservation.busy);
-    assert(!(await page.locator('#demo-language').isDisabled()));
+    assert(!(await page.getByRole('radio', {name:'Eesti', exact:true}).isDisabled()));
   }
   // Real browser capture, filtering and 16k mono WAV encoding; recognition is a double.
-  await page.locator('#demo-language').selectOption('en');
+  await chooseLanguage('en');
   await page.locator('#demo-start').click();
   await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
   assert(await page.locator('#demo-voice').isDisabled(),'voice selection changed an active conversation');
@@ -179,7 +209,7 @@ async page => {
   await page.waitForFunction(()=>!state.sessionId && !state.turnBusy);
   // The Estonian ASR spelling uses the actual confirmation route and becomes
   // visible on the website. No external speech provider is used in this fixture.
-  await page.locator('#demo-language').selectOption('et');
+  await chooseLanguage('et');
   await page.locator('#demo-start').click();
   await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
   await page.evaluate(()=>{HTMLMediaElement.prototype.play=function(){return Promise.reject(new Error('fixture autoplay denied'));};});
@@ -224,7 +254,7 @@ async page => {
   assert(await page.locator('#reservation-confirm').isDisabled());
   // Both hosts share one application; only the operator hostname gets the shell.
   await page.setViewportSize({width:801,height:844});
-  await page.locator('#demo-language').selectOption('ru');
+  await chooseLanguage('ru');
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'801px Russian dashboard overflow');
   await page.setViewportSize({width:390,height:844});
   const fixtureOrigin=new URL(page.url()).origin;
