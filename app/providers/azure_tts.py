@@ -17,12 +17,16 @@ from __future__ import annotations
 import time
 
 import httpx
+from xml.sax.saxutils import quoteattr
+
+from .speech_delivery import SpeechDelivery, is_recap, speech_markup
 
 from .errors import (
     ProviderError,
     RetryableProviderError,
     raise_for_provider,
 )
+from .speech_text import normalize_estonian_speech
 
 TOKEN_TTL_SECONDS = 9 * 60
 
@@ -37,12 +41,21 @@ class _LanguageSpeaker:
         return self.client.synthesize(text, voice=self.voice, lang=self.lang)
 
 
-def ssml(text: str, voice: str, lang: str) -> str:
-    """Minimal SSML (lean = fewer billable tag chars)."""
-    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def ssml(
+    text: str, voice: str, lang: str, delivery: SpeechDelivery | None = None
+) -> str:
+    """Escape literal speech and apply shared voice-specific delivery."""
+    body = speech_markup(
+        normalize_estonian_speech(text, lang),
+        voice,
+        lang,
+        delivery or SpeechDelivery(),
+        recap=is_recap(text),
+    )
     return (
-        f"<speak version='1.0' xml:lang='{lang}'>"
-        f"<voice name='{voice}'>{escaped}</voice></speak>"
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
+        f"xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang={quoteattr(lang)}>"
+        f"<voice name={quoteattr(voice)}>{body}</voice></speak>"
     )
 
 
@@ -53,10 +66,11 @@ class AzureTtsClient:
         region: str,
         voice: str,
         lang: str,
-        output_format: str = "audio-16khz-32kbitrate-mono-mp3",
+        output_format: str = "audio-48khz-96kbitrate-mono-mp3",
         transport: httpx.BaseTransport | None = None,
         *,
         languages: dict[str, tuple[str, str]] | None = None,
+        delivery: SpeechDelivery | None = None,
     ) -> None:
         if not voice or not lang:
             raise ValueError("azure: voice and lang are required")
@@ -66,6 +80,7 @@ class AzureTtsClient:
         self._lang = lang
         self._format = output_format
         self._languages = dict(languages or {})
+        self._delivery = delivery or SpeechDelivery()
         self._http = httpx.Client(timeout=30.0, transport=transport)
         self._token: str | None = None
         self._token_at: float = 0.0
@@ -113,8 +128,12 @@ class AzureTtsClient:
         """Synthesize one reply turn. Returns audio bytes."""
         return self._synthesize_once(text, self.get_token(), voice=voice, lang=lang)
 
-    def _synthesize_once(self, text: str, token: str, *, voice=None, lang=None) -> bytes:
-        body = ssml(text, voice or self._voice, lang or self._lang).encode("utf-8")
+    def _synthesize_once(
+        self, text: str, token: str, *, voice=None, lang=None
+    ) -> bytes:
+        body = ssml(
+            text, voice or self._voice, lang or self._lang, self._delivery
+        ).encode("utf-8")
         try:
             response = self._http.post(
                 f"https://{self._region}.tts.speech.microsoft.com/cognitiveServices/v1",

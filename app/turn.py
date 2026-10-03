@@ -49,7 +49,7 @@ async def recognize_audio(stt, audio: bytes, language: str) -> tuple[str, str]:
     """Return final text and a closed diagnostic code, never provider details."""
     if not audio:
         return "", "no_speech"
-    lang = language if language in ("et", "en", "ru") else "et"
+    lang = language if language in ("auto", "et", "en", "ru") else "et"
     try:
         text = await asyncio.to_thread(stt.transcribe, audio, language=lang)
         if not isinstance(text, str):
@@ -74,8 +74,8 @@ PRICE_HANDOFF = {
 PRICE_RE = re.compile(
     r"€\s?\d{1,3}(?: \d{3}(?!\d))+(?:[.,]\d{2})?"
     r"|€\s?\d+(?:[.,]\d{2})?"
-    r"|\d+[.,]\d{2}\s?(?:€|EUR|eurot|euros|eurod|euro)(?!\w)"
-    r"|\d+\s?(?:€|EUR|eurot|euros|eurod|euro)(?!\w)",
+    r"|\d+[.,]\d{2}\s?(?:€|EUR|eurot|euros|eurod|euro|евро)(?!\w)"
+    r"|\d+\s?(?:€|EUR|eurot|euros|eurod|euro|евро)(?!\w)",
     re.IGNORECASE,
 )
 
@@ -89,7 +89,7 @@ def _norm_price(raw: str) -> str:
     """Canonical numeric core: lowercase, no spaces/commas/currency."""
     s = re.sub(r"\s+", "", raw).replace(",", ".").lower()
     s = s.replace("€", "")
-    s = re.sub(r"(eurot|euros|eurod|euro|eur)$", "", s)
+    s = re.sub(r"(eurot|euros|eurod|euro|eur|евро)$", "", s)
     return s
 
 

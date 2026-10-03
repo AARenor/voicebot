@@ -69,22 +69,24 @@ class GroqClient:
         *,
         language: str = STT_LANGUAGE,
     ) -> str:
-        """Transcribe one chunk with an explicit language hint.
+        """Transcribe one chunk with a language hint or automatic recognition.
 
         Short Estonian utterances need the hint just as telephone turns do.
         Do not provide expected consent or booking text as a decoding prompt.
         """
-        language = language if language in ("et", "en", "ru") else "et"
+        language = language if language in ("auto", "et", "en", "ru") else "et"
+        data = {
+            "model": model or self.config.stt_model,
+            "response_format": "json",
+            "temperature": "0",
+        }
+        if language != "auto":
+            data["language"] = language
         response = self._post(
             "/openai/v1/audio/transcriptions",
             "groq.transcribe",
             files={"file": (filename, audio, "audio/wav")},
-            data={
-                "model": model or self.config.stt_model,
-                "language": language,
-                "response_format": "json",
-                "temperature": "0",
-            },
+            data=data,
         )
         try:
             payload = response.json()

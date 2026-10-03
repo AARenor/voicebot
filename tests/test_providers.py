@@ -53,7 +53,9 @@ class TestProviderErrors(unittest.TestCase):
                 self.assertIsNone(ProviderError("private", reason=reason).reason)
         for status in ("403 private response", 99, 600, True, 403.0, None):
             with self.subTest(status=status):
-                self.assertIsNone(ProviderError("private", status_code=status).status_code)
+                self.assertIsNone(
+                    ProviderError("private", status_code=status).status_code
+                )
         error = ProviderError("private", reason="request_rejected", status_code=403)
         self.assertEqual((error.reason, error.status_code), ("request_rejected", 403))
 
@@ -65,19 +67,27 @@ class TestProviderErrors(unittest.TestCase):
                     raise_for_provider(response, "fixture")
                 error = caught.exception
                 reason = (
-                    "rate_limited" if status == 429 else
-                    "provider_unavailable" if status >= 500 else "request_rejected"
+                    "rate_limited"
+                    if status == 429
+                    else "provider_unavailable"
+                    if status >= 500
+                    else "request_rejected"
                 )
                 self.assertEqual((error.reason, error.status_code), (reason, status))
                 expected = (
-                    "fixture: 429" if status == 429 else
-                    f"fixture: HTTP {status} body='private fixture detail'"
+                    "fixture: 429"
+                    if status == 429
+                    else f"fixture: HTTP {status} body='private fixture detail'"
                 )
                 self.assertEqual(str(error), expected)
                 self.assertNotIn("private", error.reason)
                 self.assertIsInstance(
-                    error, RateLimitedError if status == 429 else
-                    RetryableProviderError if status >= 500 else ProviderError,
+                    error,
+                    RateLimitedError
+                    if status == 429
+                    else RetryableProviderError
+                    if status >= 500
+                    else ProviderError,
                 )
 
 
@@ -169,7 +179,9 @@ class TestGroq(unittest.TestCase):
         with self.assertRaises(RateLimitedError) as ctx:
             self.client(handler).transcribe(b"x")
         self.assertEqual(ctx.exception.retry_after, 2.0)
-        self.assertEqual((ctx.exception.reason, ctx.exception.status_code), ("rate_limited", 429))
+        self.assertEqual(
+            (ctx.exception.reason, ctx.exception.status_code), ("rate_limited", 429)
+        )
 
     def test_500_is_retryable(self):
         def handler(request):
@@ -177,7 +189,10 @@ class TestGroq(unittest.TestCase):
 
         with self.assertRaises(RetryableProviderError) as caught:
             self.client(handler).chat([])
-        self.assertEqual((caught.exception.reason, caught.exception.status_code), ("provider_unavailable", 500))
+        self.assertEqual(
+            (caught.exception.reason, caught.exception.status_code),
+            ("provider_unavailable", 500),
+        )
 
     def test_transport_failure_has_no_invented_http_status(self):
         def handler(request):
@@ -196,23 +211,37 @@ class TestGroq(unittest.TestCase):
                     client.close()
 
     def test_malformed_chat_payloads_are_classified(self):
-        for payload in (None, {}, {"choices": []}, {"choices": [None]},
-                        {"choices": [{"message": None}]}, {"choices": [{"message": 42}]}):
+        for payload in (
+            None,
+            {},
+            {"choices": []},
+            {"choices": [None]},
+            {"choices": [{"message": None}]},
+            {"choices": [{"message": 42}]},
+        ):
             with self.subTest(payload=payload):
                 client = self.client(lambda request: httpx.Response(200, json=payload))
                 try:
                     with self.assertRaises(ProviderError) as caught:
                         client.chat([])
-                    self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
+                    self.assertEqual(
+                        (caught.exception.reason, caught.exception.status_code),
+                        ("invalid_response", 200),
+                    )
                 finally:
                     client.close()
 
     def test_non_json_chat_payload_is_classified(self):
-        client = self.client(lambda request: httpx.Response(200, text="private fixture detail"))
+        client = self.client(
+            lambda request: httpx.Response(200, text="private fixture detail")
+        )
         try:
             with self.assertRaises(ProviderError) as caught:
                 client.chat([])
-            self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
+            self.assertEqual(
+                (caught.exception.reason, caught.exception.status_code),
+                ("invalid_response", 200),
+            )
         finally:
             client.close()
 
@@ -222,7 +251,10 @@ class TestGroq(unittest.TestCase):
 
         with self.assertRaises(ProviderError) as caught:
             self.client(handler).transcribe(b"x")
-        self.assertEqual((caught.exception.reason, caught.exception.status_code), ("invalid_response", 200))
+        self.assertEqual(
+            (caught.exception.reason, caught.exception.status_code),
+            ("invalid_response", 200),
+        )
 
     def test_non_text_transcription_is_not_an_utterance(self):
         # A schema-invalid upstream success must not become billable dialogue
@@ -249,7 +281,7 @@ class TestAzureTts(unittest.TestCase):
                 return httpx.Response(200, text="tok123")
             self.assertEqual(
                 request.headers["X-Microsoft-OutputFormat"],
-                "audio-16khz-32kbitrate-mono-mp3",
+                "audio-48khz-96kbitrate-mono-mp3",
             )
             self.assertIn("et-EE-AnuNeural", request.content.decode())
             return httpx.Response(200, content=b"AUDIO")
@@ -328,7 +360,7 @@ class TestAzureTts(unittest.TestCase):
     def test_ssml_escapes_guest_text(self):
         out = ssml("Tere <Mari> & co", "et-EE-AnuNeural", "et-EE")
         self.assertIn("Tere &lt;Mari&gt; &amp; co", out)
-        self.assertIn("name='et-EE-AnuNeural'", out)
+        self.assertIn('name="et-EE-AnuNeural"', out)
 
 
 class TestEasyAppointments(unittest.TestCase):

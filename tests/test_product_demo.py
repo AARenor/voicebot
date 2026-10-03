@@ -181,7 +181,7 @@ def test_session_busy_denies_overlapping_paid_turns(client):
     session = start(client)
     replies = []
     thread = threading.Thread(
-        target=lambda: replies.append(send(client, session, "Soovin spaahooldust."))
+        target=lambda: replies.append(send(client, session, "Millised spaateenused on saadaval?"))
     )
     thread.start()
     try:
@@ -258,7 +258,7 @@ def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client)
     client.app.state.stack["llm_primary"] = SimpleLlm(
         error=RuntimeError("PRIVATE model error")
     )
-    response = send(client, start(client), "Soovin spaahooldust.")
+    response = send(client, start(client), "Millised spaateenused on saadaval?")
     assert response.status_code == 200
     assert {"stage": "llm", "code": "reply_provider_unavailable"} in response.json()[
         "warnings"
@@ -282,7 +282,7 @@ def test_model_failure_reports_the_failed_stage_and_keeps_a_spoken_reply(client)
 def test_model_failure_reports_only_closed_provider_diagnostics(client, reason, status):
     error = ProviderError("PRIVATE provider body", reason=reason, status_code=status)
     client.app.state.stack["llm_primary"] = SimpleLlm(error=error)
-    response = send(client, start(client), "Soovin spaahooldust.")
+    response = send(client, start(client), "Millised spaateenused on saadaval?")
     warning = response.json()["warnings"][0]
     assert warning == {
         "stage": "llm",
@@ -299,7 +299,7 @@ def test_model_failure_rejects_untrusted_diagnostic_attributes(client):
     error.reason = "PRIVATE provider cause"
     error.status_code = "PRIVATE provider status"
     client.app.state.stack["llm_primary"] = SimpleLlm(error=error)
-    response = send(client, start(client), "Soovin spaahooldust.")
+    response = send(client, start(client), "Millised spaateenused on saadaval?")
     assert response.json()["warnings"] == [
         {"stage": "llm", "code": "reply_provider_unavailable"}
     ]
@@ -503,7 +503,7 @@ def test_generic_http_uses_call_ownership_and_no_unapproved_hotel_faq(client):
     client.app.state.stack["llm_primary"] = Attack()
     with patch("app.callslog.log_call") as log:
         response = client.post(
-            "/api/turn", json={"text": "Soovin spaahooldust."}, headers=AUTH
+            "/api/turn", json={"text": "Millised spaateenused on saadaval?"}, headers=AUTH
         )
     assert response.status_code == 200
     assert response.json()["outcome"] == "tools_failed"
@@ -571,7 +571,7 @@ def test_audio_transcript_is_server_observed_before_model_confirmation(
     class Stt:
         def transcribe(self, audio, *, language):
             assert audio == b"RIFF-fixture"
-            assert language == "et"
+            assert language == "auto"
             return CONSENT
 
     client.app.state.stack["stt"] = Stt()
@@ -675,7 +675,7 @@ def test_http_advertises_compact_native_conversation_tools(client, tmp_path):
             return {"content": "Tere!"}
 
     client.app.state.stack["llm_primary"] = Probe()
-    assert send(client, start(client), "Soovin spaahooldust.").status_code == 200
+    assert send(client, start(client), "Millised spaateenused on saadaval?").status_code == 200
     assert "plan_demo_booking" in observed["names"]
     assert "search_slots" in observed["names"]
     assert "get_slot_catalogue" in observed["names"]

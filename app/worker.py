@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import math
 import os
@@ -15,15 +16,20 @@ from pathlib import Path
 from livekit import api, rtc
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli, llm, stt
 from livekit.agents.types import TimedString, USERDATA_TIMED_TRANSCRIPT
-from livekit.plugins import azure, groq, silero
+from livekit.plugins import groq, silero
 
 from .booking.easyappointments import EasyAppointmentsAdapter
 from .booking.demo_stay import DemoStayAdapter
 from .booking.tools import Dispatcher
+from .booking_response import trusted_booking_response
 from . import callslog, call_history
 from .providers.voice_config import SpeechConfig, VoiceConfig
 from .providers.telephone_stt import TelephoneSTT
-from .languages import ENGLISH, ENGLISH_INVITATION
+from .providers.telephone_tts import TelephoneTTS
+from .providers.speech_delivery import SpeechDelivery
+from .providers.speech_text import normalize_estonian_speech
+from .languages import ENGLISH, ENGLISH_INVITATION, LANGUAGES
+from .russian import localize
 from .telephone import (
     ASK_DATE_TIME,
     CallTools,
@@ -62,25 +68,9 @@ class TelephoneAgent(Agent):
         self.speech_provider = speech_provider
         self._detected_language = None
         self._unsupported_language = False
-
-    async def llm_node(self, chat_ctx, tools, model_settings):
-        responded = False
-        async for chunk in Agent.default.llm_node(
-            self, chat_ctx, tools, model_settings
-        ):
-            if isinstance(chunk, str):
-                responded |= bool(chunk.strip())
-            elif isinstance(chunk, llm.ChatChunk):
-                responded |= chunk.has_response()
-            yield chunk
-        if not responded:
-            # Successful empty/length exhaustion never enters SDK speech nodes.
-            # Seed the existing guard; never retry tools or execute partial JSON.
-            yield (
-                ENGLISH["ask_date_time"]
-                if self.state.language == "en"
-                else ASK_DATE_TIME
-            )
+        self._final_user_turn = None
+        self._tool_call_ids = set()
+        self._tts_voice_lock = asyncio.Lock()
 
     async def stt_node(self, audio, model_settings):
         async for event in Agent.default.stt_node(self, audio, model_settings):
@@ -103,13 +93,20 @@ class TelephoneAgent(Agent):
             new_message.text_content if new_message.role == "user" else "",
             is_final=True,
             detected_language=self._detected_language,
-            language=self.speech_config.mode
-            if self.speech_config.mode != "auto"
-            else None,
+            language=(
+                self.speech_config.mode if self.speech_config.mode != "auto" else None
+            ),
             unsupported=self._unsupported_language,
         )
         self._detected_language = None
         self._unsupported_language = False
+        message_id = getattr(new_message, "id", None)
+        self._final_user_turn = (
+            (message_id, self.state._turn_serial)
+            if new_message.role == "user" and message_id
+            else None
+        )
+        self._tool_call_ids.clear()
         await self.update_instructions(self.state.conversation_instructions)
         if self.state.history_enabled and new_message.role == "user":
             status = (
@@ -122,6 +119,122 @@ class TelephoneAgent(Agent):
                 self.state.call_id,
                 status,
                 self.state.language,
+            )
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        # Only finalized user turns can authorize an action. SDK history may
+        # include older tools that finished after a newer turn started.
+        turn = self._final_user_turn
+        user = next(
+            (
+                item for item in reversed(chat_ctx.items)
+                if getattr(item, "role", None) == "user"
+            ),
+            None,
+        )
+        current = turn is not None and turn == (
+            getattr(user, "id", None), self.state._turn_serial
+        )
+        # SDK instruction refreshes append configuration metadata after the
+        # user's item. That metadata does not change which turn is answered.
+        tail = next(
+            (
+                item for item in reversed(chat_ctx.items)
+                if not isinstance(item, llm.AgentConfigUpdate)
+            ),
+            None,
+        )
+        initial = current and tail is user
+        after_tool = (
+            current
+            and isinstance(tail, llm.FunctionCallOutput)
+            and tail.call_id in self._tool_call_ids
+        )
+        if initial:
+            # Reviewed social turns and repeat requests answer only this
+            # finalized user turn, never a superseded tool followup.
+            reply = self.state.direct_reply
+            if reply is not None:
+                yield reply
+                return
+        if initial or after_tool:
+            response = trusted_booking_response(
+                self.state,
+                after_tool=after_tool,
+                allow_actions=(
+                    initial and getattr(model_settings, "tool_choice", None) != "none"
+                ),
+            )
+            if response and "content" in response:
+                yield response["content"]
+                return
+            if response and response["name"] in {tool.id for tool in tools}:
+                call_id = uuid.uuid4().hex
+                self._tool_call_ids.add(call_id)
+                # The ordinary SDK executor still runs CallTools.dispatch and
+                # checks ownership, expiry and delivered later consent.
+                yield llm.ChatChunk(
+                    id=uuid.uuid4().hex,
+                    delta=llm.ChoiceDelta(
+                        role="assistant",
+                        tool_calls=[
+                            llm.FunctionToolCall(
+                                name=response["name"],
+                                arguments=json.dumps(response["arguments"]),
+                                call_id=call_id,
+                            )
+                        ],
+                    ),
+                )
+                return
+        if initial and self.state.booking_inquiry:
+            # Current parsed caller preferences must reach the provider even
+            # though the SDK's original instructions predate this turn.
+            inquiry = llm.ChatMessage(
+                role="system",
+                content=[
+                    "Server-owned booking inquiry (requested date/time only, "
+                    "not availability or consent): "
+                    + json.dumps(self.state.booking_inquiry, ensure_ascii=False)
+                ],
+            )
+            items = list(chat_ctx.items)
+            items.insert(items.index(tail), inquiry)
+            chat_ctx = llm.ChatContext(items=items)
+        responded = False
+        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+            if current and (initial or after_tool) and (
+                turn != self._final_user_turn
+                or turn[1] != self.state._turn_serial
+            ):
+                # SDK tool execution consumes emitted chunks directly. Withhold
+                # late calls as well as IDs after a newer final user turn.
+                return
+            if (
+                current and (initial or after_tool)
+                and turn == self._final_user_turn
+                and turn[1] == self.state._turn_serial
+            ):
+                if isinstance(chunk, llm.ChatChunk) and chunk.delta:
+                    self._tool_call_ids.update(
+                        call.call_id for call in chunk.delta.tool_calls
+                    )
+            if isinstance(chunk, str):
+                responded |= bool(chunk.strip())
+            elif isinstance(chunk, llm.ChatChunk):
+                responded |= chunk.has_response()
+            yield chunk
+        if current and (initial or after_tool) and (
+            turn != self._final_user_turn or turn[1] != self.state._turn_serial
+        ):
+            return
+        if not responded:
+            # Successful empty/length exhaustion never enters SDK speech nodes.
+            # Seed the existing guard; never retry tools or execute partial JSON.
+            yield (
+                ENGLISH["ask_date_time"]
+                if self.state.language == "en"
+                else localize(ASK_DATE_TIME, self.state.language)
             )
 
     async def checked_reply(self, text):
@@ -159,7 +272,9 @@ class TelephoneAgent(Agent):
         if self.state.history_enabled:
             outcome = (
                 "fallback"
-                if event.item.text_content in {UNVERIFIED_REPLY, ENGLISH["unverified"]}
+                if event.item.text_content in {
+                    UNVERIFIED_REPLY, ENGLISH["unverified"], localize(UNVERIFIED_REPLY, "ru")
+                }
                 else self.state.outcome
             )
             callslog.history_safe(
@@ -193,21 +308,28 @@ class TelephoneAgent(Agent):
         try:
             reply = await self.checked_reply(text)
             language = "en" if reply == ENGLISH_INVITATION else self.state.language
-            if self.speech_provider is not None:
-                voice, locale = self.speech_config.voice_for(language)
-                self.speech_provider.update_options(voice=voice, language=locale)
             pending = self.state.pending
             canonical = self.state.render_recap()
 
             async def checked():
-                yield reply
+                yield normalize_estonian_speech(reply, language)
 
             frames = False
-            async for frame in Agent.default.tts_node(self, checked(), model_settings):
-                if not frames:
-                    frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
-                frames = True
-                yield frame
+            # Azure snapshots options per sentence. Keep every sentence in an
+            # interrupted stream on its voice until cancellation completes.
+            async with self._tts_voice_lock:
+                if isinstance(self.speech_provider, TelephoneTTS):
+                    self.speech_provider.set_recap_delivery(
+                        bool(pending and reply == canonical)
+                    )
+                if self.speech_provider is not None:
+                    voice, locale = self.speech_config.voice_for(language)
+                    self.speech_provider.update_options(voice=voice, language=locale)
+                async for frame in Agent.default.tts_node(self, checked(), model_settings):
+                    if not frames:
+                        frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
+                    frames = True
+                    yield frame
             if not frames:
                 raise RuntimeError("speech produced no audio")
             complete = frames
@@ -245,16 +367,18 @@ class TelephoneAgent(Agent):
             if self.state.outcome != "write_outcome_unknown":
                 self.state.outcome = "provider_error"
             log_failure("tts_fallback", error)
+            # No Russian cached PCM exists; actual failure audio/history is ET.
+            cached_language = "en" if language == "en" else "et"
             if self.state.history_enabled:
                 callslog.history_safe(
                     call_history.provider_error, self.state.call_id, "tts_error"
                 )
             first_cached = True
-            async for frame in fallback_audio(language):
+            async for frame in fallback_audio(cached_language):
                 if first_cached:
                     frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [
                         _SpokenText(
-                            ENGLISH["fallback"] if language == "en" else FALLBACK
+                            ENGLISH["fallback"] if cached_language == "en" else FALLBACK
                         )
                     ]
                     first_cached = False
@@ -400,7 +524,7 @@ def log_call_summary(state, *, failed=False):
     }:
         outcome = "completed"
     language = getattr(state, "language", "et")
-    if language not in {"et", "en"}:
+    if language not in LANGUAGES:
         language = "et"
     try:
         callslog.log_call(
@@ -566,6 +690,7 @@ async def entrypoint(ctx: JobContext):
         validate_environment()
         config = VoiceConfig.from_env()
         speech_config = SpeechConfig.from_env()
+        delivery = SpeechDelivery.from_env()
         adapter = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"],
             os.environ["EASY_API_KEY"],
@@ -603,9 +728,10 @@ async def entrypoint(ctx: JobContext):
             mode=speech_config.mode,
             api_key=os.environ["GROQ_API_KEY"],
         )
-        speech_provider = azure.TTS(
+        speech_provider = TelephoneTTS(
             voice=voice,
             language=language,
+            delivery=delivery,
             speech_key=os.environ["AZURE_SPEECH_KEY"],
             speech_region=os.environ["AZURE_REGION"],
         )

@@ -1,15 +1,26 @@
 # Private telephone pilot (2026-10-02)
 
-**Implemented:** continuous LiveKit Agents worker, English/Estonian Groq/Azure audio,
+**Implemented:** continuous LiveKit Agents worker, Estonian/English/Russian Groq/Azure audio,
 call-scoped guarded booking tools, private reproducible LiveKit/SIP/Redis,
 and exact-number authenticated inbound provisioning.
 
-Automatic English/Estonian recognition and voice switching, including English
-booking recaps, consent, cancellation and FAQs, are configured through
-`VOICEBOT_TELEPHONE_LANGUAGE`, `AZURE_EN_VOICE` and `AZURE_EN_LANG`.
+Automatic Estonian/English/Russian recognition and voice switching, including
+localized booking recaps, consent, cancellation and FAQs, are configured through
+`VOICEBOT_TELEPHONE_LANGUAGE`, `AZURE_EN_VOICE`/`AZURE_EN_LANG` and
+`AZURE_RU_VOICE`/`AZURE_RU_LANG`.
 See [English telephone deployment and verification](../../docs/operations/english-telephone.md).
 This code change requires rebuilding the separate worker; a web deployment alone
-does not update telephone calls. Live English/PSTN behavior remains unverified.
+does not update telephone calls. Live English/Russian/PSTN behavior remains unverified.
+
+`VOICEBOT_TELEPHONE_LANGUAGE=auto` uses the existing Estonian opening and English
+invitation, then selects a supported caller language from final recognition.
+Use `et`, `en` or `ru` to force one language from the initial greeting. Russian
+speech defaults to `ru-RU-SvetlanaNeural` and `ru-RU`; English configuration and
+cached English failure audio remain supported. Russian has no cached failure
+recording: if speech synthesis fails, it uses the Estonian cached apology and
+retains that exact Estonian text in assistant session history. Caller-language
+metadata still records Russian. Native deployment and verification are covered
+in [the deployment handoff](../../docs/operations/voicebot-release-2026-10-03.md).
 
 **First carrier direction:** the user supplied an existing US Twilio number.
 Its separately signed HTTPS/WSS Media Streams bridge forwards into this private
@@ -30,6 +41,13 @@ is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
 - Worker: `python -m app.worker start`, two call processes, process-local dialogue,
   VAD endpointing/interruption, no cloud-inference turn detector, 30-second drain.
   Caller arrival is bounded to 30 seconds, conversation to 600 seconds afterward.
+- Final recognition carries Groq's detected language metadata; unsupported
+  languages retain the existing safe clarification behavior. Numeric and
+  ambiguous short turns retain the caller's current language. Azure voice
+  selection is held for each complete synthesis stream, including all sentence
+  chunks, until completion or cancellation. A language change invalidates pending
+  recap consent: a fresh complete recap must be delivered before its explicit
+  confirmation phrase can authorize a booking.
 - Conversation schemas expose catalogue, spa/room search, owned holds, preparation,
   confirmation and cancellation. Compact `plan_demo_booking` also resolves spa
   catalogue/search/hold/preparation without repeated model round trips.
@@ -54,9 +72,10 @@ is not a SIP/RTP endpoint. DIDWW remains an optional later SIP path.
   is guarded by execution/state, including cancelled-receipt replay.
   Only the approved fictional profile/FAQ and owned inventory are exposed;
   spa opening hours come from the provider working plan. Superseded reads cannot
-  restore a proposal after a caller changes their mind. Cached English/Estonian WAV supplies an independent
-  audible failure message. No recording/transcript persistence. SDK child logs
-  are suppressed because they can contain tool arguments/text.
+  restore a proposal after a caller changes their mind. Cached English/Estonian
+  WAV supplies an independent audible failure message; Russian calls use the
+  Estonian cache. No recording/transcript persistence. SDK child logs are
+  suppressed because they can contain tool arguments/text.
 - Host API `127.0.0.1:7880`, SIP UDP/TCP `127.0.0.1:5060`, worker health
   `127.0.0.1:8081`. RTP 10000–10100 and RTC UDP 7882/TCP 7881 stay on Docker.
   Trusted services on `coolify` can still reach them; this is not isolation
@@ -82,6 +101,12 @@ config changes. Deploy after jobs finish; the 40-second Docker stop grace exceed
 the worker drain. Old `/home/arle/livekit` files remain untouched as an operator
 rollback reference, not the canonical deployment. Do not automatically alternate
 two different manifests against the same project.
+
+The Russian-caller changes have only static syntax/diff checks in the development
+session. Rebuild/restart the native worker and verify actual calls before claiming
+Russian telephone readiness. Provider references:
+[Groq speech recognition](https://console.groq.com/docs/speech-to-text) and
+[Azure language support](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support).
 
 ## Synthetic proofs
 

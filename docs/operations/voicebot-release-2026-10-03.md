@@ -4,6 +4,22 @@ The Windows development session can push GitHub and check public HTTPS. The
 server operator will deploy the separate telephone services. Web pushes use
 the existing Coolify deployment; they do not rebuild the native worker.
 
+The Russian-caller update extends the existing Estonian/English native pipeline.
+Groq recognition returns detected language metadata; approved Russian replies,
+recaps and Azure speech use that selected language. Default mode remains
+`VOICEBOT_TELEPHONE_LANGUAGE=auto`; use `et`, `en` or `ru` to lock the caller
+language from the initial greeting. Russian defaults are
+`AZURE_RU_VOICE=ru-RU-SvetlanaNeural` and `AZURE_RU_LANG=ru-RU`.
+Keep existing Estonian and English voice settings. Optional overrides belong in
+the trusted source web container environment before the native rebuild/restart.
+
+There is no Russian cached provider-failure recording. Russian calls use the
+independent Estonian apology if synthesis fails, and assistant session history
+retains the actual Estonian text; English calls keep the English cached apology.
+Language changes invalidate pending recap consent. Static syntax/diff checks do
+not establish live audio behavior: native deployment and actual Russian call
+verification remain pending.
+
 ## Existing host
 
 Use the existing `/home/arle/voicebot` checkout. Inspect its branch and worktree
@@ -46,14 +62,31 @@ $MEDIA_PY deploy/telephony/twilio_probe.py --source-container "$VOICEBOT_WEB_CON
 ```
 
 Then place an actual incoming call to the existing number. Verify two-way
-Estonian audio, interruption, the complete canonical booking recap followed by
-explicit consent, an independently readable booking, owned cancellation and
-hangup. Verify both spa and room flows and clean up fictional test bookings.
+Estonian, English and Russian audio on separate calls, interruption, the complete
+canonical booking recap followed by explicit consent, an independently readable
+booking, owned cancellation and hangup. Switch languages during a call and verify
+that an earlier recap cannot authorize a booking until a fresh recap in the
+selected language has finished playing. Verify Russian catalogue/FAQ replies,
+numeric-turn language retention and the documented Estonian cached fallback
+during speech-provider failure. Verify both spa and room flows and clean up
+fictional test bookings.
 Synthetic audio and private SDK tests do not establish a successful PSTN call.
 
 On `robot.arleserver.cfd`, verify Demovestlus with typed text and the physical
-microphone, including reply playback. The identified live conversation failure
-is Groq HTTP 429; usage limits are shared across the provider organization.
+microphone, including reply playback. Test the reported request “Tere, tahaks
+homme bruneerida spaad?”, then supply a time and verify that no booking is
+created before the complete recap and later consent. Opening hours should be
+spoken as “9 kuni kell 17” rather than a dash-separated range.
+HTTP voice preparation now returns a one-use `recap_delivery_id`. A scripted
+positive check must explicitly read or complete playback of that exact recap,
+then include its ID with the subsequent consent turn in the same session.
+Returning synthesized bytes alone does not authorize confirmation. The browser
+tracks completed playback or explicit reading; test stale, interrupted and
+foreign recap assertions as rejection cases.
+One identified live conversation failure was Groq HTTP 429; usage limits are
+shared across the provider organization. A separate clarification fault
+rejected harmless questions with an unverified-success warning; the patch
+supplies canonical missing-field questions from trusted user inquiry state.
 Compact planning and canonical server replies reduce requests. Check the
 provider's actual account limits if throttling remains under normal use.
 

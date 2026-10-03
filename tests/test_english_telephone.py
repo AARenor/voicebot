@@ -367,7 +367,7 @@ def test_english_unknown_write_is_locked_and_never_retried():
 @pytest.mark.parametrize(
     "env",
     [
-        {"VOICEBOT_TELEPHONE_LANGUAGE": "ru"},
+        {"VOICEBOT_TELEPHONE_LANGUAGE": "de"},
         {"AZURE_EN_VOICE": "et-EE-AnuNeural"},
         {"AZURE_EN_LANG": "en-GB"},
         {"AZURE_LANG": "en-US"},

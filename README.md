@@ -11,8 +11,8 @@ Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
 Both voice transports use configurable Groq `openai/gpt-oss-120b` and
-`whisper-large-v3`. Telephone calls automatically detect English or Estonian
-and reply with Azure Jenny or Anu respectively. English covers the same
+`whisper-large-v3`. Telephone calls automatically detect Estonian, English or
+Russian and reply with Azure Anu, Jenny or Svetlana respectively. English covers the same
 fictional spa/room searches, opening hours, FAQs, recaps, confirmation and
 cancellation. Ambiguous English numeric dates and hours require clarification;
 changing language requires a fresh delivered recap before confirmation. See
@@ -20,9 +20,26 @@ changing language requires a fresh delivered recap before confirmation. See
 `.env.example`. Configuration is reported by `/api/status`; it is not evidence
 of an actual successful carrier call. HTTP turns return per-stage timings and
 closed warning codes, and the native worker logs bounded latency summaries.
-HTTP callers select `language: "en"` for English recognition, dialogue and audio.
+The browser demo automatically selects the caller's language. HTTP callers can
+also select `language: "en"` or `language: "ru"` explicitly. Russian uses approved
+FAQ answers, inventory wording and booking recaps; backend names, dates and
+quoted amounts are preserved. Confirmation requires a delivered Russian recap
+followed by `Да, подтверждаю.`; switching language resets recap approval.
+The initial automatic greeting remains Estonian with the English invitation.
+A Russian call uses the cached Estonian apology if the speech provider fails.
+GitHub auto deployment updates the web demo; phone calls require a separate
+native worker rebuild/restart. Russian live-call verification remains pending.
 See the [English telephone runbook](docs/operations/english-telephone.md) for
 voice selection, fixed language modes, worker deployment and live call checks.
+The [deployment handoff](docs/operations/voicebot-release-2026-10-03.md) includes
+the Russian worker rollout.
+
+Both languages share shorter conversational questions, reviewed social replies,
+focused catalogue answers and configurable Azure speech pacing. Recaps are read
+more slowly, and Estonian dates/times have pronunciation aliases. See the
+[natural conversation runbook](docs/operations/natural-conversation.md) for
+settings, neutral rollback and listening checks, and the
+[local verification report](docs/evidence/2026-10-03-natural-conversation.md).
 
 Start with [the hackathon playbook](HACKATHON.md) and [architecture](ARCHITECTURE.md).
 The [adversarial bug ledger](docs/evidence/2026-10-02-adversarial-bug-hunt.md)
