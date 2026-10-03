@@ -539,6 +539,8 @@ class RestaurantCallTools(CallTools):
         copybook = COPY[self.language]
         if topic in ("staff", "domain", "price"):
             return copybook[topic]
+        if topic == "pets" and self.restaurant.get("pet_policy"):
+            return self.restaurant["pet_policy"][self.language]
         if topic in GUIDANCE[self.language]:
             return GUIDANCE[self.language][topic].format(
                 duration=self.restaurant["reservation_duration_minutes"],

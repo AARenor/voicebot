@@ -9,11 +9,11 @@
     />
     <title>Voicebot · Restaurant reception</title>
     <script src="/operator-dashboard.js?v=e2bebda58021"></script>
-    <link rel="stylesheet" href="/restaurant.css?v=16393168091f" />
+    <link rel="stylesheet" href="/restaurant.css?v=3cecae2dc444" />
     <link rel="stylesheet" href="/operator-dashboard.css?v=5a05f2f0a2b3" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script src="/speech-playback.js?v=27698f675462" defer></script>
-    <script src="/restaurant.js?v=6d5f5407f726" defer></script>
+    <script src="/restaurant.js?v=184e94964b88" defer></script>
     <script src="/speech-capture.js?v=09feffb8cdd4" defer></script>
   </head>
   <body>
@@ -66,16 +66,24 @@
           </p>
         </div>
         <div class="language">
-          <label for="demo-language" data-copy="language"
-            >Vestluse keel / Conversation language</label
-          ><select id="demo-language" aria-describedby="language-help">
-            <option value="auto">Automaatne / Auto</option>
-            <option value="et">Eesti</option>
-            <option value="en">English</option>
-            <option value="ru">Русский</option></select
-          ><small id="language-help" data-copy="languageHelp"
-            >Keele vahetamiseks lõpeta pooleliolev vestlus.</small
-          >
+          <fieldset id="demo-language" class="language-group" aria-describedby="language-help">
+            <legend data-copy="language">Vali vestluse keel</legend>
+            <div class="language-options">
+              <label class="language-option">
+                <input type="radio" name="demo-language" value="et" checked />
+                <span lang="et">Eesti</span>
+              </label>
+              <label class="language-option">
+                <input type="radio" name="demo-language" value="en" />
+                <span lang="en">English</span>
+              </label>
+              <label class="language-option">
+                <input type="radio" name="demo-language" value="ru" />
+                <span lang="ru">Русский</span>
+              </label>
+            </div>
+          </fieldset>
+          <small id="language-help" data-copy="languageHelp">Abiline alustab ja vastab valitud keeles.</small>
         </div>
       </section>
       <aside class="demo-notice">

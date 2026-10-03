@@ -314,3 +314,36 @@ def test_unsourced_menu_prices_and_duplicate_tables_rejected(tmp_path):
         path.write_text(json.dumps(data), encoding="utf-8")
         with pytest.raises(ValueError):
             load_restaurant_data(path)
+
+
+@pytest.mark.parametrize("policy", [
+    None,
+    True,
+    "Dogs are welcome",
+    {"et": "Lubatud"},
+    {"et": "Lubatud", "en": "Allowed", "ru": ""},
+    {"et": "Lubatud", "en": "Allowed", "ru": 1},
+    {"et": "Lubatud", "en": "Allowed", "ru": "\x00"},
+    {"et": "Lubatud", "en": "Allowed", "ru": "a" * 1201},
+    {"et": "Lubatud", "en": "Allowed", "ru": "Можно", "de": "Erlaubt"},
+])
+def test_malformed_pet_policy_fails_configuration_validation(tmp_path, policy):
+    data = load_restaurant_data()
+    data["pet_policy"] = policy
+    path = tmp_path / "restaurant.json"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="^restaurant_configuration_invalid$"):
+        load_restaurant_data(path)
+
+
+def test_pet_policy_is_optional_and_translated_rules_are_normalized(tmp_path):
+    data = load_restaurant_data()
+    data.pop("pet_policy", None)
+    path = tmp_path / "restaurant.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert "pet_policy" not in load_restaurant_data(path)
+    data["pet_policy"] = {language: "  Dogs are welcome.  " for language in ("et", "en", "ru")}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_restaurant_data(path)["pet_policy"] == {
+        language: "Dogs are welcome." for language in ("et", "en", "ru")
+    }
