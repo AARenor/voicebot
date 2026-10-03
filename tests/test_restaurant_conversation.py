@@ -378,6 +378,39 @@ def test_provider_fallbacks_remain_available_in_restaurant_policy(make_state, la
 
 
 @pytest.mark.parametrize(
+    "language,text,repeat",
+    [
+        ("en", "What is on the menu?", "Could you repeat that?"),
+        ("et", "Milline on menüü?", "Palun korda."),
+        ("ru", "Что есть в меню?", "Повторите, пожалуйста."),
+    ],
+)
+def test_repeat_uses_the_actual_approved_restaurant_reply(
+    make_state, language, text, repeat
+):
+    state = make_state(language)
+    state.observe_user_text(text, language=language)
+    original = state.guard_reply("", [])
+    state.observe_user_text(repeat, language=language)
+    assert state.guard_reply("", []) == original
+
+
+@pytest.mark.parametrize(
+    "language,text", [("et", "Aitäh"), ("en", "Thank you"), ("ru", "Спасибо")]
+)
+def test_social_reply_is_reviewed_and_does_not_require_model_prose(
+    make_state, language, text
+):
+    state = make_state(language)
+    state.observe_user_text(text, language=language)
+    assert trusted_booking_response(state)["content"] == state.conversation.reply
+    assert (
+        state.guard_reply("Your hotel room is confirmed", [])
+        == state.conversation.reply
+    )
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "A table tomorrow at 19:00 for 2 adults and 2 children",

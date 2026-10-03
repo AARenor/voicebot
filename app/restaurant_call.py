@@ -328,6 +328,7 @@ class RestaurantCallTools(CallTools):
         self._restaurant_alternatives = None
         self._restaurant_dish = None
         self._restaurant_diet = None
+        self._restaurant_last_response = None
 
     def conversation_tools(self):
         public = {
@@ -487,6 +488,8 @@ class RestaurantCallTools(CallTools):
             or self.unsupported_language
         ):
             return None
+        if self.conversation.intent:
+            return None
         if self._restaurant_focus:
             return self.information_reply(self._restaurant_focus)
         inquiry = self._restaurant_inquiry
@@ -601,6 +604,8 @@ class RestaurantCallTools(CallTools):
         ):
             return None
         if self.clarification:
+            return {"content": self.guard_reply("", [])}
+        if self.conversation.intent:
             return {"content": self.guard_reply("", [])}
         reply = self.inquiry_reply()
         if reply:
@@ -766,6 +771,36 @@ class RestaurantCallTools(CallTools):
         )
 
     def guard_reply(self, text, results):
+        reply = self._restaurant_guard_reply(text, results)
+        self.conversation.remember_reply(reply, self.language)
+        if self._restaurant_focus in {
+            "menu",
+            "allergens",
+            "hours",
+            "kitchen",
+            "policies",
+            "location",
+        } and reply == self.information_reply(self._restaurant_focus):
+            self._restaurant_last_response = (
+                "information",
+                self._restaurant_focus,
+                self._restaurant_dish,
+                self._restaurant_diet,
+            )
+        elif any(
+            reply == COPY[self.language][key] for key in ("date", "time", "party")
+        ):
+            key = next(
+                key
+                for key in ("date", "time", "party")
+                if reply == COPY[self.language][key]
+            )
+            self._restaurant_last_response = ("question", key)
+        elif self.conversation.intent != "repeat":
+            self._restaurant_last_response = None
+        return reply
+
+    def _restaurant_guard_reply(self, text, results):
         copybook = COPY[self.language]
         results = [
             row.get("result", row)
@@ -832,11 +867,21 @@ class RestaurantCallTools(CallTools):
             TURN_UNAVAILABLE[self.language],
         ):
             return text
-        # Preserve reviewed social, repeat and provider-failure replies. Replace
-        # legacy domain clarification or unverified prose with restaurant scope.
-        approved = super().guard_reply(text, [])
-        if self.conversation.intent or any(
+        if self.conversation.intent == "repeat" and self._restaurant_last_response:
+            selection = self._restaurant_last_response
+            if selection[0] == "question":
+                return copybook[selection[1]]
+            # Remember identifiers only, then render from current trusted facts.
+            self._restaurant_dish, self._restaurant_diet = selection[2:]
+            return self.information_reply(selection[1])
+        if self.conversation.intent == "identity":
+            return self.greeting
+        if self.conversation.intent == "human":
+            return copybook["staff"]
+        if self.conversation.intent and self.conversation.reply:
+            return self.conversation.reply
+        if any(
             text == entry.get("answer_" + self.language) for entry in self.demo["faq"]
         ):
-            return approved
+            return text
         return copybook["domain"]
