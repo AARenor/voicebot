@@ -71,6 +71,25 @@ SQLite database; they do not reserve tables at a real restaurant.
 
 ## Restaurant knowledge
 
+Routine replies use short approved sentences. Identical hours on consecutive
+days are spoken as a range; different hours, closed days and the kitchen closing
+offset remain separate. A requested weekday or weekend limits the answer to
+those days. Today, tomorrow and an explicit ISO date also check date-specific
+closures. A follow-up such as "Aga köök?" retains the preceding hours selection.
+The public restaurant API exposes the same `opening_hours_summary` and
+`kitchen_hours_summary` in ET/EN/RU for deployment readback.
+
+Reviewed question matching also covers menu wording, declared ingredients and
+allergens, prices, location, children, group size, reservation duration,
+cancellation guidance, changes, late arrival, parking, pets, highchairs,
+accessibility, terrace seating and additional menu information. Unknown venue
+facts receive brief staff guidance; these replies do not establish amenities,
+real transfers, modification support or allergy safety. Up to three recognized
+information topics can be answered together without creating a reservation.
+Only bounded topic, day, date, dish and diet selectors survive a relevant
+follow-up; unrelated turns discard that context. General menu replies omit the
+long allergy notice, while allergy/ingredient questions retain it.
+
 Edit a copy of `data/demo/restaurant-demo.json` and place it on the persistent
 shared volume, for example `/data/restaurant.json`. Set
 `RESTAURANT_CONFIG_PATH=/data/restaurant.json` in web and native worker runtime

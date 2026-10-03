@@ -64,6 +64,20 @@ async page => {
     await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
     assert((await page.locator('#demo-messages').textContent()).includes(language.greeting));
     assert.equal(requests.at(-1).body.language,language.code);
+    const hoursQuestions = {
+      et: ['Mis kellani te lahti olete?', 'Aga nädalavahetusel?', 'Esmaspäevast neljapäevani'],
+      en: ['What are your opening hours?', 'And on weekends?', 'Monday through Thursday'],
+      ru: ['До скольки вы работаете?', 'А в выходные?', 'С понедельника по четверг'],
+    }[language.code];
+    for (const question of hoursQuestions.slice(0, 2)) {
+      await page.locator('#demo-text').fill(question);
+      await page.locator('#demo-send').click();
+      await page.waitForFunction(()=>!state.turnBusy);
+      const answer = await page.locator('#demo-messages .message').last().textContent();
+      if (question === hoursQuestions[0]) assert(answer.includes(hoursQuestions[2]));
+      else assert(answer.includes('23') && answer.includes('20') && !answer.includes('21'));
+      assert.equal(await page.evaluate(()=>state.recap), null);
+    }
     await page.locator('#demo-text').fill(language.menu);
     await page.locator('#demo-send').click();
     await page.waitForFunction(()=>!state.turnBusy);
