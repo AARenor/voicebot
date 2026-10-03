@@ -66,7 +66,7 @@ class AzureTtsClient:
         region: str,
         voice: str,
         lang: str,
-        output_format: str = "audio-16khz-32kbitrate-mono-mp3",
+        output_format: str = "audio-48khz-96kbitrate-mono-mp3",
         transport: httpx.BaseTransport | None = None,
         *,
         languages: dict[str, tuple[str, str]] | None = None,

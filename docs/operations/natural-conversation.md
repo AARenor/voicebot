@@ -57,6 +57,14 @@ and uncertain-write protection remain active.
 `/api/status` reports the selected style and rates. It describes application
 configuration and does not establish the telephone worker's deployed revision.
 
+Browser reply audio uses Azure's high-fidelity 48 kHz / 96 kbit/s mono MP3 output,
+instead of the previous downsampled 16 kHz / 32 kbit/s output. This preserves the
+same voices, wording and speech settings, but increases transferred audio bytes.
+The native worker retains 24 kHz PCM; PSTN codec bandwidth is unchanged.
+See [Azure's supported audio formats](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech#convert-text-to-speech).
+Higher fidelity is objectively verifiable, not proof that listeners perceive a
+voice as human. Listening preference remains separate from configuration tests.
+
 ## Activation and listening
 
 GitHub changes must reach both the web process and the separate telephone worker.

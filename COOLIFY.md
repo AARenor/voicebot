@@ -142,6 +142,9 @@ docker run --rm -p 8000:8000 -e OPERATOR_TOKEN=demo-token voicebot:local
 
 ## Notes
 
+- The [natural conversation profile](docs/operations/natural-conversation.md)
+  shares voice pacing and pronunciation across HTTP/native speech. Browser
+  replies use high-fidelity 48 kHz / 96 kbit/s MP3; native PCM remains 24 kHz.
 - Mutations, demo sessions, `/api/turn`, `/api/calls`, `/api/bookings` and
   `/api/catalogue` require operator authorization; responses/errors are `no-store`.
   The operator token exists only in page memory; logout clears private content,
