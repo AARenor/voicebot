@@ -547,6 +547,29 @@ def test_weekday_request_resolves_to_next_occurrence(weekday):
     assert parse_restaurant_request("table " + weekday, now=now)["date"] == "2026-10-05"
 
 
+def test_model_cannot_bypass_an_unresolved_spoken_date(make_state):
+    async def run():
+        state = make_state("et")
+        state.observe_user_text(
+            "Soovin lauda 31 veebruar kell 14 kahele", language="et"
+        )
+        assert trusted_booking_response(state) == {
+            "content": COPY["et"]["date_invalid"]
+        }
+        result = await state.dispatch(
+            "plan_restaurant_reservation",
+            {"date": tomorrow(), "start_time": "14:00", "party_size": 2},
+        )
+        assert result["error"] == "clarification_required"
+        assert (
+            state.guard_reply("Your table is booked", state.results)
+            == COPY["et"]["date_invalid"]
+        )
+        assert not state.holds and not state.bookings
+
+    asyncio.run(run())
+
+
 def test_superseded_prepare_cannot_restore_an_old_recap(make_state):
     async def run():
         state = make_state("en")

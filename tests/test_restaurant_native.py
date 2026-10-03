@@ -31,6 +31,8 @@ from tests.test_native_booking_terminals import (  # noqa: E402
     "language,utterance,confirmation",
     [
         ("et", "Soovin homme lauda neljale kell 14.00", "ja kinnitää"),
+        ("et", "Soovin lauaks homseks kell 14.00 nelja inimesega", "ja kinnitää"),
+        ("et", "named-date", "ja kinnitää"),
         ("en", "A table for four tomorrow at 2 pm", "Yes, please confirm."),
         ("ru", "Столик на четверых завтра в 14:00", "Да, подтверждаю."),
     ],
@@ -39,6 +41,11 @@ def test_native_sdk_confirmation_is_visible_in_the_restaurant_database(
     tmp_path, language, utterance, confirmation
 ):
     async def run():
+        request_text = utterance
+        if request_text == "named-date":
+            from tests.test_restaurant_http import spoken_tomorrow
+
+            request_text = f"Soovin lauda {spoken_tomorrow()} kell 14 nelja külalisega"
         data = load_restaurant_data()
         path = str(tmp_path / "shared-restaurant.db")
         adapter = RestaurantAdapter(path, data=data, allow_writes=True)
@@ -53,7 +60,7 @@ def test_native_sdk_confirmation_is_visible_in_the_restaurant_database(
         with patch("livekit.agents.Agent.default.tts_node", synthesize):
             await session.start(agent=agent, record=False)
             try:
-                await native_turn(session, agent, utterance)
+                await native_turn(session, agent, request_text)
                 assert state.pending["delivery"] and not state.pending["approved"]
                 await native_turn(session, agent, confirmation)
                 assert len(state.bookings) == 1

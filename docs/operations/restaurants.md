@@ -60,6 +60,21 @@ Questions, quoted examples, declines and mixed changes are not consent. A
 current owned recap must still have been delivered before a later final turn;
 partial recognition and expired or interrupted recaps cannot confirm a table.
 
+Date requests understand Estonian case forms such as `homseks`, `homsele`,
+`ülehomseks`, `esmaspäevaks`, `neljas oktoober`, `neljandal oktoobril` and
+`neljandaks oktoobriks`. Bounded mixed-case forms such as `neljale oktoobrile`
+also resolve to a date, not a guest count. Calendar days 1–31, compound ordinal
+numbers, all twelve months and explicit numeric years are supported. A missing
+year means the next occurrence of the date; the configured advance window still
+applies. Impossible dates, alternatives, ranges and declined dates require
+clarification. A corrected date replaces the old one while retaining the time
+and guest count. Date words are masked only during preference extraction, never
+in the displayed transcript or consent recognition. Schedule questions reuse
+the same date vocabulary. Guest counts also accept forms such as `nelja
+inimesega` and `kahe täiskasvanu ja kahe lapsega`, without requesting a staff
+handoff. Grammar references: [EKI number inflection](https://teatmik.eki.ee/teatmik/arvsonade-kaanamine/)
+and [EKI number spelling](https://teatmik.eki.ee/teatmik/arvsonade-kokku-ja-lahkukirjutamine/).
+
 Successful demo confirmations and cancellations refresh the website's
 authenticated reservation list, select the actual reservation date, reset its
 page and mark the affected row. A `View reservation` button in the conversation
