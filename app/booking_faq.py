@@ -12,6 +12,7 @@ from .languages import LANGUAGES, spoken_time
 
 
 FAQ_PATH = Path(__file__).resolve().parents[1] / "data/demo/booking-faq.json"
+RESTAURANT_FAQ_PATH = FAQ_PATH.with_name("restaurant-phone-faq.json")
 ROUTES = {"static", "stay_catalogue", "slot_catalogue", "clarify", "status"}
 CLARIFY = {
     "et": "Ma ei saanud päris täpselt aru. Kas soovid infot hotelli, spaa või testbroneeringu kohta?",
@@ -144,11 +145,11 @@ def match_question(text, language, entries=None):
     return tuple(found)
 
 
-def question_language(text, current):
+def question_language(text, current, entries=None):
     """Known written questions also identify English without an STT language tag."""
-    if match_question(text, current):
+    if match_question(text, current, entries=entries):
         return current
-    matches = [language for language in LANGUAGES if language != current and match_question(text, language)]
+    matches = [language for language in LANGUAGES if language != current and match_question(text, language, entries=entries)]
     return matches[0] if len(matches) == 1 else current
 
 
