@@ -42,6 +42,11 @@
     "en": "Reservations last 90 minutes. Groups larger than six must arrange their visit with staff. Children count toward the total party size. Staff must confirm terrace seating, accessibility, highchairs and special requests. This demo does not place food orders, collect payments or transfer real calls.",
     "ru": "Бронирование действует 90 минут. Группам больше шести человек нужно договориться с персоналом. Дети входят в общее число гостей. Места на террасе, доступность, детский стул и особые пожелания подтверждает персонал. Демонстрация не принимает заказы еды, платежи и не переводит реальные звонки."
   },
+  "pet_policy": {
+    "et": "Jah, koeraga võib tulla.",
+    "en": "Yes, dogs are welcome.",
+    "ru": "Да, можно прийти с собакой."
+  },
   "allergy_notice": {
     "et": "Menüüs on märgitud teadaolevad allergeenid, kuid koostis ja ristkontakti võimalus tuleb personaliga üle kontrollida. Ma ei saa lubada allergeenivaba toitu. Raske allergia korral räägi enne tellimist otse restoraniga.",
     "en": "The menu lists known allergens, but staff must verify ingredients and possible cross-contact. I cannot guarantee allergen-free food. For a serious allergy, speak directly with the restaurant before ordering.",

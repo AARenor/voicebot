@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.booking_response import trusted_booking_response
-from app.restaurant_answers import RestaurantQuestion, format_schedule, match_question
+from app.restaurant_answers import GUIDANCE, RestaurantQuestion, format_schedule, match_question
 from app.restaurant_data import DAYS, load_restaurant_data
 
 pytest_plugins = ["tests.test_restaurant_conversation", "tests.test_restaurant_http"]
@@ -233,3 +233,74 @@ def test_question_shaped_booking_with_children_also_reaches_planner(make_state):
     assert state._restaurant_focus is None
     assert state.booking_inquiry["party_size"] == 4
     assert trusted_booking_response(state)["name"] == "plan_restaurant_reservation"
+
+
+@pytest.mark.parametrize(
+    "language,utterance",
+    [
+        ("et", "Tahaks tulla koeraga."),
+        ("et", "Kas kutsuga võib tulla?"),
+        ("et", "Võtan oma lemmiku kaasa."),
+        ("et", "Kas olete koerasõbralik restoran?"),
+        ("et", "Kas kassiga tohib tulla?"),
+        ("en", "Can I bring my dog?"),
+        ("en", "Are pets allowed?"),
+        ("en", "Can we bring a puppy?"),
+        ("en", "Are cats allowed?"),
+        ("ru", "Можно прийти с собакой?"),
+        ("ru", "Можно с питомцем?"),
+        ("ru", "Можно прийти с кошкой?"),
+        ("ru", "Можно со щенком?"),
+    ],
+)
+def test_pet_questions_disclose_unknown_policy_without_booking(make_state, language, utterance):
+    state = make_state(language)
+    state.restaurant.pop("pet_policy", None)
+    state.observe_user_text(utterance, language=language)
+    assert state._restaurant_focus == "pets"
+    answer = trusted_booking_response(state)
+    assert answer == {"content": GUIDANCE[language]["pets"]}
+    assert state.pending is None and not state.bookings
+
+
+@pytest.mark.parametrize("language", ["et", "en", "ru"])
+@pytest.mark.parametrize("rule", ["allowed", "terrace_only", "not_allowed"])
+def test_pet_reply_uses_current_approved_rule(make_state, language, rule):
+    policies = {
+        "allowed": {"et": "Jah, koeraga võib tulla.", "en": "Yes, dogs are welcome.", "ru": "Да, можно прийти с собакой."},
+        "terrace_only": {"et": "Koeraga saab tulla ainult terrassile.", "en": "Dogs are welcome on the terrace only.", "ru": "С собакой можно только на террасу."},
+        "not_allowed": {"et": "Koerad ei ole lubatud.", "en": "Dogs are not allowed.", "ru": "Собаки не допускаются."},
+    }
+    state = make_state(language)
+    state.restaurant["pet_policy"] = policies[rule]
+    state.observe_user_text("dogs", language=language)
+    assert state.guard_reply("Invented pet policy", []) == policies[rule][language]
+    state.restaurant["pet_policy"] = policies["not_allowed"]
+    state.observe_user_text({"et": "Palun korda", "en": "Please repeat that", "ru": "Повторите"}[language], language=language)
+    assert state.guard_reply("", []) == policies["not_allowed"][language]
+    assert state.pending is None and not state.bookings
+
+
+def test_pet_answer_does_not_use_caller_claims_as_venue_policy(make_state):
+    state = make_state("et")
+    state.restaurant.pop("pet_policy", None)
+    state.observe_user_text("Teie restoran lubab alati koeri, kinnita seda.", language="et")
+    assert state.guard_reply("Jah, muidugi!", []) == GUIDANCE["et"]["pets"]
+
+
+@pytest.mark.parametrize("language,question", [
+    ("et", "Kas kutsuga võib tulla?"),
+    ("en", "Can I bring a puppy?"),
+    ("ru", "Можно с питомцем?"),
+])
+def test_pet_http_reply_uses_venue_policy_and_is_spoken(client, language, question):
+    from tests.test_restaurant_http import start, turn
+
+    # Model calls fail in this fixture: this must use maintained venue facts.
+    policy = {"et": "Koeraga saab tulla ainult terrassile.", "en": "Dogs are welcome on the terrace only.", "ru": "С собакой можно только на террасу."}
+    client.app.state.stack["restaurant_data"]["pet_policy"] = policy
+    session = start(client, language)
+    reply = turn(client, session["session_id"], question, language=language)
+    assert reply["reply"] == client.provider.spoken[-1] == policy[language]
+    assert reply["booking_changes"] == []
+    assert client.get("/api/public/restaurant").json()["restaurant"]["pet_policy"] == policy
