@@ -227,14 +227,66 @@ closed. No speech/provider responses were mocked in this browser check. Its
 input device was synthetic, so the user's physical microphone remains outside
 this verification.
 
+## Final requirements audit and native handoff correction
+
+The audit found a conditional web/native state mismatch in deployment:
+`manage.py` copied `STAY_STATE_DB`, while Compose hardcoded the default room
+database and call log. Compose now uses the source application's effective
+room/history paths, and the manager overwrites incidental caller environment
+values with those source paths or the existing defaults. Paths must remain in
+the actual shared `/data` mount; temporary/in-memory and outside-mount paths
+fail before Compose runs. The source's `STAY_DEMO_WRITES` value is also preserved:
+absence uses its existing enabled default, while explicit empty or `0` stays
+disabled. This repairs supported custom deployment configurations; it is not
+claimed as the cause of the earlier reported PSTN failure.
+
+Provider-free tests now exercise the real native SDK hours tool executor,
+canonical results/error replies and normalized speech with zero model calls.
+Focused Russian tests cover approved database facts, current delivered consent,
+language switching, numeric follow-ups, selected voice, actual cached fallback
+bytes/history and real SDK spa/room confirmation and cancellation. Dedicated
+modules passed 19 native terminal, 26 Russian and 29 deployment tests; these
+overlapping checks are not added together as unique coverage.
+The complete pinned media suite then passed 1298 tests, with 5 skipped and
+36 subtests passed, in 87.25 seconds. Skips remain the opt-in installed backend
+checks and unavailable Docker Compose parser. Ruff and the whitespace diff
+check passed. No server deployment or carrier call was performed from Windows.
+
+| Requested requirement | Current evidence | Release state |
+| --- | --- | --- |
+| Current model and transcription stack | Live status matches GPT-OSS 120B/full Whisper v3; both remain in Groq's production catalogue | Configured and accepted in live browser turns |
+| Database working hours and prompt context | Actual catalogue hours/breaks, Tallinn current date and canonical guarded replies | Verified in HTTP and native SDK checks |
+| Integrated spa and room booking | Shared owned lifecycle; live preparation, later reading/consent, independent read and cancellation for both kinds | Verified for fictional demo inventory |
+| Public hotel/spa pitch with phone number | Live Meretuule page, three room cards, spa service, configured contact and source-matching assets | Verified public rendering |
+| Working Kõneproov | Live Chrome capture/upload/recognition and complete audio playback of the exact reported phrase | Verified with synthetic audio input |
+| Improved incoming telephone pipeline | Native SDK, PCM, interruption, consent, fallback and deployment checks | Matching worker deployment and real incoming call acceptance remain required |
+
+The authenticated telephone metadata read contains six records, none active or
+with a booking; the newest started at `2026-10-03T09:41:56Z`, had zero recognized
+turns and ended seven seconds later. Five records need attention. These dated
+records and their `synthetic` data label neither establish the current worker
+revision nor prove a successful incoming dialogue. No transcripts, guests,
+credentials or call identifiers were included in the diagnostic summary.
+
+Model availability was rechecked against the primary
+[Groq model catalogue](https://console.groq.com/docs/models),
+[deprecation list](https://console.groq.com/docs/deprecations) and
+[speech guidance](https://console.groq.com/docs/speech-to-text).
+No speculative provider/model replacement was made during this audit.
+
 ## Remaining release gaps
 
 GitHub master pushes deploy only the Coolify web/API application. The native
 telephone worker and Twilio bridge require a separate server deployment.
 The other server operator will inspect those
 services, preserve their exact shared volume, rebuild/restart them and test
-the actual incoming call. It is also needed to supply the existing inbound
-number as `PUBLIC_PHONE_NUMBER` in the web application. Physical browser
+the actual incoming call. A subsequent public audit at
+`2026-10-03T10:43Z` confirms the hotel page and public property endpoint now
+display configured contact `+17574278729`; its carrier assignment and incoming
+dialogue remain unproven by that public read. The hotel serves three room types,
+spa service and database working hours; its JavaScript/CSS match current source,
+with no browser errors or horizontal overflow at 1440, 390 and 320 pixels.
+Physical browser
 microphone/playback, arbitrary live conversational follow-ups, volume/journal continuity
 and native deployment remain unverified.
 No successful public PSTN call is claimed here.

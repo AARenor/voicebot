@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import posixpath
 from pathlib import Path
 import subprocess
 import sys
@@ -61,11 +62,25 @@ def environment(source):
         "VOICEBOT_SPEAKING_STYLE",
         "VOICEBOT_SPEECH_RATE",
         "VOICEBOT_RECAP_RATE",
-        "STAY_STATE_DB",
-        "STAY_DEMO_WRITES",
     ):
         if k in source_env:
             env[k] = source_env[k]
+    env["STAY_DEMO_WRITES"] = source_env.get(
+        "STAY_DEMO_WRITES", source_env["EASY_DEMO_WRITES"]
+    )
+    database_paths = {
+        "EASY_STATE_DB": source_env["EASY_STATE_DB"],
+        "STAY_STATE_DB": source_env.get("STAY_STATE_DB") or posixpath.join(
+            posixpath.dirname(source_env["EASY_STATE_DB"]), "stay-booking.db"
+        ),
+        "CALLS_DB": source_env.get("CALLS_DB", "/data/calls.db"),
+    }
+    for key, path in database_paths.items():
+        # Containers use POSIX paths, even when deployment checks run on Windows.
+        # Only /data is shared; an in-memory or other file path would split state.
+        if not posixpath.isabs(path) or not posixpath.normpath(path).startswith("/data/"):
+            raise ValueError("shared database path not identified")
+        env[key] = path
     env["VOICEBOT_DATA_VOLUME"] = volumes[0]
     env["MEDIA_CONFIG_SHA"] = hashlib.sha256(
         (ROOT / "deploy/telephony/livekit.yaml").read_bytes()
