@@ -7,10 +7,28 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 DEMO_PATH = Path(__file__).resolve().parents[1] / "data/demo/telephone-demo.json"
 DEMO_TIMEZONE = "Europe/Tallinn"
+
+
+class DemoProfile(TypedDict):
+    name: str
+    description_et: str
+    description_en: NotRequired[str]
+    language: str
+    timezone: str
+    address: None
+    real_visitor_location: bool
+
+
+class DemoData(TypedDict):
+    synthetic: bool
+    profile: DemoProfile
+    faq: list[dict[str, str]]
+    guests: dict[str, dict[str, str]]
 
 
 def _text(value, cap=500):
@@ -26,7 +44,7 @@ def validate_call_id(value):
     return value
 
 
-def load_demo_data(path=None):
+def load_demo_data(path=None) -> DemoData:
     """Read only the disclosed profile, FAQ and reserved fictional contacts."""
     try:
         source = json.loads(Path(path or DEMO_PATH).read_text(encoding="utf-8"))
@@ -53,7 +71,7 @@ def load_demo_data(path=None):
             or profile.get("language") != "et"
         ):
             raise ValueError
-        profile = {
+        profile: DemoProfile = {
             "name": _text(profile["name"], 100),
             "description_et": _text(profile["description_et"]),
             "language": "et",
@@ -61,6 +79,8 @@ def load_demo_data(path=None):
             "address": None,
             "real_visitor_location": False,
         }
+        if "description_en" in source["fictional_property"]:
+            profile["description_en"] = _text(source["fictional_property"]["description_en"])
         faq = [
             {
                 "question_et": _text(entry["question_et"]),
@@ -68,6 +88,10 @@ def load_demo_data(path=None):
             }
             for entry in source["manual_demo_faq"]["entries"]
         ]
+        for translated, entry in zip(faq, source["manual_demo_faq"]["entries"]):
+            if "question_en" in entry or "answer_en" in entry:
+                translated["question_en"] = _text(entry["question_en"])
+                translated["answer_en"] = _text(entry["answer_en"])
         guests = {}
         for entry in source["guests"]:
             fixture_id = _text(entry["fixture_id"], 40)
@@ -90,7 +114,7 @@ def load_demo_data(path=None):
         raise ValueError("invalid synthetic demo data") from None
 
 
-def scoped_guest(data, fixture_id, call_id):
+def scoped_guest(data: DemoData, fixture_id: str, call_id: str) -> dict[str, str]:
     """Bind a saved fixture to a trusted call scope, never to model contacts."""
     validate_call_id(call_id)
     guest = copy.deepcopy(data["guests"][fixture_id])
@@ -99,7 +123,7 @@ def scoped_guest(data, fixture_id, call_id):
     return guest
 
 
-def get_demo_profile(data=None, *, call_id, now=None):
+def get_demo_profile(data: DemoData | None = None, *, call_id: str, now=None):
     data = load_demo_data() if data is None else data
     validate_call_id(call_id)
     now = datetime.now(ZoneInfo(DEMO_TIMEZONE)) if now is None else now

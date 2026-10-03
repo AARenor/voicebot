@@ -47,7 +47,9 @@ IO_TIMEOUT = 2
 CLOSE_TIMEOUT = 5
 MAX_MESSAGE_BYTES = 4096
 MAX_FORM_BYTES = 16384
-FALLBACK_FILE = Path(__file__).parent / "audio" / "unavailable-et.wav"
+# Before a native worker hears the caller, their language is unknown. Keep the
+# legacy public URL but provide a bounded independent message in both languages.
+FALLBACK_FILE = Path(__file__).parent / "audio" / "unavailable-et-en.wav"
 STATE = web.AppKey("twilio_state", SimpleNamespace)
 
 

@@ -1,4 +1,4 @@
-# Estonian hotel and spa voicebot — architecture
+# English and Estonian hotel and spa voicebot — architecture
 
 Status: **v1.2 fictional hackathon demo; Twilio-first activation, 2026-10-02**.
 
@@ -11,7 +11,7 @@ Historical vendor/model research from the earlier draft is summarized in
 
 ## 1. Goal and non-negotiable invariants
 
-The product is an inbound Estonian-language telephone receptionist for hotels
+The product is an inbound English/Estonian telephone receptionist for hotels
 and spas. It must answer routine questions, check live availability, complete
 safe bookings, and transfer exceptional cases to a human with context.
 
@@ -39,7 +39,7 @@ Non-negotiable invariants:
 | Operator web/API | `robot.arleserver.cfd`; authenticated provider booking/catalogue reads and a fictional text/microphone demo | Browser/deployment evidence is recorded in the dated hackathon report |
 | HTTP voice turn | `POST /api/demo/session`, `/api/turn` and session deletion use bounded server-owned history and shared call tools | HTTP audio/text, not a telephone media loop |
 | LLM | Groq `openai/gpt-oss-20b` works, including tool calls | Primary only; no configured secondary |
-| Speech | Groq Whisper and Azure `et-EE-AnuNeural` work | Non-streaming HTTP clients |
+| Speech | Telephone Groq Whisper detects English/Estonian; Azure Jenny/Anu follows the call language | New English behavior is locally verified; live English carrier verification remains pending |
 | FAQ | Approved fictional profile/FAQ/guests loaded from `data/demo/telephone-demo.json`; generic hotel seed is not advertised | Fictional spa only; no real-property policies or prices |
 | Call log | Operator-authenticated no-store reads; HTTP/native calls journal only static technical outcomes | No new transcripts; historical content/retention still require real-guest release review |
 | Dashboard booking view | Read-only Easy REST projection; successful guarded conversation changes select the actual booking day | No seeded appointments or private guest fields; old demo queue is explicitly separate |

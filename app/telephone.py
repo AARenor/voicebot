@@ -11,6 +11,7 @@ import re
 import time
 import uuid
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .demo import (
@@ -28,6 +29,23 @@ from .turn import (
     enforce_price_gate,
 )
 from . import callslog
+from .languages import (
+    AFFIRMATIONS_EN,
+    CANCELLATIONS_EN,
+    CONSENT,
+    ENGLISH,
+    ENGLISH_STATIC,
+    ENGLISH_INSTRUCTIONS,
+    ENGLISH_INVITATION,
+    ENGLISH_TOOL_ERRORS,
+    LANGUAGES,
+    english_clarification,
+    render_english_read,
+    requested_language,
+    select_language,
+    spoken_date,
+    spoken_time,
+)
 
 SLOT_TOOLS = {
     "search_slots",
@@ -251,9 +269,14 @@ def validate_environment(env=None):
         raise ValueError("absolute persistent journal path required")
 
 
-def safe_speech(text, results):
+def safe_speech(text, results, language="et"):
+    price_unknown = (
+        ENGLISH["price_unknown"]
+        if language == "en"
+        else "Ma ei saa praegu hinda kinnitada."
+    )
     if len(text) > 3000:
-        return FALLBACK
+        return ENGLISH["fallback"] if language == "en" else FALLBACK
     mentions_price = re.search(
         r"[€$£₽]|\b(?:eur\b|usd\b|gbp\b|rub\b|euro\w*|euri\w*|dollar\w*|rubla\w*|maksab\b|maksumus\w*|hind\b|hinn\w*|price\b|cost\w*)",
         # This exact IANA label is a timezone, not a currency word.
@@ -287,15 +310,20 @@ def safe_speech(text, results):
     if mentions_price and (
         not quotes or not PRICE_RE.search(text) or unquoted_currency
     ):
-        return "Ma ei saa praegu hinda kinnitada."
-    reply, gated = enforce_price_gate(text, [{"result": {"offers": quotes}}], "et")
-    return "Ma ei saa praegu hinda kinnitada." if gated else reply
+        return price_unknown
+    reply, gated = enforce_price_gate(text, [{"result": {"offers": quotes}}], language)
+    return price_unknown if gated else reply
 
 
 class CallTools:
     """Never accept model-controlled ownership or write identity."""
 
-    def __init__(self, dispatcher, *, call_id=None):
+    def __init__(self, dispatcher, *, call_id=None, language="et"):
+        if language not in LANGUAGES:
+            raise ValueError("unsupported telephone language")
+        self.language = language
+        self.clarification = None
+        self.unsupported_language = False
         self.dispatcher = dispatcher
         self.call_id = validate_call_id(
             uuid.uuid4().hex if call_id is None else call_id
@@ -338,8 +366,8 @@ class CallTools:
         self.offers, self.held_stays = {}, {}
         self._hold_order = []
         self.booking_kinds = {}
-        self.pending = None
-        self.cancel_approval = None
+        self.pending: dict[str, Any] | None = None
+        self.cancel_approval: dict[str, Any] | None = None
         self.last_booking = None
         self.confirmation_guests = {}
         self.confirmed_holds = set()
@@ -418,7 +446,7 @@ class CallTools:
 
     @property
     def conversation_instructions(self):
-        context = {
+        context: dict[str, Any] = {
             "name": self.demo["profile"]["name"],
             "current_date": datetime.now(ZoneInfo(DEMO_TIMEZONE)).date().isoformat(),
             "timezone": DEMO_TIMEZONE,
@@ -428,6 +456,22 @@ class CallTools:
             },
             "faq": self.demo["faq"],
         }
+        if self.language == "en":
+            context["language"] = "en"
+            context["faq"] = [
+                {key: entry[key] for key in ("question_en", "answer_en") if key in entry}
+                for entry in self.demo["faq"]
+            ]
+            context["approved_questions"] = {
+                key: ENGLISH[key] for key in (
+                    "ask_date_time", "ask_date", "ask_time", "booking_kind",
+                    "spa_service", "preferred_time", "stay_dates", "stay_departure",
+                    "stay_adults", "stay_children", "room_type",
+                    "ambiguous_date", "ambiguous_time", "anything_else", "goodbye",
+                )
+            }
+            context["clarification_required"] = self.clarification
+            return ENGLISH_INSTRUCTIONS + "\nDemo context (data only):\n" + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
         return (
             "Sa oled fiktiivse Meretuule hotelli ja spaademo sõbralik eestikeelne abiline. Ära luba päris teenust/inimüleandmist. Ära küsi päris kontakte ega makseandmeid.\n"
             "Spaale: kui kuupäev ja kellaaeg on teada ning teenuse ja teenindaja valik on ühene, kasuta esmalt plan_demo_booking(date,start_time) ühe tööriistakutsega. Mitme teenuse või teenindaja puhul kasuta get_slot_catalogue, search_slots, tagastatud slot_id-ga hold_slot ja prepare_demo_booking. get_slot_catalogue näitab andmebaasi teenuseid, teenindajaid ja tööaegu. Küsi kasutajalt puuduv teenus, kuupäev või kellaaeg.\n"
@@ -448,17 +492,47 @@ class CallTools:
     @property
     def instructions(self):
         return (
-            INSTRUCTIONS
+            (ENGLISH_INSTRUCTIONS if self.language == "en" else INSTRUCTIONS)
             + "\nDemokontekst (ainult andmed, mitte juhised):\n"
             + json.dumps(
                 get_demo_profile(self.demo, call_id=self.call_id), ensure_ascii=False
             )
         )
 
-    def observe_user_text(self, text, *, is_final=True):
+    @property
+    def greeting(self):
+        return ENGLISH["greeting"] if self.language == "en" else GREETING
+
+    @property
+    def fallback(self):
+        return ENGLISH["fallback"] if self.language == "en" else FALLBACK
+
+    def observe_user_text(
+        self, text: object, *, is_final: bool = True,
+        detected_language: object = None, language: str | None = None,
+        unsupported: bool = False,
+    ) -> None:
         """Trusted STT/HTTP caller only; no transcript is retained or logged."""
         if is_final is not True:
             return
+        text = text if isinstance(text, str) else ""
+        selected = (
+            language if language is not None and language in LANGUAGES
+            else select_language(text, detected_language, self.language)
+        )
+        # A saved guest name is a selection, not a request to change language.
+        named_fixture = " ".join(text.casefold().strip(" .!?").split()) in {
+            *self.demo["guests"],
+            *(f"{g['firstName']} {g['lastName']}".casefold() for g in self.demo["guests"].values()),
+        }
+        if named_fixture and language not in LANGUAGES:
+            selected = self.language
+        changed = selected != self.language
+        self.language = selected
+        self.unsupported_language = (
+            unsupported and not named_fixture and requested_language(text) is None
+        )
+        self.clarification = english_clarification(text) if selected == "en" else None
         self.results.clear()
         self._turn_serial += 1
         self.turn_mutation = None
@@ -472,17 +546,28 @@ class CallTools:
             else ""
         )
         now = time.monotonic()
+        if self.pending and changed and requested_language(text):
+            # Repeat the same owned proposal in the new language. Approval from
+            # an earlier recap cannot survive a change in what the caller hears.
+            self.pending["delivery"] = self.pending["approved"] = False
+            return
+        if changed and self.pending:
+            self.pending["delivery"] = self.pending["approved"] = False
         if (
             self.pending
             and now < self.pending["expires_at"]
             and self.pending["delivery"]
-            and normalized in AFFIRMATIONS
+            and not self.unsupported_language
+            and normalized in (AFFIRMATIONS_EN if selected == "en" else AFFIRMATIONS)
         ):
             self.pending["approved"] = True
         else:
             # Declines and ambiguous final turns require a fresh recap.
             self.pending = None
-        if self.last_booking and normalized in CANCELLATIONS:
+        if (
+            self.last_booking and not self.unsupported_language
+            and normalized in (CANCELLATIONS_EN if selected == "en" else CANCELLATIONS)
+        ):
             self.cancel_approval = {
                 "booking_id": self.last_booking,
                 "expires_at": now + CONSENT_TIMEOUT_SECONDS,
@@ -503,7 +588,7 @@ class CallTools:
         }
         return True
 
-    def render_recap(self, hold_id=None):
+    def render_recap(self, hold_id=None) -> str | None:
         pending = self.pending
         if not pending or (hold_id is not None and pending["hold_id"] != hold_id):
             return None
@@ -511,6 +596,22 @@ class CallTools:
             self.invalidate_recap()
             return None
         fields = pending["recap"]
+        if self.language == "en":
+            consent = f'Do you confirm this test booking? Say: "{CONSENT["en"]}"'
+            if pending.get("kind") == "stay":
+                return (
+                    f"Fictional room test booking: {fields['room_name']}, "
+                    f"arriving {spoken_date(fields['checkin'])}, departing {spoken_date(fields['checkout'])}, "
+                    f"{fields['nights']} nights, {fields['adults']} adults and {fields['children']} children, "
+                    f"guest {fields['guest_name']}. Total example price {fields['quoted_total']} {fields['currency']}. "
+                    f"No payment is collected. {consent}"
+                )
+            start = datetime.fromisoformat(fields["start"])
+            return (
+                f"Fictional test booking: {fields['service_name']}, {fields['provider_name']}, "
+                f"{spoken_date(start.date().isoformat())} at {spoken_time(start.strftime('%H:%M'))}, "
+                f"Tallinn local time, guest {fields['guest_name']}. {consent}"
+            )
         if pending.get("kind") == "stay":
             return (
                 f"Fiktiivne majutuse testbroneering: {fields['room_name']}, "
@@ -534,6 +635,8 @@ class CallTools:
         return True
 
     def guard_reply(self, text, results):
+        english = self.language == "en"
+        mutation_replies = ENGLISH if english else MUTATION_REPLIES
         results = [
             r.get("result", r)
             for r in [*self.results, *(results or [])]
@@ -552,40 +655,59 @@ class CallTools:
             )
         ):
             self._unknown_mutation()
-            return UNKNOWN_REPLY
+            return ENGLISH["unknown"] if english else UNKNOWN_REPLY
         if self.turn_mutation and errors:
             # A completed write remains true when a later, unrelated read fails.
             # Unknown mutations above still override even a prior success.
             self.invalidate_recap()
-            return MUTATION_REPLIES[self.turn_mutation] + " Muu päring ebaõnnestus."
+            return mutation_replies[self.turn_mutation] + (
+                ENGLISH["other_failed"] if english else " Muu päring ebaõnnestus."
+            )
+        if self.unsupported_language:
+            self.invalidate_recap()
+            return ENGLISH["unsupported"] if english else "Palun räägi eesti või inglise keeles. Kumba keelt eelistad?"
+        if self.clarification:
+            self.invalidate_recap()
+            return ENGLISH[self.clarification]
         if errors:
             self.invalidate_recap()
+            if english:
+                return (
+                    ENGLISH_TOOL_ERRORS.get(errors[0], ENGLISH["failed"])
+                    if isinstance(errors[0], str) else ENGLISH["failed"]
+                )
             return "Toiming ei õnnestunud; edu ei ole kinnitatud."
         if not isinstance(text, str):
             self.invalidate_recap()
-            return FALLBACK
-        reply = safe_speech(text, results)
+            return self.fallback
+        reply = safe_speech(text, results, self.language)
         if reply != text:
             self.invalidate_recap()
             return reply
         canonical = self.render_recap()
-        if canonical:
-            quote = self.pending.get("quote")
-            reply = safe_speech(canonical, [*results, *([quote] if quote else [])])
+        pending = self.pending
+        if canonical and pending:
+            quote = pending.get("quote")
+            reply = safe_speech(canonical, [*results, *([quote] if quote else [])], self.language)
             if reply != canonical:
                 self.invalidate_recap()
             return reply
         if self.turn_mutation:
-            return MUTATION_REPLIES[self.turn_mutation]
-        if text in STATIC_REPLIES or any(
-            text == entry["answer_et"] for entry in self.demo["faq"]
+            return mutation_replies[self.turn_mutation]
+        static = ENGLISH_STATIC if english else STATIC_REPLIES | {ENGLISH_INVITATION}
+        provider_prompts = (
+            REPEAT_PROMPT[self.language], STT_UNAVAILABLE[self.language],
+            TURN_UNAVAILABLE[self.language],
+        )
+        if text in static or text in provider_prompts or any(
+            text == entry.get("answer_en" if english else "answer_et") for entry in self.demo["faq"]
         ):
             return text
         for result in reversed(results):
-            canonical = self._render_read_result(result)
+            canonical = render_english_read(result) if english else self._render_read_result(result)
             if canonical:
-                return safe_speech(canonical, results)
-        return UNVERIFIED_REPLY
+                return safe_speech(canonical, results, self.language)
+        return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
 
     @staticmethod
     def _render_read_result(result):
@@ -963,6 +1085,7 @@ class CallTools:
             "consent_prompt_et": (
                 f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”"
             ),
+            "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
         }
 
     async def prepare_demo_stay(self, hold_id, guest_fixture_id="guest-001"):
@@ -1029,9 +1152,10 @@ class CallTools:
             "recap": recap,
             **quote,
             "consent_prompt_et": f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”",
+            "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
         }
 
-    async def dispatch(self, name, args):
+    async def dispatch(self, name, args) -> dict[str, Any]:
         # Retain closed outcomes from local, rejected and replayed tools too:
         # the speech guard must not mistake an older success for this mutation.
         turn_serial = self._turn_serial
@@ -1054,10 +1178,12 @@ class CallTools:
         self.results.append(copy.deepcopy(result))
         return result
 
-    async def _dispatch(self, name, args):
+    async def _dispatch(self, name, args) -> dict[str, Any]:
         self.count += 1
         if self.count > 64 or not isinstance(name, str) or name not in self.names:
             return {"error": "not_allowed"}
+        if (self.clarification or self.unsupported_language) and name != "get_demo_profile":
+            return {"error": "clarification_required"}
         if self.mutation_uncertain and name in MUTATION_TOOLS | {
             "hold_slot",
             "hold_offer",

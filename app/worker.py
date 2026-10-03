@@ -13,18 +13,19 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 from livekit import api, rtc
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli, stt
 from livekit.plugins import azure, groq, silero
 
 from .booking.easyappointments import EasyAppointmentsAdapter
 from .booking.demo_stay import DemoStayAdapter
 from .booking.tools import Dispatcher
 from . import callslog, call_history
-from .providers.voice_config import STT_LANGUAGE, VoiceConfig
+from .providers.voice_config import SpeechConfig, VoiceConfig
+from .providers.telephone_stt import TelephoneSTT
+from .languages import ENGLISH, ENGLISH_INVITATION
 from .telephone import (
     CallTools,
     FALLBACK,
-    GREETING,
     UNVERIFIED_REPLY,
     sdk_tools,
     validate_environment,
@@ -44,15 +45,29 @@ def protect_logs():
 
 
 class TelephoneAgent(Agent):
-    def __init__(self, state):
+    def __init__(self, state, *, speech_config=None, speech_provider=None):
         super().__init__(
             instructions=state.conversation_instructions,
             tools=sdk_tools(state, conversation=True),
         )
         self.state = state
+        self.speech_config = speech_config or SpeechConfig()
+        self.speech_provider = speech_provider
+        self._detected_language = None
+        self._unsupported_language = False
+        self._fallback_language = state.language
         self._generated_recap = None
         self._fallback_reply = None
         self._fallback_speech = None
+
+    async def stt_node(self, audio, model_settings):
+        async for event in Agent.default.stt_node(self, audio, model_settings):
+            if event.type == stt.SpeechEventType.FINAL_TRANSCRIPT and event.alternatives:
+                data = event.alternatives[0]
+                if data.text.strip():
+                    self._detected_language = str(data.language)
+                    self._unsupported_language = bool((data.metadata or {}).get("unsupported_language"))
+            yield event
 
     async def on_user_turn_completed(self, turn_ctx, new_message):
         # SDK aggregates STT fragments here, before generating any tool call.
@@ -60,14 +75,20 @@ class TelephoneAgent(Agent):
         self.state.observe_user_text(
             new_message.text_content if new_message.role == "user" else "",
             is_final=True,
+            detected_language=self._detected_language,
+            language=self.speech_config.mode if self.speech_config.mode != "auto" else None,
+            unsupported=self._unsupported_language,
         )
+        self._detected_language = None
+        self._unsupported_language = False
+        await self.update_instructions(self.state.conversation_instructions)
         if self.state.history_enabled and new_message.role == "user":
             status = (
                 "recognized"
                 if (new_message.text_content or "").strip()
                 else "no_speech"
             )
-            callslog.history_safe(call_history.record_input, self.state.call_id, status)
+            callslog.history_safe(call_history.record_input, self.state.call_id, status, self.state.language)
 
     async def checked_reply(self, text):
         # No partial sentence or invented price is spoken before validation.
@@ -75,7 +96,7 @@ class TelephoneAgent(Agent):
         async for chunk in text:
             parts.append(chunk)
             if sum(map(len, parts)) > 3000:
-                parts = [FALLBACK]
+                parts = [self.state.fallback]
                 self.state.invalidate_recap()
                 break
         canonical = (
@@ -104,12 +125,13 @@ class TelephoneAgent(Agent):
             # The SDK stores this same message in agent/session history before
             # emitting the event. Cached apology PCM must have matching history.
             event.item.content = (
-                [] if getattr(event.item, "interrupted", False) else [FALLBACK]
+                [] if getattr(event.item, "interrupted", False)
+                else [ENGLISH["fallback"] if self._fallback_language == "en" else FALLBACK]
             )
         if self.state.history_enabled:
             outcome = (
                 "fallback"
-                if event.item.text_content == UNVERIFIED_REPLY
+                if event.item.text_content in {UNVERIFIED_REPLY, ENGLISH["unverified"]}
                 else self.state.outcome
             )
             callslog.history_safe(
@@ -143,8 +165,13 @@ class TelephoneAgent(Agent):
         complete = False
         reply = None
         speech = self._current_speech()
+        language = self.state.language
         try:
             reply = await self.checked_reply(text)
+            language = "en" if reply == ENGLISH_INVITATION else self.state.language
+            if self.speech_provider is not None:
+                voice, locale = self.speech_config.voice_for(language)
+                self.speech_provider.update_options(voice=voice, language=locale)
             pending = self.state.pending
             canonical = self.state.render_recap()
 
@@ -168,13 +195,14 @@ class TelephoneAgent(Agent):
             if self.state.outcome != "write_outcome_unknown":
                 self.state.outcome = "provider_error"
             log_failure("tts_fallback", error)
-            self._fallback_reply = reply or FALLBACK
+            self._fallback_reply = reply or self.state.fallback
             self._fallback_speech = speech
+            self._fallback_language = language
             if self.state.history_enabled:
                 callslog.history_safe(
                     call_history.provider_error, self.state.call_id, "tts_error"
                 )
-            async for frame in fallback_audio():
+            async for frame in fallback_audio(language):
                 yield frame
         finally:
             if not complete:
@@ -250,10 +278,10 @@ class VoiceMetrics:
             )
 
 
-async def fallback_audio():
+async def fallback_audio(language="et"):
     # Cached independent PCM, not another request to the failed provider.
     with wave.open(
-        str(Path(__file__).parent / "audio" / "unavailable-et.wav"), "rb"
+        str(Path(__file__).parent / "audio" / f"unavailable-{'en' if language == 'en' else 'et'}.wav"), "rb"
     ) as wav:
         rate = wav.getframerate()
         while data := wav.readframes(rate // 50):
@@ -270,7 +298,7 @@ def prewarm(proc):
     proc.userdata["vad"] = silero.VAD.load()
 
 
-async def play_failure(room):
+async def play_failure(room, language="et"):
     # AgentSession may already have auto-closed on a nonrecoverable error.
     source = rtc.AudioSource(24000, 1, queue_size_ms=100)
     publication = None
@@ -280,7 +308,7 @@ async def play_failure(room):
             track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         )
         await asyncio.wait_for(publication.wait_for_subscription(), timeout=5)
-        async for frame in fallback_audio():
+        async for frame in fallback_audio(language):
             await source.capture_frame(frame)
         await source.wait_for_playout()
     finally:
@@ -311,9 +339,12 @@ def log_call_summary(state, *, failed=False):
         "booking_cancelled",
     }:
         outcome = "completed"
+    language = getattr(state, "language", "et")
+    if language not in {"et", "en"}:
+        language = "et"
     try:
         callslog.log_call(
-            callslog.get_default(), "et", "", "Synthetic telephone demo", outcome
+            callslog.get_default(), language, "", "Synthetic telephone demo", outcome
         )
     except Exception:
         logging.getLogger("voicebot.telephone").warning("call_summary_unavailable")
@@ -466,7 +497,7 @@ server = AgentServer(
 @server.rtc_session(agent_name=os.environ.get("VOICEBOT_AGENT_NAME", "voicebot"))
 async def entrypoint(ctx: JobContext):
     protect_logs()
-    adapter = state = session = None
+    adapter = state = session = recognizer = None
     failed = asyncio.Event()
     interruption_tasks = set()
     metrics = VoiceMetrics()
@@ -474,6 +505,7 @@ async def entrypoint(ctx: JobContext):
     try:
         validate_environment()
         config = VoiceConfig.from_env()
+        speech_config = SpeechConfig.from_env()
         adapter = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"],
             os.environ["EASY_API_KEY"],
@@ -493,36 +525,33 @@ async def entrypoint(ctx: JobContext):
                     os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db"
                 )
             )
-        state = CallTools(Dispatcher(slot=adapter, stay=stay))
-        callslog.history_safe(call_history.start, state.call_id, "telephone")
+        state = CallTools(Dispatcher(slot=adapter, stay=stay), language=speech_config.initial_language)
+        callslog.history_safe(call_history.start, state.call_id, "telephone", state.language)
         state.history_enabled = True
         stage = "providers"
         chat_options = config.chat_options()
         # The Groq plugin does not expose include_reasoning. It forwards only
         # delta.content/tool calls; reasoning never reaches its speech output.
         chat_options.pop("include_reasoning", None)
-        voice = os.environ.get("AZURE_VOICE", "et-EE-AnuNeural").strip()
-        language = os.environ.get("AZURE_LANG", "et-EE").strip()
-        if not voice.startswith("et-EE-") or language != "et-EE":
-            raise ValueError("Estonian speech voice required")
+        voice, language = speech_config.voice_for(state.language)
+        recognizer = TelephoneSTT(
+            model=config.stt_model, mode=speech_config.mode,
+            api_key=os.environ["GROQ_API_KEY"],
+        )
+        speech_provider = azure.TTS(
+            voice=voice, language=language,
+            speech_key=os.environ["AZURE_SPEECH_KEY"],
+            speech_region=os.environ["AZURE_REGION"],
+        )
         session = AgentSession(
-            stt=groq.STT(
-                model=config.stt_model,
-                language=STT_LANGUAGE,
-                api_key=os.environ["GROQ_API_KEY"],
-            ),
+            stt=recognizer,
             llm=groq.LLM(
                 model=config.chat_model,
                 api_key=os.environ["GROQ_API_KEY"],
                 parallel_tool_calls=False,
                 **chat_options,
             ),
-            tts=azure.TTS(
-                voice=voice,
-                language=language,
-                speech_key=os.environ["AZURE_SPEECH_KEY"],
-                speech_region=os.environ["AZURE_REGION"],
-            ),
+            tts=speech_provider,
             vad=ctx.proc.userdata["vad"],
             turn_handling={
                 "turn_detection": "vad",
@@ -532,7 +561,7 @@ async def entrypoint(ctx: JobContext):
             },
         )
         closed = asyncio.Event()
-        agent = TelephoneAgent(state)
+        agent = TelephoneAgent(state, speech_config=speech_config, speech_provider=speech_provider)
         session.on("close", lambda ev: closed.set())
         session.on(
             "user_state_changed",
@@ -564,9 +593,13 @@ async def entrypoint(ctx: JobContext):
         stage = "participant_wait"
         await asyncio.wait_for(ctx.wait_for_participant(), timeout=20)
         stage = "greeting"
-        greeting = session.say(GREETING)
+        greeting = session.say(state.greeting)
         if inspect.isawaitable(greeting):
             await asyncio.wait_for(greeting, timeout=20)
+        if speech_config.mode == "auto" and state.language == "et":
+            invitation = session.say(ENGLISH_INVITATION)
+            if inspect.isawaitable(invitation):
+                await asyncio.wait_for(invitation, timeout=20)
         stage = "call_runtime"
         callslog.history_safe(call_history.activity, state.call_id, "greeting")
         tasks = [asyncio.create_task(closed.wait()), asyncio.create_task(failed.wait())]
@@ -576,7 +609,7 @@ async def entrypoint(ctx: JobContext):
             )
             if failed.is_set():
                 await close_session(session)
-                await asyncio.wait_for(play_failure(ctx.room), timeout=20)
+                await asyncio.wait_for(play_failure(ctx.room, state.language), timeout=20)
         finally:
             for task in tasks:
                 task.cancel()
@@ -587,7 +620,7 @@ async def entrypoint(ctx: JobContext):
         if session is not None:
             await close_session(session)
         try:
-            await asyncio.wait_for(play_failure(ctx.room), timeout=20)
+            await asyncio.wait_for(play_failure(ctx.room, state.language if state else "et"), timeout=20)
         except Exception:
             pass
     finally:
@@ -595,7 +628,11 @@ async def entrypoint(ctx: JobContext):
             task.cancel()
         await asyncio.gather(*interruption_tasks, return_exceptions=True)
         metrics.log_summary()
-        await cleanup_call(ctx, session, adapter, state=state, failed=failed.is_set())
+        try:
+            await cleanup_call(ctx, session, adapter, state=state, failed=failed.is_set())
+        finally:
+            if recognizer is not None:
+                await recognizer.aclose()
 
 
 if __name__ == "__main__":

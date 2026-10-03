@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import time
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -12,7 +13,9 @@ from app.booking.tools import Dispatcher
 from app.hackathon import DemoSession, run_demo_turn
 from app.telephone import CallTools, CONSENT_TEXT
 from tests.test_demo_plan import LiveSlots, REQUEST
-from tests.test_product_demo import AUTH, Speaker, call, client
+from tests.test_product_demo import AUTH, Speaker, call, client as demo_client
+
+client = demo_client
 
 
 def test_failed_search_cannot_grant_unreturned_slot_ownership():
@@ -144,16 +147,22 @@ def test_http_current_owned_ids_survive_prose_only_history(condition):
             if condition == "declined"
             else CONSENT_TEXT
         )
+        pending_before = copy.deepcopy(state.pending)
         result = await run_demo_turn(session, stack, b"", text, "et")
         if condition == "approved":
-            assert contexts[0]["pending"]["hold_id"] == "backend-hold"
-            assert contexts[0]["pending"]["delivery"] is True
+            assert pending_before["hold_id"] == "backend-hold"
+            assert pending_before["delivery"] is True
+            assert contexts == []  # The server performs the owned action directly.
             assert result["booking_ids"] == ["42"]
             assert result["booking_changes"][0]["action"] == "confirmed"
-        else:
+        elif condition in {"declined", "expired"}:
             assert contexts[0]["pending"] is None
+        else:
+            assert contexts == [] and state.pending is None
+        if condition == "uncertain":
+            assert result["outcome"] == "unknown_outcome"
         if condition == "cancel":
-            assert contexts[0]["last_booking"] == "42"
+            assert state.last_booking == "42"
             assert result["reply"] == "Testbroneering on tühistatud."
         assert sum(name == "confirm" for name, _ in backend.calls) == (
             condition == "approved"
@@ -218,7 +227,10 @@ def test_completed_write_is_not_hidden_by_later_read_error(cancel):
         assert result["reply"] == stack["tts"].spoken[-1]
         assert sum(name == "confirm" for name, _ in backend.calls) == 1
 
-    asyncio.run(run())
+    # Exercise the shared error guard with a model-issued mixed tool sequence.
+    # HTTP terminal shortcuts have separate coverage in test_http_booking_terminals.
+    with patch("app.hackathon.trusted_booking_response", return_value=None):
+        asyncio.run(run())
 
 
 @pytest.mark.parametrize("authorized", [False, True])
