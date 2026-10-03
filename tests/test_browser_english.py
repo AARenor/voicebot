@@ -1,23 +1,57 @@
 """The selected browser language applies from the first spoken greeting."""
 
 import base64
+import asyncio
+import json
+from datetime import datetime, timedelta
 from unittest.mock import Mock
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
-from app.languages import ENGLISH
+from app.booking.demo_table import DemoTableAdapter
+from app.booking.tools import Dispatcher
+from app.languages import ENGLISH, TABLE_GREETINGS
 from app.providers.azure_tts import AzureTtsClient
+from app.server import create_app
 from tests.test_product_demo import (
     AUTH,
-    BookingLlm,
-    client as demo_client,
-    install_backend,
+    Speaker,
+    SimpleLlm,
     send,
 )
 
-client = demo_client
+
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    from app import callslog
+
+    state_db = str(tmp_path / "restaurant.db")
+    with patch.dict(
+        "os.environ",
+        {"OPERATOR_TOKEN": "fixture-operator", "RESTAURANT_STATE_DB": state_db},
+        clear=True,
+    ):
+        callslog.reset_default()
+        app = create_app()
+    monkeypatch.setenv("OPERATOR_TOKEN", "fixture-operator")
+    table = DemoTableAdapter(state_db)
+    app.state.stack.update(
+        business="restaurant",
+        table=table,
+        slot=None,
+        stay=None,
+        dispatcher=Dispatcher(table=table, business="restaurant"),
+        llm_primary=SimpleLlm(),
+        tts=Speaker(),
+    )
+    with TestClient(app) as result:
+        yield result
+    callslog.reset_default()
 
 
 @pytest.mark.parametrize(
@@ -32,8 +66,7 @@ def test_initial_language_owns_greeting_and_session_without_model_turn(
     session = client.app.state.demo_sessions.sessions[data["session_id"]]
     assert data["language"] == session.tools.language == effective
     assert data["greeting"] == session.tools.greeting
-    if effective == "en":
-        assert data["greeting"] == ENGLISH["greeting"]
+    assert data["greeting"] == TABLE_GREETINGS[effective]
     assert base64.b64decode(data["audio_b64"]).decode() == data["greeting"]
     assert not client.app.state.stack["llm_primary"].messages
     assert session.turn_count == 0
@@ -45,7 +78,7 @@ def test_legacy_session_start_keeps_estonian_greeting(client, body):
     result = client.post(
         "/api/demo/session",
         headers=AUTH,
-        **({"json": body} if body is not None else {})
+        **({"json": body} if body is not None else {}),
     )
     assert result.status_code == 200 and result.json()["greeting"].startswith("Tere!")
 
@@ -114,7 +147,7 @@ def test_english_greeting_uses_jenny_without_mutating_estonian_voice(client):
             "et-EE-AnuNeural",
             "en-US-JennyNeural",
         ]
-        assert "".join(documents[0].itertext()) == ENGLISH["greeting"]
+        assert "".join(documents[0].itertext()) == TABLE_GREETINGS["en"]
     finally:
         speaker.close()
 
@@ -143,28 +176,71 @@ def test_selected_english_recognition_and_audio_reply(client):
 
 
 def test_english_session_preserves_booking_delivery_confirmation_and_cancellation(
-    client, tmp_path
+    client,
 ):
-    day, records, writes = install_backend(client, tmp_path)
-    client.app.state.stack["llm_primary"] = BookingLlm(day)
+    day = (
+        datetime.now(ZoneInfo("Europe/Tallinn")).date() + timedelta(days=1)
+    ).isoformat()
+    table = client.app.state.stack["table"]
+
+    class BookingLlm:
+        def __init__(self):
+            self.messages = []
+
+        def chat(self, messages, tools=None):
+            self.messages.append(messages)
+            if len(self.messages) == 1:
+                return {
+                    "tool_calls": [
+                        {
+                            "id": "table-plan",
+                            "type": "function",
+                            "function": {
+                                "name": "plan_demo_table",
+                                "arguments": json.dumps(
+                                    {
+                                        "date": day,
+                                        "start_time": "18:00",
+                                        "party_size": 3,
+                                    }
+                                ),
+                            },
+                        }
+                    ]
+                }
+            return {"content": "Read the supplied recap."}
+
+    model = BookingLlm()
+    client.app.state.stack["llm_primary"] = model
     session = client.post(
         "/api/demo/session", headers=AUTH, json={"language": "en"}
     ).json()["session_id"]
-    recap = send(client, session, "I would like a test booking", language="en").json()
+    recap = send(
+        client, session, f"A table for three on {day} at 6 pm", language="en"
+    ).json()
     assert "Yes, I confirm." in recap["reply"] and recap["recap_delivery_id"]
-    assert not records
+    assert "Meretuule" in recap["reply"] and "18" in recap["reply"]
+    assert not asyncio.run(table.get_operator_bookings(day))["items"]
+    before_terminal = len(model.messages)
     confirmed = send(client, session, "Yes, I confirm.", language="en").json()
-    assert confirmed["booking_ids"] == ["42"] and len(records) == 1
+    records = asyncio.run(table.get_operator_bookings(day))["items"]
+    assert len(records) == 1 and records[0]["status"] == "confirmed"
+    assert confirmed["booking_ids"] == [records[0]["id"]]
+    assert records[0]["id"].startswith("table_") and records[0]["party_size"] == 3
+    assert len(model.messages) == before_terminal, (
+        "confirmation made another model request"
+    )
     cancelled = send(
         client, session, "Please cancel this test booking.", language="en"
     ).json()
-    assert cancelled["reply"] == ENGLISH["cancelled"] and not records
+    assert cancelled["reply"] == ENGLISH["cancelled"]
+    cancelled_records = asyncio.run(table.get_operator_bookings(day))["items"]
     assert (
-        sum(
-            request.method == "POST" and request.url.path.endswith("/appointments")
-            for request in writes
-        )
-        == 1
+        len(cancelled_records) == 1 and cancelled_records[0]["id"] == records[0]["id"]
+    )
+    assert cancelled_records[0]["status"] == "cancelled"
+    assert len(model.messages) == before_terminal, (
+        "cancellation made another model request"
     )
 
 
@@ -172,6 +248,6 @@ def test_english_greeting_synthesis_failure_keeps_english_text(client):
     client.app.state.stack["tts"].synthesize = Mock(side_effect=RuntimeError("PRIVATE"))
     result = client.post("/api/demo/session", headers=AUTH, json={"language": "en"})
     assert result.status_code == 200
-    assert result.json()["greeting"] == ENGLISH["greeting"]
+    assert result.json()["greeting"] == TABLE_GREETINGS["en"]
     assert result.json()["tts_failed"] and not result.json()["audio_b64"]
     assert "PRIVATE" not in result.text

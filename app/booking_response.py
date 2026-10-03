@@ -11,6 +11,14 @@ def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
             return {"content": state.guard_reply("", state.results)}
         if state.spa_hours_inquiry and state.results:
             return {"content": state.guard_reply("", state.results)}
+        if state.business == "restaurant" and state.results:
+            result = state.results[-1]
+            if (
+                result.get("error")
+                or result.get("kind") == "table"
+                or isinstance(result.get("tables"), list)
+            ):
+                return {"content": state.guard_reply("", state.results)}
         return None
     if not allow_actions:
         return None
@@ -18,13 +26,17 @@ def trusted_booking_response(state, *, after_tool=False, allow_actions=True):
     approval = state.cancel_approval
     if pending and pending.get("approved"):
         return {
-            "name": "confirm_booking" if pending.get("kind") == "stay" else "confirm_slot_booking",
+            "name": {"stay": "confirm_booking", "table": "confirm_table_booking"}.get(
+                pending.get("kind"), "confirm_slot_booking"
+            ),
             "arguments": {"hold_id": pending["hold_id"]},
         }
     if approval and approval["booking_id"] in state.bookings:
         booking_id = approval["booking_id"]
         return {
-            "name": "cancel_booking" if state.booking_kinds.get(booking_id) == "stay" else "cancel_slot_booking",
+            "name": {"stay": "cancel_booking", "table": "cancel_table_booking"}.get(
+                state.booking_kinds.get(booking_id), "cancel_slot_booking"
+            ),
             "arguments": {"booking_id": booking_id},
         }
     inquiry = state.inquiry_reply()

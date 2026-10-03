@@ -56,8 +56,10 @@ services:
       VOICEBOT_SPEAKING_STYLE: ${VOICEBOT_SPEAKING_STYLE:-natural}
       VOICEBOT_SPEECH_RATE: ${VOICEBOT_SPEECH_RATE:-0.98}
       VOICEBOT_RECAP_RATE: ${VOICEBOT_RECAP_RATE:-0.94}
-      EASY_BASE_URL: ${EASY_BASE_URL:?required}
-      EASY_API_KEY: ${EASY_API_KEY:?required}
+      VOICEBOT_BUSINESS: ${VOICEBOT_BUSINESS:-restaurant}
+      RESTAURANT_STATE_DB: ${RESTAURANT_STATE_DB:-/data/restaurant-booking.db}
+      EASY_BASE_URL: ${EASY_BASE_URL:-}
+      EASY_API_KEY: ${EASY_API_KEY:-}
       EASY_API_PREFIX: ${EASY_API_PREFIX:-/index.php/api/v1}
       EASY_AUTH_SCHEME: ${EASY_AUTH_SCHEME:-Bearer }
       EASY_STATE_DB: /data/easy-booking.db

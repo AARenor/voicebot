@@ -6,11 +6,12 @@ import asyncio
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,7 +31,12 @@ from .turn import (
 )
 from . import callslog
 from .conversation import (
-    Conversation, QUESTIONS, STYLE_INSTRUCTIONS, approved_dialogue, spa_hours_focus,
+    Conversation,
+    QUESTIONS,
+    TABLE_QUESTIONS,
+    STYLE_INSTRUCTIONS,
+    approved_dialogue,
+    spa_hours_focus,
 )
 from .russian import localize
 from .languages import (
@@ -45,6 +51,8 @@ from .languages import (
     ENGLISH_INVITATION,
     ENGLISH_TOOL_ERRORS,
     LANGUAGES,
+    TABLE_GREETINGS,
+    TABLE_INSTRUCTIONS,
     english_clarification,
     render_english_read,
     requested_language,
@@ -67,8 +75,22 @@ STAY_TOOLS = {
     "confirm_booking",
     "cancel_booking",
 }
-CONFIRM_TOOLS = {"confirm_slot_booking", "confirm_booking"}
-CANCEL_TOOLS = {"cancel_slot_booking", "cancel_booking"}
+TABLE_TOOLS = {
+    "get_table_catalogue",
+    "search_tables",
+    "hold_table",
+    "confirm_table_booking",
+    "cancel_table_booking",
+}
+CONFIRM_TOOLS = {"confirm_slot_booking", "confirm_booking", "confirm_table_booking"}
+CANCEL_TOOLS = {"cancel_slot_booking", "cancel_booking", "cancel_table_booking"}
+TOOL_KINDS = {
+    "confirm_booking": "stay",
+    "cancel_booking": "stay",
+    "confirm_table_booking": "table",
+    "cancel_table_booking": "table",
+}
+HOLD_TOOLS = {"hold_slot", "hold_offer", "hold_table"}
 GREETING = (
     "Tere! Olen Meretuule hotelli ja spaa tehisintellekti abiline. "
     "Siin teeme ainult testbroneeringuid. Kuidas saan aidata?"
@@ -170,7 +192,8 @@ def _spa_inquiry_fields(text, previous):
     text = text.casefold().strip().rstrip("?!.")
     words = set(re.findall(r"\w+", text))
     if words & {"ei", "ära", "ärge", "mitte", "ignoreeri", "unusta"} or re.search(
-        r"\b(?:kinnit\w*|tühist\w*|hotell\w*|spaahotell\w*|toa\w*|tuba\w*|sviit\w*|suite)\b", text
+        r"\b(?:kinnit\w*|tühist\w*|hotell\w*|spaahotell\w*|toa\w*|tuba\w*|sviit\w*|suite)\b",
+        text,
     ):
         return None
     # A few common ASR spellings are tolerated only for a request, never for
@@ -179,27 +202,55 @@ def _spa_inquiry_fields(text, previous):
         re.search(r"\b(?:spaa\w*|spa)\b", text)
         and re.search(
             r"\b(?:(?:broneeri|bruneeri|brooneeri|reserveeri)(?:da|ksin|ks|me)?|"
-            r"soovin|sooviksin|sooviks|tahaksin|tahaks|tahan)\b", text
+            r"soovin|sooviksin|sooviks|tahaksin|tahaks|tahan)\b",
+            text,
         )
     )
     hour_words = (
-        "null", "üks", "kaks", "kolm", "neli", "viis", "kuus", "seitse",
-        "kaheksa", "üheksa", "kümme", "üksteist", "kaksteist", "kolmteist",
-        "neliteist", "viisteist", "kuusteist", "seitseteist", "kaheksateist",
-        "üheksateist", "kakskümmend",
+        "null",
+        "üks",
+        "kaks",
+        "kolm",
+        "neli",
+        "viis",
+        "kuus",
+        "seitse",
+        "kaheksa",
+        "üheksa",
+        "kümme",
+        "üksteist",
+        "kaksteist",
+        "kolmteist",
+        "neliteist",
+        "viisteist",
+        "kuusteist",
+        "seitseteist",
+        "kaheksateist",
+        "üheksateist",
+        "kakskümmend",
     )
     hour = r"(?:\d{1,2}|" + "|".join(hour_words) + r")"
     clock = rf"(?:kell\s+)?{hour}(?:[:.]\d{{2}})?"
     day = r"(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})"
-    followup = bool(previous and re.fullmatch(
-        rf"(?:palun\s+)?(?:{day}(?:[,\s]+{clock})?|{clock})(?:\s+(?:palun|sobib))?",
-        text,
-    ))
+    followup = bool(
+        previous
+        and re.fullmatch(
+            rf"(?:palun\s+)?(?:{day}(?:[,\s]+{clock})?|{clock})(?:\s+(?:palun|sobib))?",
+            text,
+        )
+    )
     if not spa_request and not followup:
         return None
     fields = {"kind": "slot"} if spa_request else dict(previous)
     date_tokens = re.findall(r"\b(?:täna|homme|ülehomme|\d{4}-\d{2}-\d{2})\b", text)
-    if len(date_tokens) > 1 or words & {"või", "kuni", "vahel", "umbes", "paiku", "asemel"}:
+    if len(date_tokens) > 1 or words & {
+        "või",
+        "kuni",
+        "vahel",
+        "umbes",
+        "paiku",
+        "asemel",
+    }:
         return None
     if date_tokens:
         token = date_tokens[0]
@@ -215,9 +266,12 @@ def _spa_inquiry_fields(text, previous):
         if requested < today:
             return None
         fields["date"] = requested.isoformat()
-    clock_matches = list(re.finditer(
-        rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])", text,
-    ))
+    clock_matches = list(
+        re.finditer(
+            rf"\bkell\s+({hour})(?:[:.](\d{{2}}))?(?![\w:./])",
+            text,
+        )
+    )
     clocks = [matched.groups() for matched in clock_matches]
     remaining = re.sub(rf"\b{day}\b", "", text).strip(" ,")
     if not clocks and followup:
@@ -235,7 +289,7 @@ def _spa_inquiry_fields(text, previous):
             # minutes or multiple alternatives with only one "kell".
             remaining = text
             for matched in reversed(clock_matches):
-                remaining = remaining[:matched.start()] + remaining[matched.end():]
+                remaining = remaining[: matched.start()] + remaining[matched.end() :]
             remaining = re.sub(rf"\b{day}\b", "", remaining)
             if re.search(rf"\b(?:\d+|{'|'.join(hour_words)})\b", remaining):
                 return None
@@ -257,20 +311,187 @@ def _is_spa_clarification(text):
         return False
     words = re.findall(r"[a-zõäöüšž]+", question)
     allowed = {
-        "mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal",
-        "kuupäev", "kuupäeva", "kuupäevaks", "kuupäeval", "päev", "päeval", "päevaks",
-        "kell", "kellaajal", "kellaajaks", "kellaaega", "kellaaeg", "aega", "ajaks",
-        "ajale", "ajal", "soovid", "soovite", "sooviksid", "tahad", "tahaksid",
-        "eelistad", "eelistate", "broneerida", "testbroneeringut", "demo", "spaa",
-        "spaad", "spaasse", "spaahooldust", "spaateenust", "teenust", "konsultatsiooni",
-        "spaakonsultatsiooni", "homme", "täna", "ja", "või", "ning", "endale",
-        "sulle", "teile", "palun", "tulla",
+        "mis",
+        "millist",
+        "millise",
+        "millisele",
+        "millisel",
+        "milliseks",
+        "millal",
+        "kuupäev",
+        "kuupäeva",
+        "kuupäevaks",
+        "kuupäeval",
+        "päev",
+        "päeval",
+        "päevaks",
+        "kell",
+        "kellaajal",
+        "kellaajaks",
+        "kellaaega",
+        "kellaaeg",
+        "aega",
+        "ajaks",
+        "ajale",
+        "ajal",
+        "soovid",
+        "soovite",
+        "sooviksid",
+        "tahad",
+        "tahaksid",
+        "eelistad",
+        "eelistate",
+        "broneerida",
+        "testbroneeringut",
+        "demo",
+        "spaa",
+        "spaad",
+        "spaasse",
+        "spaahooldust",
+        "spaateenust",
+        "teenust",
+        "konsultatsiooni",
+        "spaakonsultatsiooni",
+        "homme",
+        "täna",
+        "ja",
+        "või",
+        "ning",
+        "endale",
+        "sulle",
+        "teile",
+        "palun",
+        "tulla",
     }
     return bool(
         words
-        and words[0] in {"mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal"}
+        and words[0]
+        in {"mis", "millist", "millise", "millisele", "millisel", "milliseks", "millal"}
         and set(words) <= allowed
     )
+
+
+def _table_inquiry_fields(text, previous):
+    """Retain only unambiguous caller preferences, never consent or availability."""
+    if not isinstance(text, str) or len(text) > 2000:
+        return None
+    value = text.casefold().strip().rstrip("?!. ")
+    if re.search(
+        r"\b(?:ei|ära|mitte|no|not|don't|нет|не|kinnit\w*|tühist\w*|confirm\w*|cancel\w*|"
+        r"подтверж\w*|отмен\w*|spaa?\w*|hotell?\w*|room\w*|спа|отел\w*|номер\w*)\b",
+        value,
+    ):
+        return None
+    asking = bool(
+        re.search(
+            r"\b(?:broneer\w*|bruneer\w*|reserve\w*|book\w*|заброни\w*|брони\w*)\b",
+            value,
+        )
+    )
+    if not asking and not previous:
+        return None
+    if re.search(r"\b(?:või|umbes|paiku|or|maybe|around|или|примерно)\b", value):
+        return None
+    fields = dict(previous or {"kind": "table"})
+    relative = {
+        "täna": 0,
+        "homme": 1,
+        "ülehomme": 2,
+        "today": 0,
+        "tomorrow": 1,
+        "сегодня": 0,
+        "завтра": 1,
+        "послезавтра": 2,
+    }
+    dates = re.findall(r"\b(?:\d{4}-\d{2}-\d{2}|" + "|".join(relative) + r")\b", value)
+    clocks = re.findall(r"(?<![\d:.])\b(\d{1,2}:\d{2})\b(?![\d:.])", value)
+    if len(dates) > 1 or len(clocks) > 1:
+        return None
+    if dates:
+        today = datetime.now(ZoneInfo(DEMO_TIMEZONE)).date()
+        try:
+            day = (
+                today + timedelta(days=relative[dates[0]])
+                if dates[0] in relative
+                else datetime.strptime(dates[0], "%Y-%m-%d").date()
+            )
+        except ValueError:
+            return None
+        fields["date"] = day.isoformat()
+    if clocks:
+        try:
+            fields["start_time"] = datetime.strptime(clocks[0], "%H:%M").strftime(
+                "%H:%M"
+            )
+        except ValueError:
+            return None
+    counts = {
+        "üks": 1,
+        "ühele": 1,
+        "kaks": 2,
+        "kahele": 2,
+        "kolm": 3,
+        "kolmele": 3,
+        "neli": 4,
+        "neljale": 4,
+        "viis": 5,
+        "viiele": 5,
+        "kuus": 6,
+        "kuuele": 6,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "один": 1,
+        "одного": 1,
+        "двое": 2,
+        "два": 2,
+        "двоих": 2,
+        "три": 3,
+        "троих": 3,
+        "четыре": 4,
+        "четверых": 4,
+        "пять": 5,
+        "пятерых": 5,
+        "шесть": 6,
+        "шестерых": 6,
+    }
+    number = r"(?:\d+|" + "|".join(counts) + r")"
+    diners = (
+        r"(?:inimest|inimesele|külalist|people|persons|diners|guests|человек|гостей)"
+    )
+    party_before = rf"\b(?:for|для|meid\s+on|kokku)\s+({number})\b"
+    party_after = rf"\b({number})\s+{diners}\b"
+    party = re.findall(party_before, value) + re.findall(party_after, value)
+    if previous and re.fullmatch(number, value):
+        party.append(value)
+    if len(set(party)) > 1:
+        return None
+    # This shortcut is a bounded parser, not proof that an unparsed detail is
+    # missing. Leave natural dates/times and adult/child breakdowns to planning.
+    remaining = re.sub(rf"{party_before}(?:\s+{diners}\b)?|{party_after}", " ", value)
+    for token in [*dates, *clocks, *([value] if value in party else [])]:
+        remaining = re.sub(rf"\b{re.escape(token)}\b", " ", remaining)
+    remaining = re.sub(
+        r"\b(?:please|i|d|would|like|want|to|a|the|table|tables|on|at|"
+        r"palun|soovin|sooviksin|tahan|tahaksin|laud\w*|kell|"
+        r"хочу|пожалуйста|стол\w*|на|в|"
+        r"broneer\w*|bruneer\w*|reserve\w*|book\w*|заброни\w*|брони\w*)\b",
+        " ",
+        remaining,
+    )
+    if re.search(r"\w", remaining):
+        return None
+    if party:
+        count = int(party[0]) if party[0].isdigit() else counts[party[0]]
+        if not 1 <= count <= 6:
+            return None
+        fields["party_size"] = count
+    if not asking and not (dates or clocks or party):
+        return None
+    return fields
 
 
 DEMO_PROFILE_TOOL = {
@@ -351,6 +572,41 @@ PLAN_STAY_TOOL = {
         "additionalProperties": False,
     },
 }
+PLAN_TABLE_TOOL = {
+    "name": "plan_demo_table",
+    "description": "Search, hold and prepare an exact fictional table request. Never confirm. Read the server recap and await new final consent after delivery.",
+    "parameters": {
+        "type": "object",
+        "required": ["date", "start_time", "party_size"],
+        "properties": {
+            "date": {"type": "string", "description": "YYYY-MM-DD"},
+            "start_time": {
+                "type": "string",
+                "description": "HH:MM, Tallinn local time",
+            },
+            "party_size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "All seated diners, including children. Never assume a default.",
+            },
+            "guest_fixture_id": {"type": "string", "default": "guest-001"},
+        },
+        "additionalProperties": False,
+    },
+}
+PREPARE_TABLE_TOOL = {
+    **copy.deepcopy(PREPARE_TOOL),
+    "name": "prepare_demo_table",
+    "description": "Prepare an owned live table hold for a disclosed fictional guest; read exact recap and await a new final consent after delivery.",
+}
+TABLE_CONVERSATION_NAMES = {
+    "get_demo_profile",
+    "get_table_catalogue",
+    "plan_demo_table",
+    "confirm_table_booking",
+    "cancel_table_booking",
+}
 CONVERSATION_DESCRIPTIONS = {
     "get_demo_profile": "Fictional profile/FAQ only; not needed for booking.",
     "plan_demo_booking": PLAN_TOOL["description"],
@@ -367,6 +623,10 @@ CONVERSATION_DESCRIPTIONS = {
     "prepare_demo_stay": "Prepare a held room for a fictional guest; read recap and wait for new consent.",
     "confirm_booking": "Confirm owned prepared room hold after new final user consent. Server binds guest.",
     "cancel_booking": "Cancel latest owned room booking after explicit final user cancellation intent.",
+    "get_table_catalogue": "Read fictional restaurant tables, capacities, opening hours and sitting rules. Not availability.",
+    "plan_demo_table": PLAN_TABLE_TOOL["description"],
+    "confirm_table_booking": "Confirm an owned prepared table hold only after later final consent following exact recap delivery. The server binds guest.",
+    "cancel_table_booking": "Cancel an owned table booking after explicit final cancellation intent.",
 }
 
 PREPARE_STAY_TOOL = {
@@ -374,6 +634,89 @@ PREPARE_STAY_TOOL = {
     "name": "prepare_demo_stay",
     "description": CONVERSATION_DESCRIPTIONS["prepare_demo_stay"],
 }
+
+
+def _table_request_error(date, start_time, party_size):
+    if (
+        not isinstance(date, str)
+        or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date)
+        or not isinstance(start_time, str)
+        or not re.fullmatch(r"\d{2}:\d{2}", start_time)
+        or type(party_size) is not int
+        or not 1 <= party_size <= 6
+    ):
+        return "invalid_arguments"
+    try:
+        naive = datetime.strptime(date + " " + start_time, "%Y-%m-%d %H:%M")
+        zone = ZoneInfo(DEMO_TIMEZONE)
+        instants = {
+            local.astimezone(timezone.utc)
+            for fold in (0, 1)
+            for local in (naive.replace(tzinfo=zone, fold=fold),)
+            if local.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+            == naive
+        }
+        if len(instants) != 1:
+            return "invalid_arguments"
+    except ValueError:
+        return "invalid_arguments"
+    return (
+        "past_datetime" if next(iter(instants)) <= datetime.now(timezone.utc) else None
+    )
+
+
+def _table_snapshot(row):
+    """Copy only validated backend table facts, never contacts or extra commands."""
+    fields = (
+        "table_offer_id",
+        "date",
+        "start_time",
+        "start",
+        "end",
+        "party_size",
+        "duration_minutes",
+        "table_id",
+        "table_name",
+        "capacity",
+        "venue_name",
+        "timezone",
+    )
+    snapshot = {key: row[key] for key in fields}
+    if (
+        any(
+            not isinstance(snapshot[key], str)
+            or not snapshot[key].strip()
+            or len(snapshot[key]) > 200
+            for key in ("table_offer_id", "table_id", "table_name", "venue_name")
+        )
+        or snapshot["timezone"] != DEMO_TIMEZONE
+        or type(snapshot["party_size"]) is not int
+        or not 1 <= snapshot["party_size"] <= 6
+        or type(snapshot["capacity"]) is not int
+        or snapshot["capacity"] < snapshot["party_size"]
+        or type(snapshot["duration_minutes"]) is not int
+        or not 1 <= snapshot["duration_minutes"] <= 1440
+    ):
+        raise ValueError
+    start, end = (datetime.fromisoformat(snapshot[key]) for key in ("start", "end"))
+    if start.tzinfo is None or end.tzinfo is None or end <= start:
+        raise ValueError
+    start_local, end_local = (
+        instant.astimezone(ZoneInfo(DEMO_TIMEZONE)) for instant in (start, end)
+    )
+    if (
+        start_local.date().isoformat() != snapshot["date"]
+        or start_local.strftime("%H:%M") != snapshot["start_time"]
+        or start_local.second
+        or start_local.microsecond
+        or (
+            end.astimezone(timezone.utc) - start.astimezone(timezone.utc)
+        ).total_seconds()
+        != snapshot["duration_minutes"] * 60
+    ):
+        raise ValueError
+    snapshot["start"], snapshot["end"] = start_local.isoformat(), end_local.isoformat()
+    return snapshot
 
 
 def validate_environment(env=None):
@@ -448,22 +791,38 @@ def safe_speech(text, results, language="et"):
 class CallTools:
     """Never accept model-controlled ownership or write identity."""
 
-    def __init__(self, dispatcher, *, call_id=None, language="et"):
+    def __init__(self, dispatcher, *, call_id=None, language="et", business=None):
         if language not in LANGUAGES:
             raise ValueError("unsupported telephone language")
+        self.business = (
+            business
+            if business is not None
+            else getattr(
+                dispatcher,
+                "business",
+                "restaurant"
+                if getattr(dispatcher, "_table", None) is not None
+                else "legacy",
+            )
+        )
+        if self.business not in {"legacy", "restaurant"}:
+            raise ValueError("unsupported telephone business")
         self.language = language
-        self.conversation = Conversation()
+        self.conversation = Conversation(business=self.business)
         self.clarification = None
         self.unsupported_language = False
         self.dispatcher = dispatcher
         self.call_id = validate_call_id(
             uuid.uuid4().hex if call_id is None else call_id
         )
-        self.demo = load_demo_data()
+        self.demo = load_demo_data(business=self.business)
+        allowed = (
+            TABLE_TOOLS if self.business == "restaurant" else SLOT_TOOLS | STAY_TOOLS
+        )
         self.schemas = [
             copy.deepcopy(t["function"])
             for t in dispatcher.available_tools()
-            if t["function"]["name"] in SLOT_TOOLS | STAY_TOOLS
+            if t["function"]["name"] in allowed
         ]
         for schema in self.schemas:
             schema["parameters"].get("properties", {}).pop("idempotency_key", None)
@@ -491,10 +850,15 @@ class CallTools:
             self.schemas.append(copy.deepcopy(PREPARE_STAY_TOOL))
             if any(s["name"] == "get_stay_catalogue" for s in self.schemas):
                 self.schemas.append(copy.deepcopy(PLAN_STAY_TOOL))
+        if any(s["name"] == "confirm_table_booking" for s in self.schemas):
+            self.schemas.extend(
+                (copy.deepcopy(PREPARE_TABLE_TOOL), copy.deepcopy(PLAN_TABLE_TOOL))
+            )
         self.names = {s["name"] for s in self.schemas}
         self.holds, self.bookings = set(), set()
         self.slots, self.held_slots = {}, {}
         self.offers, self.held_stays = {}, {}
+        self.table_offers, self.held_tables = {}, {}
         self._hold_order = []
         self.booking_kinds = {}
         self.pending: dict[str, Any] | None = None
@@ -522,19 +886,26 @@ class CallTools:
 
     @property
     def language_instructions(self):
+        if self.business == "restaurant":
+            return ""
         if self.language != "ru":
             return ""
-        prompts = [localize(text, "ru") for text in (
-            ASK_DATE_TIME, ASK_DATE, ASK_TIME,
-            "Kas soovid broneerida spaahooldust või hotellituba?",
-            "Millist spaateenust soovid ja mis kuupäevaks?",
-            "Mis kellaaega eelistad?",
-            "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
-            "Millist toatüüpi eelistad?",
-            "Tere! Kuidas saan aidata?",
-            "Kas soovid veel midagi küsida?",
-            "Aitäh! Head päeva!",
-        )]
+        prompts = [
+            localize(text, "ru")
+            for text in (
+                ASK_DATE_TIME,
+                ASK_DATE,
+                ASK_TIME,
+                "Kas soovid broneerida spaahooldust või hotellituba?",
+                "Millist spaateenust soovid ja mis kuupäevaks?",
+                "Mis kellaaega eelistad?",
+                "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
+                "Millist toatüüpi eelistad?",
+                "Tere! Kuidas saan aidata?",
+                "Kas soovid veel midagi küsida?",
+                "Aitäh! Head päeva!",
+            )
+        ]
         return (
             "\nCurrent caller language: Russian. Respond ONLY in Russian. "
             "This overrides earlier Estonian language/wording instructions. "
@@ -557,6 +928,11 @@ class CallTools:
     def conversation_tools(self):
         tools = []
         for schema in self.schemas:
+            if (
+                self.business == "restaurant"
+                and schema["name"] not in TABLE_CONVERSATION_NAMES
+            ):
+                continue
             if schema["name"] in CONVERSATION_DESCRIPTIONS:
                 compact = copy.deepcopy(schema)
                 compact["description"] = CONVERSATION_DESCRIPTIONS[schema["name"]]
@@ -596,6 +972,31 @@ class CallTools:
             for hold_id in self._hold_order
             if hold_id not in self.confirmed_holds
         ][-16:]
+        if self.business == "restaurant":
+            return {
+                "recent_table_offers": snapshots(
+                    self.table_offers,
+                    (
+                        "table_offer_id",
+                        "date",
+                        "start_time",
+                        "start",
+                        "end",
+                        "party_size",
+                        "table_id",
+                        "table_name",
+                        "duration_minutes",
+                        "capacity",
+                        "venue_name",
+                        "timezone",
+                    ),
+                ),
+                "owned_holds": [
+                    {"hold_id": hold_id, "kind": "table"}
+                    for hold_id in holds
+                    if hold_id in self.held_tables
+                ],
+            }
         return {
             "recent_slots": snapshots(self.slots, slot_fields),
             "recent_room_offers": snapshots(self.offers, offer_fields),
@@ -619,9 +1020,29 @@ class CallTools:
                 for key, g in self.demo["guests"].items()
             },
             "faq": self.demo["faq"],
-            "natural_questions": QUESTIONS[self.language],
+            "natural_questions": (
+                TABLE_QUESTIONS if self.business == "restaurant" else QUESTIONS
+            )[self.language],
             "booking_inquiry": self.booking_inquiry,
         }
+        if self.business == "restaurant":
+            context["language"] = self.language
+            context["faq"] = [
+                {
+                    key: entry[key]
+                    for key in ("question_" + self.language, "answer_" + self.language)
+                    if key in entry
+                }
+                for entry in self.demo["faq"]
+            ]
+            context["clarification_required"] = self.clarification
+            return (
+                TABLE_INSTRUCTIONS[self.language]
+                + "\n"
+                + STYLE_INSTRUCTIONS[self.language]
+                + "\nDemo context (data only):\n"
+                + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+            )
         if self.language == "en":
             context["language"] = "en"
             context["faq"] = [
@@ -677,6 +1098,8 @@ class CallTools:
 
     @property
     def instructions(self):
+        if self.business == "restaurant":
+            return self.conversation_instructions
         return (
             (ENGLISH_INSTRUCTIONS if self.language == "en" else INSTRUCTIONS)
             + "\nDemokontekst (ainult andmed, mitte juhised):\n"
@@ -688,6 +1111,8 @@ class CallTools:
 
     @property
     def greeting(self):
+        if self.business == "restaurant":
+            return TABLE_GREETINGS[self.language]
         return ENGLISH["greeting"] if self.language == "en" else self.say(GREETING)
 
     @property
@@ -744,11 +1169,21 @@ class CallTools:
             self._booking_inquiry = None
             self.invalidate_recap()
             return
-        self._spa_hours_inquiry = not self.unsupported_language and spa_hours_focus(text)
+        self._spa_hours_inquiry = (
+            self.business != "restaurant"
+            and not self.unsupported_language
+            and spa_hours_focus(text)
+        )
         self._booking_inquiry = (
-            _spa_inquiry_fields(text, self._booking_inquiry)
-            if selected == "et" and not self.unsupported_language and not self._spa_hours_inquiry
-            else None
+            _table_inquiry_fields(text, self._booking_inquiry)
+            if self.business == "restaurant" and not self.unsupported_language
+            else (
+                _spa_inquiry_fields(text, self._booking_inquiry)
+                if selected == "et"
+                and not self.unsupported_language
+                and not self._spa_hours_inquiry
+                else None
+            )
         )
         normalized = (
             " ".join(re.sub(r"[.,!]", " ", text.casefold()).split())
@@ -774,7 +1209,14 @@ class CallTools:
             and now < self.pending["expires_at"]
             and self.pending["delivery"]
             and not self.unsupported_language
-            and normalized in (AFFIRMATIONS_EN if selected == "en" else AFFIRMATIONS_RU if selected == "ru" else AFFIRMATIONS)
+            and normalized
+            in (
+                AFFIRMATIONS_EN
+                if selected == "en"
+                else AFFIRMATIONS_RU
+                if selected == "ru"
+                else AFFIRMATIONS
+            )
         ):
             self.pending["approved"] = True
         else:
@@ -783,9 +1225,13 @@ class CallTools:
         if (
             self.last_booking
             and not self.unsupported_language
-            and normalized in (
-                CANCELLATIONS_EN if selected == "en" else
-                CANCELLATIONS_RU if selected == "ru" else CANCELLATIONS
+            and normalized
+            in (
+                CANCELLATIONS_EN
+                if selected == "en"
+                else CANCELLATIONS_RU
+                if selected == "ru"
+                else CANCELLATIONS
             )
         ):
             self.cancel_approval = {
@@ -797,10 +1243,15 @@ class CallTools:
     def spa_hours_inquiry(self):
         """A current working-plan request, never availability or write consent."""
         return bool(
-            self._spa_hours_inquiry and "get_slot_catalogue" in self.names
-            and not self.unsupported_language and not self.clarification
-            and not self.pending and not self.cancel_approval and not self.turn_mutation
-            and not self.mutation_uncertain and self.outcome != "write_outcome_unknown"
+            self._spa_hours_inquiry
+            and "get_slot_catalogue" in self.names
+            and not self.unsupported_language
+            and not self.clarification
+            and not self.pending
+            and not self.cancel_approval
+            and not self.turn_mutation
+            and not self.mutation_uncertain
+            and self.outcome != "write_outcome_unknown"
         )
 
     @property
@@ -808,20 +1259,39 @@ class CallTools:
         """Parsed requested fields for the next turn; no transcript or backend IDs."""
         return (
             dict(self._booking_inquiry)
-            if self.language == "et" and not self.unsupported_language and self._booking_inquiry
+            if (self.business == "restaurant" or self.language == "et")
+            and not self.unsupported_language
+            and self._booking_inquiry
             else None
         )
 
     def inquiry_reply(self):
         """Trusted clarification only, without a provider call or booking action."""
         if (
-            self.language != "et" or self.unsupported_language
-            or not self._booking_inquiry or self.results or self.pending
-            or self.cancel_approval or self.turn_mutation or self.mutation_uncertain
+            (self.language != "et" and self.business != "restaurant")
+            or self.unsupported_language
+            or not self._booking_inquiry
+            or self.results
+            or self.pending
+            or self.cancel_approval
+            or self.turn_mutation
+            or self.mutation_uncertain
             or self.outcome == "write_outcome_unknown"
         ):
             return None
-        day, start = self._booking_inquiry.get("date"), self._booking_inquiry.get("start_time")
+        if self.business == "restaurant":
+            for field, question in (
+                ("date", "date"),
+                ("start_time", "time"),
+                ("party_size", "party_size"),
+            ):
+                if field not in self._booking_inquiry:
+                    return TABLE_QUESTIONS[self.language][question][0]
+            return None
+        day, start = (
+            self._booking_inquiry.get("date"),
+            self._booking_inquiry.get("start_time"),
+        )
         if not day and not start:
             return ASK_DATE_TIME
         if not day:
@@ -851,6 +1321,22 @@ class CallTools:
             self.invalidate_recap()
             return None
         fields = pending["recap"]
+        if pending.get("kind") == "table":
+            if self.language == "en":
+                return (
+                    f"Fictional table test booking: {fields['venue_name']}, {fields['table_name']}, "
+                    f"{fields['date']} at {fields['start_time']}, Tallinn local time, "
+                    f"{fields['party_size']} diners in total including children, "
+                    f"duration {fields['duration_minutes']} minutes, fictional guest {fields['guest_name']}. "
+                    f'Do you confirm this test booking? Say: "{CONSENT["en"]}"'
+                )
+            return self.say(
+                "Fiktiivne laua testbroneering: {venue_name}, {table_name}, {date} kell {start_time}, "
+                "Tallinna aja järgi, kokku {party_size} inimest koos lastega, kestus {duration_minutes} minutit, "
+                "demokülaline {guest_name}. Kas kinnitad selle testbroneeringu? Ütle: „{consent}”",
+                **fields,
+                consent=CONSENT[self.language],
+            )
         if pending.get("kind") != "stay":
             start = datetime.fromisoformat(fields["start"])
             if start.tzinfo is not None:
@@ -877,12 +1363,23 @@ class CallTools:
                 "{nights} ööd, {adults} täiskasvanut ja {children} last, "
                 "külaline {guest_name}. Näidishind kokku {quoted_total} {currency}. "
                 "Makseid ei koguta. Kas kinnitad selle testbroneeringu? Ütle: „{consent}”",
-                **fields, consent=self.say(CONSENT_TEXT),
+                **fields,
+                consent=self.say(CONSENT_TEXT),
             )
         if self.language == "ru":
             month = (
-                "января", "февраля", "марта", "апреля", "мая", "июня",
-                "июля", "августа", "сентября", "октября", "ноября", "декабря",
+                "января",
+                "февраля",
+                "марта",
+                "апреля",
+                "мая",
+                "июня",
+                "июля",
+                "августа",
+                "сентября",
+                "октября",
+                "ноября",
+                "декабря",
             )[start.month - 1]
             return (
                 f"Тестовое бронирование: {fields['service_name']}, "
@@ -995,13 +1492,51 @@ class CallTools:
             return reply
         if self.turn_mutation:
             return mutation_replies[self.turn_mutation]
+        if self.business == "restaurant":
+            allowed = approved_dialogue(self.language, business="restaurant") | {
+                self.greeting,
+                self.fallback,
+                REPEAT_PROMPT[self.language],
+                STT_UNAVAILABLE[self.language],
+                TURN_UNAVAILABLE[self.language],
+            }
+            if english:
+                allowed.update(
+                    ENGLISH[key] for key in ("ambiguous_date", "ambiguous_time")
+                )
+            table_questions = {
+                question
+                for variants in TABLE_QUESTIONS[self.language].values()
+                for question in variants
+            }
+            if text in table_questions and self.booking_inquiry:
+                return self.inquiry_reply() or (
+                    ENGLISH["unverified"] if english else self.say(UNVERIFIED_REPLY)
+                )
+            if text in allowed or any(
+                text == entry.get("answer_" + self.language)
+                for entry in self.demo["faq"]
+            ):
+                return text
+            for result in reversed(results):
+                if result.get("kind") == "table" or isinstance(
+                    result.get("tables"), list
+                ):
+                    canonical = self._render_read_result(
+                        result, self.language, focus=self.conversation.focus
+                    )
+                    if canonical:
+                        return safe_speech(canonical, [], self.language)
+            return ENGLISH["unverified"] if english else UNVERIFIED_REPLY
         clarification = self.inquiry_reply() if not results else None
         if clarification and _is_spa_clarification(text):
             return clarification
         static = (
-            ENGLISH_STATIC if english else
-            {localize(reply, "ru") for reply in STATIC_REPLIES}
-            if self.language == "ru" else STATIC_REPLIES | {ENGLISH_INVITATION}
+            ENGLISH_STATIC
+            if english
+            else {localize(reply, "ru") for reply in STATIC_REPLIES}
+            if self.language == "ru"
+            else STATIC_REPLIES | {ENGLISH_INVITATION}
         ) | approved_dialogue(self.language)
         provider_prompts = (
             REPEAT_PROMPT[self.language],
@@ -1021,7 +1556,9 @@ class CallTools:
             canonical = (
                 render_english_read(result, focus=self.conversation.focus)
                 if english
-                else self._render_read_result(result, self.language, focus=self.conversation.focus)
+                else self._render_read_result(
+                    result, self.language, focus=self.conversation.focus
+                )
             )
             if canonical:
                 return safe_speech(canonical, results, self.language)
@@ -1030,11 +1567,89 @@ class CallTools:
     @staticmethod
     def _render_read_result(result, language="et", *, focus=None):
         """Render verified reads as natural speech, without model paraphrases."""
+
         def say(text, **values):
             translated = localize(text, language)
             return translated.format(**values) if values else translated
 
         try:
+            if isinstance(result.get("tables"), list):
+                venue, rules = result["venue"], result["rules"]
+                opens, closes = rules["opening_time"], rules["closing_time"]
+                if (
+                    not isinstance(venue["name"], str)
+                    or not venue["name"].strip()
+                    or venue.get("timezone") != DEMO_TIMEZONE
+                    or any(
+                        not isinstance(value, str)
+                        or not re.fullmatch(r"\d{2}:\d{2}", value)
+                        for value in (opens, closes)
+                    )
+                    or datetime.strptime(opens, "%H:%M")
+                    >= datetime.strptime(closes, "%H:%M")
+                    or any(
+                        type(rules[key]) is not int or rules[key] <= 0
+                        for key in (
+                            "duration_minutes",
+                            "max_party_size",
+                            "horizon_days",
+                        )
+                    )
+                ):
+                    raise ValueError
+                if language == "en":
+                    hours = f"Fictional restaurant {venue['name']} is open daily {opens}–{closes}, Tallinn local time. Table availability needs a separate check."
+                    if focus == "hours":
+                        return hours
+                    choices = "; ".join(
+                        f"{table['name']}, up to {table['capacity']} diners"
+                        for table in result["tables"][:5]
+                    )
+                    return f"{hours} Tables: {choices}. Sittings last {rules['duration_minutes']} minutes, for up to {rules['max_party_size']} diners including children, up to {rules['horizon_days']} days ahead. Tables are not combined."
+                hours = say(
+                    "Fiktiivne restoran {name} on avatud iga päev {opens}–{closes} Tallinna aja järgi. Laua saadavust tuleb eraldi kontrollida.",
+                    name=venue["name"],
+                    opens=opens,
+                    closes=closes,
+                )
+                if focus == "hours":
+                    return hours
+                choices = "; ".join(
+                    say("{name}, kuni {capacity} sööjat", **table)
+                    for table in result["tables"][:5]
+                )
+                return hours + say(
+                    " Lauad: {choices}. Broneering kestab {duration_minutes} minutit, kuni {max_party_size} inimesele koos lastega, kuni {horizon_days} päeva ette. Laudu ei ühendata.",
+                    choices=choices,
+                    **rules,
+                )
+            if result.get("kind") == "table" and isinstance(result.get("offers"), list):
+                if not result["offers"]:
+                    return (
+                        "No demo tables are available for that exact date, time and diner count. Please choose another date or time."
+                        if language == "en"
+                        else say(
+                            "Soovitud kuupäeval, kellaajal ja inimeste arvuga vaba demolauda ei ole. Palun vali teine kuupäev või kellaaeg."
+                        )
+                    )
+                offers = [_table_snapshot(offer) for offer in result["offers"][:3]]
+                if language == "en":
+                    choices = "; ".join(
+                        f"{offer['table_name']}, {offer['date']} at {offer['start_time']}, {offer['party_size']} diners, {offer['duration_minutes']} minutes"
+                        for offer in offers
+                    )
+                    return f"Available fictional table offers: {choices}, Tallinn local time. No table booking is confirmed yet."
+                choices = "; ".join(
+                    say(
+                        "{table_name}, {date} kell {start_time}, {party_size} inimest, {duration_minutes} minutit",
+                        **offer,
+                    )
+                    for offer in offers
+                )
+                return say(
+                    "Saadaval fiktiivsed lauapakkumised: {choices}, Tallinna aja järgi. Lauabroneering ei ole veel kinnitatud.",
+                    choices=choices,
+                )
             if isinstance(result.get("room_types"), list):
                 rooms = result["room_types"]
                 choices = "; ".join(
@@ -1045,8 +1660,9 @@ class CallTools:
                     "Fiktiivse hotelli toatüübid: {choices}. "
                     "Saabumine alates {checkin_time}, lahkumine kuni {checkout_time}. "
                     "Mis kuupäevadel soovid peatuda ja mitmele külalisele?",
-                    choices=choices, checkin_time=property['checkin_time'],
-                    checkout_time=property['checkout_time'],
+                    choices=choices,
+                    checkin_time=property["checkin_time"],
+                    checkout_time=property["checkout_time"],
                 )
             if isinstance(result.get("services"), list) and isinstance(
                 result.get("providers"), list
@@ -1094,40 +1710,59 @@ class CallTools:
                         for summary, labels in groups.items()
                     )
                     if schedule:
-                        schedules.append(say(
-                            "{name} tööajad: {schedule}",
-                            name=provider['name'], schedule=schedule,
-                        ))
+                        schedules.append(
+                            say(
+                                "{name} tööajad: {schedule}",
+                                name=provider["name"],
+                                schedule=schedule,
+                            )
+                        )
                 schedule = (
                     ". ".join(schedules)
                     if schedules
                     else say("Tööaegu ei ole andmebaasist kinnitatud")
                 )
                 if focus == "hours":
-                    return say("{schedule}. Vaba aeg tuleb eraldi kontrollida.", schedule=schedule)
+                    return say(
+                        "{schedule}. Vaba aeg tuleb eraldi kontrollida.",
+                        schedule=schedule,
+                    )
                 return say(
                     "Demo spaateenused: {choices}. {schedule}. Vaba aeg tuleb eraldi kontrollida.",
-                    choices=choices, schedule=schedule,
+                    choices=choices,
+                    schedule=schedule,
                 )
             if isinstance(result.get("offers"), list):
                 offers = result["offers"]
                 if not offers:
-                    return say("Soovitud kuupäevadel ja külaliste arvuga vabu demotube ei ole. Kas soovid teisi kuupäevi?")
+                    return say(
+                        "Soovitud kuupäevadel ja külaliste arvuga vabu demotube ei ole. Kas soovid teisi kuupäevi?"
+                    )
                 return (
                     say("Saadaval demotoapakkumised: ")
                     + "; ".join(
-                        say("{label}, {checkin} kuni {checkout}, kokku {quoted_total} {currency}", **o)
+                        say(
+                            "{label}, {checkin} kuni {checkout}, kokku {quoted_total} {currency}",
+                            **o,
+                        )
                         for o in offers[:3]
                     )
-                    + say(". Need on fiktiivsed näidishinnad. Millist toatüüpi eelistad?")
+                    + say(
+                        ". Need on fiktiivsed näidishinnad. Millist toatüüpi eelistad?"
+                    )
                 )
             if isinstance(result.get("slots"), list):
                 slots = result["slots"]
                 if not slots:
-                    return say("Selleks kuupäevaks vabu spaademo aegu ei ole. Kas soovid teist kuupäeva?")
+                    return say(
+                        "Selleks kuupäevaks vabu spaademo aegu ei ole. Kas soovid teist kuupäeva?"
+                    )
                 starts = [datetime.fromisoformat(s["start"]) for s in slots[:4]]
                 return (
-                    say("Saadaval spaademo ajad {date}: ", date=starts[0].date().isoformat())
+                    say(
+                        "Saadaval spaademo ajad {date}: ",
+                        date=starts[0].date().isoformat(),
+                    )
                     + ", ".join(s.strftime("%H:%M") for s in starts)
                     + say(". Mis kellaaega eelistad?")
                 )
@@ -1364,6 +1999,148 @@ class CallTools:
             return {"error": "turn_superseded"}
         return prepared
 
+    async def plan_demo_table(
+        self, date, start_time, party_size, guest_fixture_id="guest-001"
+    ):
+        """Reuse owned search/hold/preparation gates; no confirmation or substitution."""
+        turn_serial = self._turn_serial
+        self.invalidate_recap()
+        self.cancel_approval = None
+        if self.business != "restaurant":
+            return {"error": "not_allowed"}
+        error = _table_request_error(date, start_time, party_size)
+        if error:
+            return {"error": error}
+        if (
+            not isinstance(guest_fixture_id, str)
+            or guest_fixture_id not in self.demo["guests"]
+        ):
+            return {"error": "unknown_guest_fixture"}
+        catalogue = await self.dispatch("get_table_catalogue", {})
+        if self._turn_serial != turn_serial:
+            return {"error": "turn_superseded"}
+        if catalogue.get("error"):
+            return catalogue
+        if not isinstance(catalogue.get("tables"), list) or not catalogue["tables"]:
+            return {"error": "booking_unavailable"}
+        searched = await self.dispatch(
+            "search_tables",
+            {"date": date, "start_time": start_time, "party_size": party_size},
+        )
+        if self._turn_serial != turn_serial:
+            return {"error": "turn_superseded"}
+        if searched.get("error"):
+            return searched
+        if not searched["offers"]:
+            return {"error": "table_unavailable"}
+        selected = min(
+            searched["offers"],
+            key=lambda offer: (
+                offer["capacity"],
+                offer["table_id"],
+                offer["table_offer_id"],
+            ),
+        )
+        held = await self.dispatch(
+            "hold_table", {"table_offer_id": selected["table_offer_id"]}
+        )
+        if self._turn_serial != turn_serial:
+            return {"error": "turn_superseded"}
+        if held.get("error"):
+            return held
+        prepared = await self.dispatch(
+            "prepare_demo_table",
+            {"hold_id": held["hold_id"], "guest_fixture_id": guest_fixture_id},
+        )
+        if self._turn_serial != turn_serial:
+            return {"error": "turn_superseded"}
+        return prepared
+
+    async def prepare_demo_table(self, hold_id, guest_fixture_id="guest-001"):
+        turn_serial = self._turn_serial
+        self.invalidate_recap()
+        self.cancel_approval = None
+        if self.business != "restaurant":
+            return {"error": "not_allowed"}
+        if not isinstance(hold_id, str) or hold_id not in self.held_tables:
+            return {"error": "not_owned"}
+        if hold_id in self.confirmed_holds:
+            return {"error": "already_confirmed"}
+        if (
+            not isinstance(guest_fixture_id, str)
+            or guest_fixture_id not in self.demo["guests"]
+        ):
+            return {"error": "unknown_guest_fixture"}
+        if (
+            hold_id in self.confirmation_guests
+            and self.confirmation_guests[hold_id] != guest_fixture_id
+        ):
+            return {"error": "guest_fixture_locked"}
+        try:
+            hold = await self.dispatcher.get_table_hold(hold_id)
+            if self._turn_serial != turn_serial:
+                return {"error": "turn_superseded"}
+            if hold is None:
+                return {"error": "hold_expired_or_unknown"}
+            owned = self.held_tables[hold_id]
+            if (
+                hold.hold_id != hold_id
+                or hold.price_quote_id != owned["table_offer_id"]
+                or hold.quoted_total is not None
+            ):
+                raise ValueError
+            expires_at = hold.expires_at
+            if type(expires_at) not in (int, float) or not math.isfinite(expires_at):
+                raise ValueError
+            if expires_at <= time.monotonic():
+                return {"error": "hold_expired_or_unknown"}
+            recap = _table_snapshot(
+                {**hold.payload["recap"], "table_offer_id": hold.price_quote_id}
+            )
+            if any(
+                recap[key] != owned[key]
+                for key in (
+                    "table_offer_id",
+                    "date",
+                    "start_time",
+                    "start",
+                    "end",
+                    "party_size",
+                    "duration_minutes",
+                    "venue_name",
+                )
+            ):
+                raise ValueError
+            if recap["venue_name"] != self.demo["profile"]["name"]:
+                raise ValueError
+            guest = scoped_guest(self.demo, guest_fixture_id, self.call_id)
+            recap["guest_name"] = f"{guest['firstName']} {guest['lastName']}"
+        except Exception:
+            if self._turn_serial != turn_serial:
+                return {"error": "turn_superseded"}
+            return {"error": "booking_unavailable"}
+        self.pending = {
+            "kind": "table",
+            "hold_id": hold_id,
+            "guest_fixture_id": guest_fixture_id,
+            "approved": False,
+            "delivery": False,
+            "recap": copy.deepcopy(recap),
+            "expires_at": min(expires_at, time.monotonic() + CONSENT_TIMEOUT_SECONDS),
+        }
+        return {
+            "ok": True,
+            "kind": "table",
+            "synthetic": True,
+            "call_id": self.call_id,
+            "hold_id": hold_id,
+            "guest_fixture_id": guest_fixture_id,
+            "recap": recap,
+            "consent_prompt_et": f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”",
+            "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
+            "consent_prompt_ru": f"Подтверждаете это тестовое бронирование? Скажите: «{CONSENT['ru']}»",
+        }
+
     async def prepare_demo_booking(self, hold_id, guest_fixture_id="guest-001"):
         turn_serial = self._turn_serial
         self.pending = None
@@ -1433,7 +2210,7 @@ class CallTools:
                 f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”"
             ),
             "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
-            "consent_prompt_ru": f'Подтверждаете это тестовое бронирование? Скажите: «{CONSENT["ru"]}»',
+            "consent_prompt_ru": f"Подтверждаете это тестовое бронирование? Скажите: «{CONSENT['ru']}»",
         }
 
     async def prepare_demo_stay(self, hold_id, guest_fixture_id="guest-001"):
@@ -1501,7 +2278,7 @@ class CallTools:
             **quote,
             "consent_prompt_et": f"Kas kinnitad selle testbroneeringu? Ütle: „{CONSENT_TEXT}”",
             "consent_prompt_en": f'Do you confirm this test booking? Say: "{CONSENT["en"]}"',
-            "consent_prompt_ru": f'Подтверждаете это тестовое бронирование? Скажите: «{CONSENT["ru"]}»',
+            "consent_prompt_ru": f"Подтверждаете это тестовое бронирование? Скажите: «{CONSENT['ru']}»",
         }
 
     async def dispatch(self, name, args) -> dict[str, Any]:
@@ -1531,6 +2308,12 @@ class CallTools:
         self.count += 1
         if self.count > 64 or not isinstance(name, str) or name not in self.names:
             return {"error": "not_allowed"}
+        if self.business == "restaurant" and name not in TABLE_TOOLS | {
+            "get_demo_profile",
+            "plan_demo_table",
+            "prepare_demo_table",
+        }:
+            return {"error": "not_allowed"}
         if (
             self.clarification or self.unsupported_language
         ) and name != "get_demo_profile":
@@ -1542,6 +2325,9 @@ class CallTools:
             "prepare_demo_stay",
             "plan_demo_booking",
             "plan_demo_stay",
+            "hold_table",
+            "prepare_demo_table",
+            "plan_demo_table",
         }:
             return self._unknown_mutation(name)
         if name in {
@@ -1553,6 +2339,10 @@ class CallTools:
             "prepare_demo_stay",
             "plan_demo_booking",
             "plan_demo_stay",
+            "search_tables",
+            "hold_table",
+            "prepare_demo_table",
+            "plan_demo_table",
         }:
             self.invalidate_recap()
             self.cancel_approval = None
@@ -1574,7 +2364,16 @@ class CallTools:
             or args["price_quote_id"] not in self.offers
         ):
             return {"error": "not_owned"}
-        if name in {"prepare_demo_booking", "prepare_demo_stay"} and (
+        if name == "hold_table" and (
+            not isinstance(args.get("table_offer_id"), str)
+            or args["table_offer_id"] not in self.table_offers
+        ):
+            return {"error": "not_owned"}
+        if name in {
+            "prepare_demo_booking",
+            "prepare_demo_stay",
+            "prepare_demo_table",
+        } and (
             not isinstance(args.get("hold_id"), str)
             or args["hold_id"] not in self.holds
         ):
@@ -1589,7 +2388,7 @@ class CallTools:
             not isinstance(args.get("booking_id"), str)
             or args.get("booking_id") not in self.bookings
             or self.booking_kinds.get(args.get("booking_id"), "slot")
-            != ("stay" if name == "cancel_booking" else "slot")
+            != TOOL_KINDS.get(name, "slot")
         ):
             return {"error": "not_owned"}
         args.pop("idempotency_key", None)
@@ -1605,6 +2404,16 @@ class CallTools:
             return {"error": "invalid_arguments"}
         if name == "get_demo_profile":
             return get_demo_profile(self.demo, call_id=self.call_id)
+        if name == "search_tables":
+            error = _table_request_error(
+                args["date"], args["start_time"], args["party_size"]
+            )
+            if error:
+                return {"error": error}
+        if name == "prepare_demo_table":
+            return await self.prepare_demo_table(**args)
+        if name == "plan_demo_table":
+            return await self.plan_demo_table(**args)
         if name == "prepare_demo_booking":
             return await self.prepare_demo_booking(**args)
         if name == "prepare_demo_stay":
@@ -1616,9 +2425,10 @@ class CallTools:
         action = hashlib.sha256(
             (name + json.dumps(args, sort_keys=True)).encode()
         ).hexdigest()
-        if name in {"hold_slot", "hold_offer"} | MUTATION_TOOLS:
+        if name in HOLD_TOOLS | MUTATION_TOOLS:
             # Stable per-call/action key; raw arguments remain memory-only.
-            args["idempotency_key"] = f"tel-{self.call_id}-{action}"
+            if name != "hold_table":
+                args["idempotency_key"] = f"tel-{self.call_id}-{action}"
             if action in self.actions:
                 if (
                     name in CONFIRM_TOOLS
@@ -1635,8 +2445,7 @@ class CallTools:
             if not (
                 self.pending
                 and self.pending["hold_id"] == args["hold_id"]
-                and self.pending.get("kind", "slot")
-                == ("stay" if name == "confirm_booking" else "slot")
+                and self.pending.get("kind", "slot") == TOOL_KINDS.get(name, "slot")
                 and self.pending["approved"]
                 and self.pending["delivery"]
                 and time.monotonic() < self.pending["expires_at"]
@@ -1645,6 +2454,11 @@ class CallTools:
             fixture = self.pending["guest_fixture_id"]
             self.confirmation_guests[args["hold_id"]] = fixture
             args["guest"] = scoped_guest(self.demo, fixture, self.call_id)
+            prepared_table = (
+                copy.deepcopy(self.pending["recap"])
+                if name == "confirm_table_booking"
+                else None
+            )
             self.pending = None
             self.cancel_approval = None
         if name in CANCEL_TOOLS:
@@ -1697,6 +2511,16 @@ class CallTools:
             return self._unknown_mutation(name)
         if result.get("error") or result.get("ok") is False:
             self.outcome = "booking_unavailable"
+        if name == "get_table_catalogue" and not result.get("error"):
+            venue = result.get("venue")
+            if (
+                not isinstance(venue, dict)
+                or venue.get("name") != self.demo["profile"]["name"]
+                or venue.get("timezone") != DEMO_TIMEZONE
+                or not isinstance(result.get("tables"), list)
+                or not self._render_read_result(result)
+            ):
+                return {"error": "booking_unavailable"}
         if name == "search_slots" and not result.get("error"):
             try:
                 owned = {}
@@ -1806,6 +2630,43 @@ class CallTools:
                 self._hold_order.append(hold_id)
             self.held_stays[hold_id] = copy.deepcopy(owned)
             self.outcome = "hold_created"
+        if name == "search_tables" and not result.get("error"):
+            try:
+                if not isinstance(result.get("offers"), list):
+                    raise ValueError
+                owned = {}
+                for offer in result["offers"]:
+                    snapshot = _table_snapshot(offer)
+                    if (
+                        any(
+                            snapshot[key] != args[key]
+                            for key in ("date", "start_time", "party_size")
+                        )
+                        or snapshot["venue_name"] != self.demo["profile"]["name"]
+                        or snapshot["table_offer_id"] in owned
+                    ):
+                        raise ValueError
+                    owned[snapshot["table_offer_id"]] = snapshot
+            except (KeyError, TypeError, ValueError):
+                return {"error": "booking_unavailable"}
+            self.table_offers.update(owned)
+            result = {"kind": "table", "offers": list(owned.values())}
+        if name == "hold_table" and not result.get("error"):
+            hold_id = result.get("hold_id")
+            owned = self.table_offers[args["table_offer_id"]]
+            if (
+                not isinstance(hold_id, str)
+                or not hold_id
+                or result.get("table_offer_id", result.get("price_quote_id"))
+                != owned["table_offer_id"]
+                or result.get("quoted_total") is not None
+            ):
+                return {"error": "booking_unavailable"}
+            self.holds.add(hold_id)
+            if hold_id not in self._hold_order:
+                self._hold_order.append(hold_id)
+            self.held_tables[hold_id] = copy.deepcopy(owned)
+            self.outcome = "hold_created"
         booking = result.get("booking")
         if (
             name in CONFIRM_TOOLS
@@ -1818,10 +2679,32 @@ class CallTools:
                 or (type(booking_id) is int and booking_id > 0)
             ):
                 return self._unknown_mutation(name)
+            if name == "confirm_table_booking" and (
+                not isinstance(booking_id, str)
+                or not re.fullmatch(r"table_[a-f0-9]{32}", booking_id)
+                or str(result.get("booking_id", booking_id)) != booking_id
+            ):
+                return self._unknown_mutation(name)
+            if name == "confirm_table_booking":
+                try:
+                    confirmed_table = _table_snapshot(
+                        {"table_offer_id": prepared_table["table_offer_id"], **booking}
+                    )
+                    if (
+                        any(
+                            value != prepared_table[key]
+                            for key, value in confirmed_table.items()
+                        )
+                        or booking.get("guest_name") != prepared_table["guest_name"]
+                        or booking.get("kind") != "table"
+                        or booking.get("status") != "confirmed"
+                        or booking.get("quoted_total") is not None
+                    ):
+                        raise ValueError
+                except (KeyError, TypeError, ValueError):
+                    return self._unknown_mutation(name)
             self.bookings.add(str(booking["id"]))
-            self.booking_kinds[str(booking["id"])] = (
-                "stay" if name == "confirm_booking" else "slot"
-            )
+            self.booking_kinds[str(booking["id"])] = TOOL_KINDS.get(name, "slot")
             self.last_booking = str(booking["id"])
             self.confirmed_holds.add(args["hold_id"])
             self.outcome = "booking_confirmed"
@@ -1841,6 +2724,16 @@ class CallTools:
                     checkout=stay.get("checkout"),
                     start_local="",
                 )
+            if name == "confirm_table_booking":
+                table = prepared_table
+                receipt.update(
+                    kind="table",
+                    date=table["date"],
+                    start_local=datetime.fromisoformat(table["start"])
+                    .astimezone(ZoneInfo(DEMO_TIMEZONE))
+                    .replace(tzinfo=None)
+                    .isoformat(sep=" "),
+                )
             self.booking_details[self.last_booking] = receipt
             self.booking_receipts.append(receipt)
             if self.history_enabled:
@@ -1859,6 +2752,12 @@ class CallTools:
             and result.get("ok") is True
             and not result.get("error")
         ):
+            if name == "cancel_table_booking" and (
+                result.get("booking_id") != args["booking_id"]
+                or result.get("kind") != "table"
+                or result.get("status") != "cancelled"
+            ):
+                return self._unknown_mutation(name)
             if str(result.get("booking_id", args["booking_id"])) != args["booking_id"]:
                 return self._unknown_mutation(name)
             self.outcome = "booking_cancelled"
@@ -1885,13 +2784,16 @@ class CallTools:
             in {
                 "hold_slot",
                 "hold_offer",
+                "hold_table",
                 "confirm_booking",
                 "cancel_booking",
                 "confirm_slot_booking",
                 "cancel_slot_booking",
+                "confirm_table_booking",
+                "cancel_table_booking",
             }
             and not result.get("error")
-            and (name in {"hold_slot", "hold_offer"} or result.get("ok") is True)
+            and (name in HOLD_TOOLS or result.get("ok") is True)
         ):
             self.actions[action] = copy.deepcopy(result)
         return copy.deepcopy(result)

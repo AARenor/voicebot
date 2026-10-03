@@ -25,36 +25,121 @@ def test_native_call_log_uses_the_shared_persistent_data_mount():
 
 def source_configuration(**overrides):
     values = {
-        key: "fixture" for key in (
-            "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "GROQ_API_KEY",
-            "AZURE_SPEECH_KEY", "AZURE_REGION", "EASY_BASE_URL", "EASY_API_KEY",
+        key: "fixture"
+        for key in (
+            "LIVEKIT_API_KEY",
+            "LIVEKIT_API_SECRET",
+            "GROQ_API_KEY",
+            "AZURE_SPEECH_KEY",
+            "AZURE_REGION",
+            "EASY_BASE_URL",
+            "EASY_API_KEY",
         )
     }
     values.update(EASY_DEMO_WRITES="1", EASY_STATE_DB="/data/easy-booking.db")
     values.update(overrides)
-    inspected = [{
-        "Config": {"Env": [key + "=" + value for key, value in values.items()]},
-        "Mounts": [{"Type": "volume", "Destination": "/data", "Name": "existing-booking-volume"}],
-    }]
+    inspected = [
+        {
+            "Config": {"Env": [key + "=" + value for key, value in values.items()]},
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Destination": "/data",
+                    "Name": "existing-booking-volume",
+                }
+            ],
+        }
+    ]
     return subprocess.CompletedProcess([], 0, stdout=json.dumps(inspected).encode())
 
 
-@pytest.mark.parametrize("paths,expected", [
-    ({}, {"STAY_STATE_DB": "/data/stay-booking.db", "CALLS_DB": "/data/calls.db"}),
-    ({"STAY_STATE_DB": ""}, {"STAY_STATE_DB": "/data/stay-booking.db", "CALLS_DB": "/data/calls.db"}),
-    ({"STAY_STATE_DB": "/data/custom-rooms.sqlite", "CALLS_DB": "/data/custom-history.sqlite"},
-     {"STAY_STATE_DB": "/data/custom-rooms.sqlite", "CALLS_DB": "/data/custom-history.sqlite"}),
-    ({"STAY_STATE_DB": "/data/room-state/rooms", "CALLS_DB": "/data/history/../calls"},
-     {"STAY_STATE_DB": "/data/room-state/rooms", "CALLS_DB": "/data/history/../calls"}),
-])
-def test_source_database_paths_and_defaults_override_unrelated_caller_paths(paths, expected):
+def test_restaurant_deploy_requires_no_legacy_credentials_or_writer_flag():
+    result = source_configuration(
+        EASY_BASE_URL="",
+        EASY_API_KEY="",
+        EASY_DEMO_WRITES="0",
+        RESTAURANT_STATE_DB="/data/custom-tables.sqlite",
+    )
     with (
-        patch.dict("os.environ", {
-            "EASY_STATE_DB": "/unrelated/spa.db",
-            "STAY_STATE_DB": "/unrelated/rooms.db",
-            "CALLS_DB": "/unrelated/calls.db",
-        }, clear=True),
-        patch.object(manage.subprocess, "run", return_value=source_configuration(**paths)),
+        patch.dict(
+            "os.environ", {"RESTAURANT_STATE_DB": "/unrelated/tables.db"}, clear=True
+        ),
+        patch.object(manage.subprocess, "run", return_value=result),
+    ):
+        env = manage.environment("trusted-web-fixture")
+    assert env["VOICEBOT_BUSINESS"] == "restaurant"
+    assert env["RESTAURANT_STATE_DB"] == "/data/custom-tables.sqlite"
+    assert env["VOICEBOT_DATA_VOLUME"] == "existing-booking-volume"
+    compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
+    assert (
+        "RESTAURANT_STATE_DB: ${RESTAURANT_STATE_DB:-/data/restaurant-booking.db}"
+        in compose
+    )
+    assert "VOICEBOT_BUSINESS: ${VOICEBOT_BUSINESS:-restaurant}" in compose
+
+
+@pytest.mark.parametrize(
+    "path", [":memory:", "/tmp/tables.db", "/data/../tmp/tables.db", ""]
+)
+def test_restaurant_deploy_rejects_nonshared_or_ephemeral_database(path):
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch.object(
+            manage.subprocess,
+            "run",
+            return_value=source_configuration(RESTAURANT_STATE_DB=path),
+        ),
+    ):
+        with pytest.raises(ValueError, match="shared database path"):
+            manage.environment("trusted-web-fixture")
+
+
+@pytest.mark.parametrize(
+    "paths,expected",
+    [
+        ({}, {"STAY_STATE_DB": "/data/stay-booking.db", "CALLS_DB": "/data/calls.db"}),
+        (
+            {"STAY_STATE_DB": ""},
+            {"STAY_STATE_DB": "/data/stay-booking.db", "CALLS_DB": "/data/calls.db"},
+        ),
+        (
+            {
+                "STAY_STATE_DB": "/data/custom-rooms.sqlite",
+                "CALLS_DB": "/data/custom-history.sqlite",
+            },
+            {
+                "STAY_STATE_DB": "/data/custom-rooms.sqlite",
+                "CALLS_DB": "/data/custom-history.sqlite",
+            },
+        ),
+        (
+            {
+                "STAY_STATE_DB": "/data/room-state/rooms",
+                "CALLS_DB": "/data/history/../calls",
+            },
+            {
+                "STAY_STATE_DB": "/data/room-state/rooms",
+                "CALLS_DB": "/data/history/../calls",
+            },
+        ),
+    ],
+)
+def test_source_database_paths_and_defaults_override_unrelated_caller_paths(
+    paths, expected
+):
+    with (
+        patch.dict(
+            "os.environ",
+            {
+                "EASY_STATE_DB": "/unrelated/spa.db",
+                "STAY_STATE_DB": "/unrelated/rooms.db",
+                "CALLS_DB": "/unrelated/calls.db",
+            },
+            clear=True,
+        ),
+        patch.object(
+            manage.subprocess, "run", return_value=source_configuration(**paths)
+        ),
     ):
         env = manage.environment("trusted-web-fixture")
     assert {key: env[key] for key in expected} == expected
@@ -65,16 +150,23 @@ def test_source_database_paths_and_defaults_override_unrelated_caller_paths(path
     assert "CALLS_DB: ${CALLS_DB:-/data/calls.db}" in compose
 
 
-@pytest.mark.parametrize("source_flags,caller_flag,expected", [
-    ({}, "0", "1"),
-    ({"STAY_DEMO_WRITES": ""}, "1", ""),
-    ({"STAY_DEMO_WRITES": "0"}, "1", "0"),
-    ({"STAY_DEMO_WRITES": "1"}, "0", "1"),
-])
-def test_source_effective_room_write_flag_overrides_caller_and_preserves_empty(source_flags, caller_flag, expected):
+@pytest.mark.parametrize(
+    "source_flags,caller_flag,expected",
+    [
+        ({}, "0", "1"),
+        ({"STAY_DEMO_WRITES": ""}, "1", ""),
+        ({"STAY_DEMO_WRITES": "0"}, "1", "0"),
+        ({"STAY_DEMO_WRITES": "1"}, "0", "1"),
+    ],
+)
+def test_source_effective_room_write_flag_overrides_caller_and_preserves_empty(
+    source_flags, caller_flag, expected
+):
     with (
         patch.dict("os.environ", {"STAY_DEMO_WRITES": caller_flag}, clear=True),
-        patch.object(manage.subprocess, "run", return_value=source_configuration(**source_flags)),
+        patch.object(
+            manage.subprocess, "run", return_value=source_configuration(**source_flags)
+        ),
     ):
         env = manage.environment("trusted-web-fixture")
     assert env["STAY_DEMO_WRITES"] == expected
@@ -83,12 +175,27 @@ def test_source_effective_room_write_flag_overrides_caller_and_preserves_empty(s
 
 
 @pytest.mark.parametrize("key", ["STAY_STATE_DB", "CALLS_DB"])
-@pytest.mark.parametrize("path", [":memory:", "relative.db", "/tmp/other.db", "/data-other/db", "/data/../tmp/db", "/data"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        ":memory:",
+        "relative.db",
+        "/tmp/other.db",
+        "/data-other/db",
+        "/data/../tmp/db",
+        "/data",
+    ],
+)
 def test_database_paths_outside_shared_mount_fail_before_compose(key, path, capsys):
     with (
         patch.dict("os.environ", {}, clear=True),
-        patch("sys.argv", ["manage", "validate", "--source-container", "trusted-web-fixture"]),
-        patch.object(manage.subprocess, "run", return_value=source_configuration(**{key: path})) as run,
+        patch(
+            "sys.argv",
+            ["manage", "validate", "--source-container", "trusted-web-fixture"],
+        ),
+        patch.object(
+            manage.subprocess, "run", return_value=source_configuration(**{key: path})
+        ) as run,
     ):
         assert manage.main() == 1
     assert run.call_count == 1  # Only captured source inspection, no Compose/write.
@@ -102,7 +209,9 @@ def test_explicit_empty_call_database_is_not_silently_replaced_with_persistent_f
     # SQLite's empty filename is a private temporary database, not the shared log.
     with (
         patch.dict("os.environ", {}, clear=True),
-        patch.object(manage.subprocess, "run", return_value=source_configuration(CALLS_DB="")),
+        patch.object(
+            manage.subprocess, "run", return_value=source_configuration(CALLS_DB="")
+        ),
     ):
         with pytest.raises(ValueError, match="^shared database path not identified$"):
             manage.environment("trusted-web-fixture")
@@ -110,24 +219,44 @@ def test_explicit_empty_call_database_is_not_silently_replaced_with_persistent_f
 
 def test_english_voice_and_mode_survive_trusted_environment_copy():
     values = {
-        key: "fixture" for key in (
-            "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", "GROQ_API_KEY",
-            "AZURE_SPEECH_KEY", "AZURE_REGION", "EASY_BASE_URL", "EASY_API_KEY",
+        key: "fixture"
+        for key in (
+            "LIVEKIT_API_KEY",
+            "LIVEKIT_API_SECRET",
+            "GROQ_API_KEY",
+            "AZURE_SPEECH_KEY",
+            "AZURE_REGION",
+            "EASY_BASE_URL",
+            "EASY_API_KEY",
         )
     }
     values.update(
-        EASY_DEMO_WRITES="1", EASY_STATE_DB="/data/easy-booking.db",
-        VOICEBOT_TELEPHONE_LANGUAGE="en", AZURE_EN_VOICE="en-GB-SoniaNeural",
+        EASY_DEMO_WRITES="1",
+        EASY_STATE_DB="/data/easy-booking.db",
+        VOICEBOT_TELEPHONE_LANGUAGE="en",
+        AZURE_EN_VOICE="en-GB-SoniaNeural",
         AZURE_EN_LANG="en-GB",
-        VOICEBOT_SPEAKING_STYLE="neutral", VOICEBOT_SPEECH_RATE="1.0",
+        VOICEBOT_SPEAKING_STYLE="neutral",
+        VOICEBOT_SPEECH_RATE="1.0",
         VOICEBOT_RECAP_RATE="0.92",
     )
-    inspected = [{
-        "Config": {"Env": [key + "=" + value for key, value in values.items()]},
-        "Mounts": [{"Type": "volume", "Destination": "/data", "Name": "existing-booking-volume"}],
-    }]
+    inspected = [
+        {
+            "Config": {"Env": [key + "=" + value for key, value in values.items()]},
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Destination": "/data",
+                    "Name": "existing-booking-volume",
+                }
+            ],
+        }
+    ]
     result = subprocess.CompletedProcess([], 0, stdout=json.dumps(inspected).encode())
-    with patch.dict("os.environ", {}, clear=True), patch.object(manage.subprocess, "run", return_value=result):
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch.object(manage.subprocess, "run", return_value=result),
+    ):
         env = manage.environment("trusted-web-fixture")
     assert env["AZURE_EN_VOICE"] == "en-GB-SoniaNeural"
     assert env["AZURE_EN_LANG"] == "en-GB"
@@ -137,7 +266,14 @@ def test_english_voice_and_mode_survive_trusted_environment_copy():
     assert env["VOICEBOT_RECAP_RATE"] == "0.92"
     assert env["VOICEBOT_DATA_VOLUME"] == "existing-booking-volume"
     compose = (ROOT / "deploy/telephony/compose.yaml").read_text()
-    for key in ("AZURE_EN_VOICE", "AZURE_EN_LANG", "VOICEBOT_TELEPHONE_LANGUAGE", "VOICEBOT_SPEAKING_STYLE", "VOICEBOT_SPEECH_RATE", "VOICEBOT_RECAP_RATE"):
+    for key in (
+        "AZURE_EN_VOICE",
+        "AZURE_EN_LANG",
+        "VOICEBOT_TELEPHONE_LANGUAGE",
+        "VOICEBOT_SPEAKING_STYLE",
+        "VOICEBOT_SPEECH_RATE",
+        "VOICEBOT_RECAP_RATE",
+    ):
         assert key + ": ${" + key in compose
 
 

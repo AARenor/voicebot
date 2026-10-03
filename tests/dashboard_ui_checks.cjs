@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 class Element {
-  constructor(){ this.value=''; this.textContent=''; this.hidden=false; this.disabled=false; this.type='password'; this.children=[]; this.dataset={}; this.listeners={}; this.classList={add(){},remove(){}}; }
+  constructor(tag='div'){ this.tagName=tag.toUpperCase();this.value=''; this.textContent=''; this.hidden=false; this.disabled=false; this.type='password'; this.children=[]; this.dataset={}; this.listeners={}; this.classList={add(){},remove(){}}; }
   addEventListener(type,fn){this.listeners[type]=fn;}
   setAttribute(){}
   replaceChildren(...items){this.children=items;this.textContent='';}
@@ -19,16 +19,16 @@ const requests=[]; const intervals=[];
 let pending=null;
 const response=(data,status=200)=>({ok:status===200,status,headers:new Headers(),json:async()=>data});
 const context=vm.createContext({console,Headers,URL,URLSearchParams,AbortController,DOMException,Intl,Date,JSON,Math,Promise,Uint8Array,ArrayBuffer,Blob,
-  document:{hidden:false,getElementById:element,createElement:()=>new Element(),createTextNode:t=>t,querySelector:s=>element(s),addEventListener(type,fn){if(type==='DOMContentLoaded')fn();}},
+  document:{hidden:false,getElementById:element,createElement:tag=>new Element(tag),createTextNode:t=>t,querySelector:s=>element(s),addEventListener(type,fn){if(type==='DOMContentLoaded')fn();}},
   window:{},navigator:{},location:{search:'',href:'https://fixture.invalid/'},history:{replaceState(){}},
   sessionStorage:{removeItem(){}},localStorage:{removeItem(){}},
   setTimeout:()=>1,clearTimeout(){},setInterval:fn=>{intervals.push(fn);return 1;},
-  fetch:async(path,opts={})=>{requests.push({path,opts}); if(pending&&path.includes('/api/bookings'))return new Promise(resolve=>{pending.resolve=resolve;});
+   fetch:async(path,opts={})=>{requests.push({path,opts}); if(pending&&path.includes('/api/table-bookings'))return new Promise(resolve=>{pending.resolve=resolve;});
     if(path==='/api/status')return response({wired:{},capabilities:{}});
     if(path==='/api/calls')return response({calls:[]});
-    if(path==='/api/catalogue')return response({services:[],providers:[]});
+     if(path==='/api/tables')return response({tables:[],rules:{timezone:'Europe/Tallinn',max_party_size:6}});
     if(path==='/api/demo/session')return response({session_id:'fixture-session',call_id:'a'.repeat(32),greeting:'Fiktiivne demovestlus',expires_in_s:600});
-    if(path.includes('/api/bookings'))return response({items:[],has_more:false,fetched_at:'2026-10-02T10:00:00Z'});
+     if(path.includes('/api/table-bookings'))return response({items:[],has_more:false,fetched_at:'2026-10-02T10:00:00Z'});
     return response({ok:true});}
 });
 vm.runInContext(fs.readFileSync(process.argv[4],'utf8'),context);
@@ -38,6 +38,7 @@ const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
 const run=s=>vm.runInContext(s,context);
 (async()=>{
   await flush();
+  assert.equal(run('bookingUi.kind'),'table','active composer is not restaurant-only');
   assert(requests.every(r=>r.path==='/api/status'),'private initial request');
   assert.equal(element('bookings').hidden,true,'signed-out table should be hidden');
   assert.equal(element('booking-placeholder').hidden,false,'signed-out guidance missing');
@@ -54,13 +55,71 @@ const run=s=>vm.runInContext(s,context);
   assert(requests.every(r=>r.path==='/api/status'),'signed-out demo click sent a private request');
   element('token').value='fixture-operator';
   await run('connect()'); await flush();
-  assert(requests.some(r=>r.path.includes('/api/bookings')),'no provider schedule');
+   assert(requests.some(r=>r.path.includes('/api/table-bookings')),'no independent table readback');
   assert.equal(element('connection-badge').className,'connection-badge connected');
   assert.equal(element('token-field').hidden,true,'credential field shown after authentication');
   assert.equal(element('logout').hidden,false,'connected logout missing');
   assert.equal(element('booking-empty').hidden,false,'successful empty state missing');
   assert.equal(element('booking-placeholder').hidden,true,'empty schedule presented as locked');
   assert.equal(element('demo-mic').disabled,false,'connected voice button requires an unexplained separate session start');
+  const connectedFetch=context.fetch;
+  const tableOffer={table_offer_id:'table_offer_'+'a'.repeat(32),date:'2026-10-09',start_time:'18:00',start:'2026-10-09T18:00:00+03:00',end:'2026-10-09T20:00:00+03:00',party_size:3,duration_minutes:120,table_name:'Laud 3',capacity:4};
+  const recap='Meretuule restoran. Fiktiivne külaline. 09.10.2026 kell 18:00, Europe/Tallinn. 3 inimest, 120 minutit, Laud 3.';
+  context.fetch=async(path,opts={})=>{
+    if(path.startsWith('/api/booking/')) {
+      requests.push({path,opts});
+      if(path.endsWith('/session'))return response({session_id:'table-session'});
+      if(path.endsWith('/search'))return response({kind:'table',offers:[tableOffer]});
+      if(path.endsWith('/prepare'))return response({kind:'table',hold_id:'held-table',recap:{kind:'table',date:tableOffer.date,start_time:tableOffer.start_time,party_size:3},recap_text:recap,recap_delivery_id:'c'.repeat(32)});
+      if(path.endsWith('/recap'))return response({acknowledged:true,hold_id:'held-table'});
+      if(path.endsWith('/confirm'))return response({ok:true,kind:'table',booking_id:'table_'+'a'.repeat(32),booking:{id:'table_'+'a'.repeat(32),date:'2026-10-09'}});
+      if(path.endsWith('/cancel'))return response({ok:true,kind:'table'});
+    }
+    return connectedFetch(path,opts);
+  };
+  element('new-table-date').value='2026-10-09';element('new-start-time').value='18:00';element('new-party-size').value='3';
+  await run('searchBooking()');
+  const searchBody=JSON.parse(requests.find(r=>r.path==='/api/booking/search').opts.body);
+  assert.deepEqual(searchBody,{session_id:'table-session',kind:'table',date:'2026-10-09',start_time:'18:00',party_size:3});
+  await run('prepareBooking('+JSON.stringify(tableOffer)+')');
+  assert.equal(element('booking-recap-text').textContent,recap,'client changed the canonical recap');
+  assert.equal(element('booking-confirm').disabled,true,'preparation enabled confirmation before recap reading');
+  assert.equal(element('booking-recap-read').focused,true,'prepared recap did not focus the next explicit reading action');
+  assert(!requests.some(r=>r.path==='/api/booking/recap'),'preparation falsely acknowledged unread recap');
+  assert.deepEqual(JSON.parse(requests.find(r=>r.path==='/api/booking/prepare').opts.body),{session_id:'table-session',kind:'table',guest_fixture_id:'guest-001',table_offer_id:tableOffer.table_offer_id});
+  await run('acknowledgeBookingRecap()');
+  const acknowledgments=requests.filter(r=>r.path==='/api/booking/recap');
+  assert.deepEqual(JSON.parse(acknowledgments[0].opts.body),{session_id:'table-session',hold_id:'held-table',recap_delivery_id:'c'.repeat(32)});
+  await run('acknowledgeBookingRecap()');
+  assert.equal(requests.filter(r=>r.path==='/api/booking/recap').length,1,'one-use receipt was acknowledged twice');
+  assert.equal(element('booking-confirm').disabled,false,'exact read acknowledgement did not enable confirmation');
+  assert.equal(element('booking-confirm').focused,true,'reading hid the focused control without focusing confirmation');
+  await run("mutateBooking('confirm')");
+  assert.deepEqual(JSON.parse(requests.find(r=>r.path==='/api/booking/confirm').opts.body),{session_id:'table-session',kind:'table',consent:true,hold_id:'held-table'});
+  await run("mutateBooking('cancel')");
+  assert(!requests.some(r=>r.path==='/api/booking/cancel'),'cancellation skipped the second explicit step');
+  element('booking-cancel-actions').hidden=false;
+  await run("mutateBooking('cancel')");
+  assert.deepEqual(JSON.parse(requests.find(r=>r.path==='/api/booking/cancel').opts.body),{session_id:'table-session',kind:'table',consent:true,booking_id:'table_'+'a'.repeat(32)});
+  context.fetch=connectedFetch;
+  const historyFixture={id:'a'.repeat(32),channel:'telephone',started_at:'2026-10-03T10:00:00Z',duration_s:30,recognized_turns:1,typed_turns:0,bookings:[
+    {id:'table_'+'a'.repeat(32),kind:'table',action:'confirmed',date:'2026-10-09',start_local:'2026-10-09 18:00:00'},
+    {id:'stay_'+'b'.repeat(32),kind:'stay',action:'confirmed',date:'2026-10-01',checkout:'2026-10-03'},
+    {id:'17',kind:'slot',action:'cancelled',date:'2026-10-01',start_local:'2026-10-01 10:00:00'},
+  ]};
+  run('renderHistoryDetail('+JSON.stringify({session:historyFixture,events:[]})+')');
+  const flatten=node=>[node,...node.children.flatMap(flatten)];
+  const historyNodes=flatten(element('history-detail'));
+  const bookingLinks=historyNodes.filter(node=>node.tagName==='BUTTON');
+  assert.equal(bookingLinks.length,1,'archived stay/slot histories link to removed live panels');
+  assert(historyNodes.some(node=>node.textContent.includes('Arhiveeritud hotellipeatumine')),'legacy stay was relabelled or lost');
+  assert(historyNodes.some(node=>node.textContent.includes('Arhiveeritud spaa')),'legacy slot was relabelled or lost');
+  await bookingLinks[0].listeners.click();
+  assert.equal(element('booking-date').value,'2026-10-09');
+  assert.equal(run('state.highlightId'),'table_'+'a'.repeat(32));
+  assert.equal(element('bookings-title').focused,true,'table history destination was not focused');
+  const awareRange=run("localBookingRange('2026-10-09T15:00:00Z','2026-10-09T17:00:00Z')");
+  assert.equal(awareRange.time,'18:00 – 20:00','table aware instants were converted using device timezone');
   let microphoneAttempts=0;
   context.navigator.mediaDevices={getUserMedia:async()=>{microphoneAttempts++;throw new DOMException('Fixture permission denied','NotAllowedError');}};
   const readyFetch=context.fetch;
@@ -89,7 +148,7 @@ const run=s=>vm.runInContext(s,context);
   const read=run('loadBookings(true)');await flush();
   assert.equal(typeof pending.resolve,'function');
   run('logout()');
-  pending.resolve(response({items:[{id:42,service_name:'PRIVATE',provider_name:'PRIVATE',start_local:'2026-10-02 10:00:00',end_local:'2026-10-02 11:00:00'}],has_more:false,fetched_at:'2026-10-02T10:00:00Z'}));
+   pending.resolve(response({items:[{id:'table_'+'a'.repeat(32),table_name:'PRIVATE',party_size:3,start_local:'2026-10-02 18:00:00',end_local:'2026-10-02 20:00:00'}],has_more:false,fetched_at:'2026-10-02T10:00:00Z'}));
   await read; await flush();
   pending=null;
   assert.equal(run('state.bookings.length'),0,'late response revived private rows');
@@ -105,16 +164,16 @@ const run=s=>vm.runInContext(s,context);
   run(`state.sessionId='fixture-session'`);
   let cancelled=false;
   context.fetch=async(path)=>{
-    if(path==='/api/turn')return response({text_heard:'fixture',reply:'fixture',audio_b64:'',outcome:'tools_ok',booking_changes:[{id:'42',date:'2026-10-09',action:cancelled?'cancelled':'confirmed'}]});
-    if(path.includes('/api/bookings'))return response({items:cancelled?[]:[{id:42,service_name:'<img>',provider_name:'Demo',start_local:'2026-10-09 10:00:00',end_local:'2026-10-09 11:00:00',timezone:'Europe/Tallinn',time_state:'valid',status:'Booked'}],fetched_at:'fixture',has_more:false});
+     if(path==='/api/turn')return response({text_heard:'fixture',reply:'fixture',audio_b64:'',outcome:'tools_ok',booking_changes:[{id:'table_'+'a'.repeat(32),kind:'table',date:'2026-10-09',action:cancelled?'cancelled':'confirmed'}]});
+     if(path.includes('/api/table-bookings'))return response({items:cancelled?[]:[{id:'table_'+'a'.repeat(32),table_name:'<img>',party_size:3,start_local:'2026-10-09 18:00:00',end_local:'2026-10-09 20:00:00',timezone:'Europe/Tallinn',time_state:'valid',status:'confirmed'}],fetched_at:'fixture',has_more:false});
     return response({calls:[]});
   };
   await run(`sendTurn({text:'confirm'})`);
   assert.equal(element('booking-date').value,'2026-10-09','did not select authoritative booked day');
-  assert.equal(element('#bookings tbody').children[0].dataset.bookingId,'42');
+   assert.equal(element('#bookings tbody').children[0].dataset.bookingId,'table_'+'a'.repeat(32));
   assert.equal(element('#bookings tbody').children[0].className,'highlight');
   const timeCell=element('#bookings tbody').children[0].children[2];
-  assert.equal(timeCell.children[0].textContent,'10:00 – 11:00','local wall time changed');
+   assert.equal(timeCell.children[0].textContent,'18:00 – 20:00','local wall time changed');
   assert.equal(timeCell.children[1].textContent,'09.10.2026','local date changed');
   assert.equal(run("localBookingRange('2026-10-09 23:00:00','2026-10-10 01:00:00').time"),'2026-10-09 23:00:00 – 2026-10-10 01:00:00','overnight dates lost');
   assert.equal(element('bookings').hidden,false,'populated booking table hidden');
@@ -122,13 +181,13 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('demo-messages').children[0].className,'user-message');
   assert.equal(element('demo-messages').children[1].className,'assistant-message');
   const normalFetch=context.fetch;
-  context.fetch=async(path)=>path==='/api/turn'?response({text_heard:'fixture',reply:'Testbroneering on kinnitatud. Muu päring ebaõnnestus.',outcome:'tools_failed',booking_changes:[{id:'42',date:'2026-10-09',action:'confirmed'}]}):normalFetch(path);
+   context.fetch=async(path)=>path==='/api/turn'?response({text_heard:'fixture',reply:'Testbroneering on kinnitatud. Muu päring ebaõnnestus.',outcome:'tools_failed',booking_changes:[{id:'table_'+'a'.repeat(32),kind:'table',date:'2026-10-09',action:'confirmed'}]}):normalFetch(path);
   await run("sendTurn({text:'fixture'})");
   assert(!element('demo-status').textContent.includes('edu ei ole kinnitatud'),'secondary read failure denied the completed write');
   context.fetch=normalFetch;
   const bookingCount=run('state.bookings.length');
   const successfulFetch=context.fetch;
-  context.fetch=async(path)=>path.includes('/api/bookings')?response({},503):successfulFetch(path);
+   context.fetch=async(path)=>path.includes('/api/table-bookings')?response({},503):successfulFetch(path);
   await run('loadBookings(true)');
   assert.equal(run('state.bookings.length'),bookingCount,'provider error removed retained rows');
   assert.equal(element('booking-status').className,'status booking-status stale');
@@ -140,13 +199,11 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('booking-empty').hidden,false,'empty state missing after cancellation');
   context.fetch=async(path)=>{
     if(path==='/api/turn')return response({text_heard:'fixture',reply:'Fiktiivne peatumine kinnitatud.',audio_b64:'',outcome:'tools_ok',booking_changes:[{id:'stay_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',kind:'stay',date:'2026-10-12',action:'confirmed'}]});
-    if(path.includes('/api/stays'))return response({items:[{id:'stay_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',status:'confirmed',room_name:'Demo tuba',checkin:'2026-10-12',checkout:'2026-10-14',nights:2,adults:2,children:0}]});
-    if(path.includes('/api/bookings'))return response({items:[],has_more:false,fetched_at:'fixture'});
+     if(path.includes('/api/table-bookings'))return response({items:[],has_more:false,fetched_at:'fixture'});
     return response({calls:[]});
   };
   await run("sendTurn({text:'fixture'})");
-  assert.equal(element('booking-date').value,'2026-10-12','voice room receipt did not select its authoritative arrival day');
-  assert.equal(element('overview-stays').textContent,'1','voice room receipt did not refresh active stays');
+   assert.equal(element('booking-date').value,'2026-10-09','archived stay receipt redirected the restaurant readback');
   let stopped=0;
   context.navigator.mediaDevices={getUserMedia:async()=>({getTracks:()=>[{stop(){stopped++;}}]})};
   context.window.AudioContext=class {constructor(){throw Error('fixture setup failure');}};
@@ -159,9 +216,9 @@ const run=s=>vm.runInContext(s,context);
   assert.equal(element('auth-status').className,'status error','auth error not visibly identified');
   let permissionAfterLogout=0;
   context.navigator.mediaDevices={getUserMedia:async()=>{permissionAfterLogout++;throw new DOMException('Fixture denied','NotAllowedError');}};
-  context.fetch=async(path)=>response(path==='/api/calls'?{calls:[{at:'PRIVATE',lang:'et',outcome:'ok'}]}:path==='/api/catalogue'?{services:[{id:1,name:'PRIVATE',duration:30}],providers:[]}:path==='/api/demo/session'?{session_id:'PRIVATE',greeting:'PRIVATE'}:path==='/api/turn'?{text_heard:'PRIVATE',reply:'PRIVATE',audio_b64:''}:{items:[{id:42,service_name:'PRIVATE'}],fetched_at:'fixture',has_more:false});
+   context.fetch=async(path)=>response(path==='/api/calls'?{calls:[{at:'PRIVATE',lang:'et',outcome:'ok'}]}:path==='/api/tables'?{tables:[{id:'PRIVATE',name:'PRIVATE',capacity:2}],rules:{}}:path==='/api/demo/session'?{session_id:'PRIVATE',greeting:'PRIVATE'}:path==='/api/turn'?{text_heard:'PRIVATE',reply:'PRIVATE',audio_b64:''}:{items:[{id:'table_'+'a'.repeat(32),table_name:'PRIVATE'}],fetched_at:'fixture',has_more:false});
   run(`const originalApi=api; let logoutAfter=null; api=async(path,options)=>{const data=await originalApi(path,options); if(logoutAfter && path.startsWith(logoutAfter)) logout(); return data;};`);
-  for (const [call,path] of [['loadBookings(true)','/api/bookings'],['loadCatalogue()','/api/catalogue'],['loadCalls()','/api/calls'],['startDemo()','/api/demo/session'],['toggleMic()','/api/demo/session'],["sendTurn({text:'fixture'})",'/api/turn']]) {
+   for (const [call,path] of [['loadBookings(true)','/api/table-bookings'],['loadCatalogue()','/api/tables'],['loadCalls()','/api/calls'],['startDemo()','/api/demo/session'],['toggleMic()','/api/demo/session'],["sendTurn({text:'fixture'})",'/api/turn']]) {
     run('logoutAfter=null');element('token').value='fixture-operator';await run('connect()');
     if(path==='/api/turn')run("state.sessionId='fixture-session'");
     run(`logoutAfter=${JSON.stringify(path)}`);await run(call);await flush();

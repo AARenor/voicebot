@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -13,7 +14,8 @@ from fastapi.responses import JSONResponse
 
 from .dashboard.api import _require_operator
 from .demo import load_demo_data
-from .hackathon import operator_scope
+from .hackathon import operator_scope, table_receipt_metadata
+from . import call_history, callslog
 
 
 async def _body(request):
@@ -36,9 +38,11 @@ def _fields(body, allowed, required=()):
         raise HTTPException(400, "booking_arguments_invalid")
 
 
-def _kind(body):
-    if body.get("kind") not in ("slot", "stay"):
+def _kind(body, tools=None):
+    if body.get("kind") not in ("slot", "stay", "table"):
         raise HTTPException(400, "booking_kind_invalid")
+    if getattr(tools, "business", None) == "restaurant" and body["kind"] != "table":
+        raise HTTPException(400, "restaurant_booking_required")
     return body["kind"]
 
 
@@ -92,6 +96,8 @@ def _remember_booking(session, body, result, kind, cancel):
                     checkin=booking["checkin"],
                     checkout=booking["checkout"],
                 )
+            elif kind == "table":
+                details = table_receipt_metadata(booking)
             else:
                 slot = session.tools.held_slots[body["hold_id"]]
                 details.update(date=slot["date"], start_local=slot["start"])
@@ -102,17 +108,37 @@ def _remember_booking(session, body, result, kind, cancel):
             changes.append(
                 {"action": "cancelled", **session.booking_details[body["booking_id"]]}
             )
-    except (KeyError, TypeError, AttributeError):
+    except (KeyError, TypeError, ValueError, AttributeError):
         pass  # Keep the provider's receipt; do not guess its booking date.
     result["booking_changes"] = changes
+    callslog.history_safe(
+        call_history.record_result,
+        session.tools.call_id,
+        "booking_cancelled" if cancel else "booking_confirmed",
+        changes=changes,
+    )
 
 
 def add_booking_routes(app, sessions):
     """Register controls before the root static mount; no LLM is needed."""
 
+    def restaurant_mode():
+        return (
+            getattr(app.state.stack["dispatcher"], "business", "legacy") == "restaurant"
+        )
+
+    async def table_catalogue():
+        reader = getattr(app.state.stack.get("table"), "get_table_catalogue", None)
+        if not callable(reader):
+            raise HTTPException(503, "table_booking_not_configured")
+        try:
+            return await reader()
+        except Exception:
+            raise HTTPException(502, "table_catalogue_unavailable") from None
+
     @app.get("/api/public/property")
     async def public_property():
-        data = load_demo_data()
+        data = load_demo_data(business="restaurant" if restaurant_mode() else "legacy")
         number = (
             os.environ.get("PUBLIC_PHONE_NUMBER")
             or os.environ.get("TWILIO_PHONE_NUMBER")
@@ -123,7 +149,18 @@ def add_booking_routes(app, sessions):
         ):
             number = None
         profile = dict(data["profile"])
-        reader = app.state.stack.get("slot") or app.state.stack.get("booking_reader")
+        if restaurant_mode():
+            try:
+                profile["restaurant_rules"] = (await table_catalogue())["rules"]
+                profile["hours_source"] = "fictional_restaurant_catalogue"
+                profile["hours_scope"] = "restaurant_sittings"
+            except (HTTPException, KeyError):
+                pass
+        reader = (
+            None
+            if restaurant_mode()
+            else (app.state.stack.get("slot") or app.state.stack.get("booking_reader"))
+        )
         catalogue_read = getattr(reader, "get_slot_catalogue", None)
         if callable(catalogue_read):
             try:
@@ -157,7 +194,11 @@ def add_booking_routes(app, sessions):
             },
             "capabilities": {
                 key: app.state.capabilities[key]
-                for key in ("slot_booking_ready", "stay_booking_ready")
+                for key in (
+                    "slot_booking_ready",
+                    "stay_booking_ready",
+                    "table_booking_ready",
+                )
             },
             "booking_access": "operator_demo",
         }
@@ -174,6 +215,28 @@ def add_booking_routes(app, sessions):
 
     @app.get("/api/public/catalogue")
     async def public_catalogue():
+        if restaurant_mode():
+            try:
+                catalogue = await table_catalogue()
+                return {
+                    "synthetic": True,
+                    "source": "fictional_restaurant",
+                    "data_mode": "synthetic",
+                    "tables": catalogue["tables"],
+                    "rules": catalogue["rules"],
+                    "venue": catalogue.get("venue"),
+                    "menu": catalogue.get("menu", []),
+                    "restaurant_error": None,
+                }
+            except HTTPException:
+                return {
+                    "synthetic": True,
+                    "source": "fictional_restaurant",
+                    "data_mode": "synthetic",
+                    "tables": [],
+                    "rules": None,
+                    "restaurant_error": "table_catalogue_unavailable",
+                }
         result = {
             "synthetic": True,
             "source": "easyappointments",
@@ -199,6 +262,27 @@ def add_booking_routes(app, sessions):
         except HTTPException:
             pass
         return result
+
+    @app.get("/api/tables")
+    async def tables(authorization: str | None = Header(default=None)):
+        _require_operator(authorization)
+        return await table_catalogue()
+
+    @app.get("/api/table-bookings")
+    async def table_bookings(
+        date: str | None = None,
+        authorization: str | None = Header(default=None),
+    ):
+        _require_operator(authorization)
+        if date is not None:
+            _day(date)
+        reader = getattr(app.state.stack.get("table"), "get_operator_bookings", None)
+        if not callable(reader):
+            raise HTTPException(503, "table_booking_not_configured")
+        try:
+            return await reader(date)
+        except Exception:
+            raise HTTPException(502, "table_bookings_unavailable") from None
 
     @app.get("/api/rooms")
     async def rooms(authorization: str | None = Header(default=None)):
@@ -241,8 +325,20 @@ def add_booking_routes(app, sessions):
     ):
         body, session = await owned(request, authorization)
         try:
-            kind = _kind(body)
-            if kind == "slot":
+            kind = _kind(body, session.tools)
+            if kind == "table":
+                _fields(
+                    body,
+                    {"session_id", "kind", "date", "start_time", "party_size"},
+                    {"date", "start_time", "party_size"},
+                )
+                args = {
+                    "date": _day(body["date"], future=True, max_days=90),
+                    "start_time": body["start_time"],
+                    "party_size": body["party_size"],
+                }
+                name = "search_tables"
+            elif kind == "slot":
                 _fields(
                     body,
                     {"session_id", "kind", "service", "provider", "date"},
@@ -278,6 +374,7 @@ def add_booking_routes(app, sessions):
                     args["room_type"] = body["room_type"]
                 name = "search_availability"
             session.tools.observe_user_text("Otsin uut broneeringut.", is_final=True)
+            session.booking_recap_delivery = None
             return _result(await session.tools.dispatch(name, args))
         finally:
             sessions.release(session)
@@ -288,8 +385,12 @@ def add_booking_routes(app, sessions):
     ):
         body, session = await owned(request, authorization)
         try:
-            kind = _kind(body)
-            identifier = "slot_id" if kind == "slot" else "price_quote_id"
+            kind = _kind(body, session.tools)
+            identifier = {
+                "slot": "slot_id",
+                "stay": "price_quote_id",
+                "table": "table_offer_id",
+            }[kind]
             _fields(
                 body,
                 {"session_id", "kind", identifier, "guest_fixture_id"},
@@ -298,8 +399,11 @@ def add_booking_routes(app, sessions):
             session.tools.observe_user_text(
                 "Palun valmista valitud broneering ette.", is_final=True
             )
+            session.booking_recap_delivery = None
             held = await session.tools.dispatch(
-                "hold_slot" if kind == "slot" else "hold_offer",
+                {"slot": "hold_slot", "stay": "hold_offer", "table": "hold_table"}[
+                    kind
+                ],
                 {identifier: body[identifier]},
             )
             if (
@@ -313,14 +417,24 @@ def add_booking_routes(app, sessions):
                 "guest_fixture_id": body.get("guest_fixture_id", "guest-001"),
             }
             result = await session.tools.dispatch(
-                "prepare_demo_booking" if kind == "slot" else "prepare_demo_stay", args
+                {
+                    "slot": "prepare_demo_booking",
+                    "stay": "prepare_demo_stay",
+                    "table": "prepare_demo_table",
+                }[kind],
+                args,
             )
             if isinstance(result, dict) and not result.get("error"):
+                session.booking_recap_delivery = {
+                    "id": uuid.uuid4().hex,
+                    "pending": session.tools.pending,
+                }
                 result = {
                     **result,
                     "hold_id": held["hold_id"],
                     "recap_text": session.tools.render_recap(held["hold_id"]),
                     "kind": kind,
+                    "recap_delivery_id": session.booking_recap_delivery["id"],
                 }
             return _result(result)
         finally:
@@ -330,8 +444,28 @@ def add_booking_routes(app, sessions):
     async def recap(request: Request, authorization: str | None = Header(default=None)):
         body, session = await owned(request, authorization)
         try:
-            _fields(body, {"session_id", "hold_id"}, {"hold_id"})
-            if not session.tools.mark_recap_delivered(body["hold_id"]):
+            _fields(
+                body,
+                {"session_id", "hold_id", "recap_delivery_id"},
+                {"hold_id", "recap_delivery_id"},
+            )
+            identity = body["recap_delivery_id"]
+            if not isinstance(identity, str) or not re.fullmatch(
+                r"[a-f0-9]{32}", identity
+            ):
+                raise HTTPException(400, "booking_recap_receipt_invalid")
+            receipt, session.booking_recap_delivery = (
+                session.booking_recap_delivery,
+                None,
+            )
+            if not (
+                receipt
+                and receipt["id"] == identity
+                and receipt["pending"] is session.tools.pending
+                and receipt["pending"] is not None
+                and receipt["pending"]["hold_id"] == body["hold_id"]
+                and session.tools.mark_recap_delivered(body["hold_id"])
+            ):
                 raise HTTPException(409, "booking_recap_expired_or_unknown")
             return {"acknowledged": True, "hold_id": body["hold_id"]}
         finally:
@@ -340,7 +474,7 @@ def add_booking_routes(app, sessions):
     async def mutate(request, authorization, *, cancel=False):
         body, session = await owned(request, authorization)
         try:
-            kind = _kind(body)
+            kind = _kind(body, session.tools)
             identifier = "booking_id" if cancel else "hold_id"
             _fields(
                 body,
@@ -359,10 +493,18 @@ def add_booking_routes(app, sessions):
                     409, "booking_not_owned_or_cancellation_unavailable"
                 )
             name = (
-                ("cancel_slot_booking" if kind == "slot" else "cancel_booking")
+                {
+                    "slot": "cancel_slot_booking",
+                    "stay": "cancel_booking",
+                    "table": "cancel_table_booking",
+                }
                 if cancel
-                else ("confirm_slot_booking" if kind == "slot" else "confirm_booking")
-            )
+                else {
+                    "slot": "confirm_slot_booking",
+                    "stay": "confirm_booking",
+                    "table": "confirm_table_booking",
+                }
+            )[kind]
             result = await session.tools.dispatch(name, {identifier: body[identifier]})
             if isinstance(result, dict):
                 result = {**result, "kind": kind}

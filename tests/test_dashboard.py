@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, "voicebot")
 
@@ -24,6 +25,9 @@ except ImportError:
 class TestDashboard(unittest.TestCase):
     def setUp(self):
         demo.reset()
+        legacy = patch.dict("os.environ", {"VOICEBOT_BUSINESS": "legacy"})
+        legacy.start()
+        self.addCleanup(legacy.stop)
         self.client = TestClient(create_app())
 
     def test_health(self):
@@ -165,6 +169,7 @@ class TestDashboard(unittest.TestCase):
             os.environ["LIVEKIT_API_KEY"] = "fixture-media-key"
             os.environ["LIVEKIT_API_SECRET"] = "fixture-secret"
             os.environ["ZENOTI_API_KEY"] = "z"
+            os.environ["VOICEBOT_BUSINESS"] = "legacy"
             stack = build_stack()
             self.assertIsNotNone(stack["livekit"])
             self.assertIsNotNone(stack["slot"])

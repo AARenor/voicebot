@@ -85,7 +85,14 @@ def make_client(tmp_path, rows, calls, **kwargs):
         state_db=str(tmp_path / "never-open.db"),
         transport=httpx.MockTransport(provider_handler(rows, calls, **kwargs)),
     )
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict(
+        "os.environ",
+        {
+            "OPERATOR_TOKEN": "fixture-operator",
+            "VOICEBOT_BUSINESS": "legacy",
+        },
+        clear=True,
+    ):
         app = create_app()
     app.state.stack["booking_reader"] = adapter
     return TestClient(app), adapter
@@ -122,6 +129,7 @@ def test_stack_wires_reader_with_writes_disabled_without_journal():
             "EASY_BASE_URL": "https://fixture.invalid",
             "EASY_API_KEY": "fixture",
             "EASY_DEMO_WRITES": "0",
+            "VOICEBOT_BUSINESS": "legacy",
         },
         clear=True,
     ):

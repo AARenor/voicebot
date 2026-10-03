@@ -1,9 +1,9 @@
-# Meretuule Demo Spa — hackathon playbook
+# Meretuule restoran — fictional restaurant playbook
 
-This is a fictional Estonian spa, not a real hotel or guest-service deployment.
+This is a fictional restaurant, not a real customer reservation deployment.
 Use only the provided fictional guest identities. No payments, emails, SMS,
 outbound calls, real addresses, or real prices. Examples are not reservations;
-availability and confirmed bookings come from Easy!Appointments.
+availability and confirmed reservations come from the persistent table ledger.
 
 [Dated verification and explicit remaining gates](docs/evidence/2026-10-02-hackathon-verification.md).
 
@@ -25,19 +25,21 @@ availability and confirmed bookings come from Easy!Appointments.
 
 ## Presentation sequence
 
-- Explain the fictional spa and AI disclosure; choose a future weekday.
-- Ask for a demo spa consultation. The bot resolves the live service/provider
-  and offers a real available time; choose the default fictional guest.
+- Explain the fictional restaurant and AI disclosure; choose a future date.
+- Ask for a table with an exact time and party size (1–6 seated diners including
+  children), for example tomorrow at 18:00 for four. Availability covers the full
+  two-hour sitting and table capacity; choose the default fictional guest.
 - Hear/read the recap. First decline: no booking should appear.
 - Ask again, then say **“Jah, kinnitan.”**
-- Verify the appointment in the provider-backed bookings panel. A sentence
+- Verify the reservation in the independent table-bookings panel. A sentence
   claiming success is not proof of a saved booking.
 - Say **“Jah, tühista.”**
-- Verify the appointment is gone. A different conversation cannot cancel it.
-- Demonstrate a closed day, price question, ambiguous consent or interruption.
+- Verify cancellation in the ledger. A different conversation cannot cancel it.
+- Demonstrate closing-time overrun, no adequate table, price question, ambiguous
+  consent or interruption. No alternative time/headcount is silently substituted.
 
 Conversation state is bounded and memory-only. Restarting/ending a conversation
-does not cancel a saved appointment and cannot regain its write ownership.
+does not cancel a saved reservation and cannot regain its write ownership.
 Do not automatically repeat a write after an uncertain provider result. Use the
 read panel/operator backend to inspect it first.
 
@@ -57,9 +59,10 @@ without the specific fully delivered recap.
 From `/home/arle/voicebot`, with the pinned media environment:
 
 ```bash
-MEDIA_PY=/tmp/opencode/voicebot-telephony-venv/bin/python
+MEDIA_PY=/home/arle/.local/share/voicebot-reliability/media-venv/bin/python
 $MEDIA_PY -m pytest tests -q
-$MEDIA_PY deploy/telephony/conversation_probe.py --source-container livekit-worker-1
+$MEDIA_PY deploy/telephony/restaurant_probe.py --source-container livekit-worker-1 --language et
+$MEDIA_PY deploy/telephony/restaurant_probe.py --source-container livekit-worker-1 --language en
 $MEDIA_PY deploy/telephony/probe.py --source-container livekit-worker-1 --concurrent
 $MEDIA_PY deploy/telephony/probe.py --source-container livekit-worker-1 --barge-in
 $MEDIA_PY deploy/telephony/sip_probe.py
@@ -67,10 +70,13 @@ $MEDIA_PY deploy/telephony/failure_probe.py
 $MEDIA_PY deploy/telephony/failure_probe.py --drain
 ```
 
-Provider checks use real Groq/Azure services and synthetic backend writes. The
-conversation probe checks pre-consent/decline, real audio, independent REST
-creation/read/cancellation and exact call-scoped cleanup. It never saves audio
-or transcripts. These are **private tests, not PSTN**.
+Provider checks use real Groq/Azure services and fictional table reservations.
+The restaurant probe checks pre-consent/decline, real RTC audio, independent
+read-only ledger verification and spoken cancellation. Cleanup can cancel only
+its opaque call scope's new confirmed reservations, not other calls or baseline
+data. It never saves audio or transcripts. These are **private tests, not PSTN**.
+The former `conversation_probe.py` and `booking_probe.py` are retained historical
+spa tools, not acceptance of the current restaurant pipeline.
 
 ## Twilio US activation — first carrier
 

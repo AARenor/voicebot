@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
+from datetime import date, time
 
 import httpx
 
@@ -74,8 +76,12 @@ TOOL_CANCEL_STAY = {
         "name": "cancel_booking",
         "description": "Cancel a hotel stay booking by its backend booking id.",
         "parameters": {
-            "type": "object", "required": ["booking_id"],
-            "properties": {"booking_id": {"type": "string"}, "idempotency_key": {"type": "string"}},
+            "type": "object",
+            "required": ["booking_id"],
+            "properties": {
+                "booking_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
         },
     },
 }
@@ -177,6 +183,97 @@ TOOL_CATALOGUE = {
     },
 }
 
+TOOL_TABLE_CATALOGUE = {
+    "type": "function",
+    "function": {
+        "name": "get_table_catalogue",
+        "description": "Read the fictional restaurant venue, physical tables and booking rules. Not availability or prices.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+}
+
+TOOL_SEARCH_TABLES = {
+    "type": "function",
+    "function": {
+        "name": "search_tables",
+        "description": "Search the exact requested restaurant date, Tallinn time and total diner count, including seated children. Never substitute times or combine tables.",
+        "parameters": {
+            "type": "object",
+            "required": ["date", "start_time", "party_size"],
+            "properties": {
+                "date": {"type": "string", "description": "YYYY-MM-DD"},
+                "start_time": {"type": "string", "description": "HH:MM, Tallinn time"},
+                "party_size": {"type": "integer", "minimum": 1, "maximum": 6},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+
+TOOL_HOLD_TABLE = {
+    "type": "function",
+    "function": {
+        "name": "hold_table",
+        "description": "Temporarily allocate one available physical table for a returned exact offer. The held recap owns the actual table; this does not confirm a reservation.",
+        "parameters": {
+            "type": "object",
+            "required": ["table_offer_id"],
+            "properties": {"table_offer_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    },
+}
+
+TOOL_CONFIRM_TABLE = {
+    "type": "function",
+    "function": {
+        "name": "confirm_table_booking",
+        "description": "Confirm an owned held fictional table. Trusted policy supplies the approved fictional guest and write key after consent.",
+        "parameters": {
+            "type": "object",
+            "required": ["hold_id", "guest"],
+            "properties": {
+                "hold_id": {"type": "string"},
+                "guest": {"type": "object"},
+                "idempotency_key": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+
+TOOL_CANCEL_TABLE = {
+    "type": "function",
+    "function": {
+        "name": "cancel_table_booking",
+        "description": "Cancel an owned fictional table reservation by its authoritative table-prefixed booking id.",
+        "parameters": {
+            "type": "object",
+            "required": ["booking_id"],
+            "properties": {
+                "booking_id": {"type": "string"},
+                "idempotency_key": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+}
+
+TABLE_TOOLS = [
+    TOOL_TABLE_CATALOGUE,
+    TOOL_SEARCH_TABLES,
+    TOOL_HOLD_TABLE,
+    TOOL_CONFIRM_TABLE,
+    TOOL_CANCEL_TABLE,
+]
+_TABLE_PARAMETERS = {
+    tool["function"]["name"]: tool["function"]["parameters"] for tool in TABLE_TOOLS
+}
+
 BOOKING_TOOLS = [
     TOOL_SEARCH,
     TOOL_HOLD,
@@ -189,6 +286,7 @@ BOOKING_TOOLS = [
     TOOL_CONFIRM_SLOT,
     TOOL_CANCEL_SLOT,
     TOOL_CATALOGUE,
+    *TABLE_TOOLS,
 ]
 
 
@@ -202,6 +300,38 @@ def _require_stay(adapter) -> StayAdapter:
     if adapter is None or not getattr(adapter, "operational", False):
         raise ProviderError("tools: stay booking not configured")
     return adapter
+
+
+def _require_table(adapter):
+    if adapter is None or not getattr(adapter, "operational", False):
+        raise ProviderError("tools: table booking not configured")
+    return adapter
+
+
+def _table_request(args):
+    day = _require_str(args, "date", 10)
+    start_time = _require_str(args, "start_time", 5)
+    try:
+        if date.fromisoformat(day).isoformat() != day:
+            raise ValueError
+        if not re.fullmatch(r"\d{2}:\d{2}", start_time):
+            raise ValueError
+        time.fromisoformat(start_time)
+    except ValueError:
+        raise ProviderError("tools: bad arg date or start_time") from None
+    party_size = args.get("party_size")
+    if type(party_size) is not int or not 1 <= party_size <= 6:
+        raise ProviderError("tools: bad arg party_size")
+    return day, start_time, party_size
+
+
+def _table_key(args):
+    if "idempotency_key" in args:
+        key = _require_str(args, "idempotency_key", 128)
+        if not re.fullmatch(r"[\w][\w.-]{0,127}", key):
+            raise ProviderError("tools: bad arg idempotency_key")
+        return key
+    return _idempotency_key(args)
 
 
 async def _guarded(code: str, call, *args):
@@ -340,16 +470,26 @@ def speak_offer(offer: dict) -> str:
 
 
 class Dispatcher:
-    """Binds tool names to a Stay adapter, a Slot adapter, and FAQ lookup.
+    """Binds tool names to operational adapters for one explicit business.
 
     Tool-error results carry closed codes (hold_invalid, pms_error) so
     PMS internals never leak into LLM context or speech; full detail
     belongs in server logs, not transcripts.
     """
 
-    def __init__(self, stay=None, slot=None, faq=None) -> None:
+    def __init__(
+        self, stay=None, slot=None, faq=None, *, table=None, business=None
+    ) -> None:
+        self.business = (
+            business
+            if business is not None
+            else ("restaurant" if table is not None else "legacy")
+        )
+        if self.business not in {"legacy", "restaurant"}:
+            raise ValueError("unsupported booking business")
         self._stay: StayAdapter | None = stay
         self._slot: SlotAdapter | None = slot
+        self._table = table
         self._faq = faq  # callable(question) -> passages
 
     def available_tools(self) -> list[dict]:
@@ -358,6 +498,13 @@ class Dispatcher:
         Configured PMS stubs remain status-visible but never tempt the LLM
         into NotImplementedError paths. FAQ is independent of PMS readiness.
         """
+        if self.business == "restaurant":
+            return (
+                list(TABLE_TOOLS)
+                if self._table is not None
+                and getattr(self._table, "operational", False)
+                else []
+            )
         tools = []
         if self._faq is not None:
             tools.append(TOOL_FAQ)
@@ -379,11 +526,26 @@ class Dispatcher:
 
     async def get_stay_hold(self, hold_id: str):
         """Trusted call-policy read; not advertised as a model tool."""
+        if self.business != "legacy":
+            raise ProviderError("tools: stay booking not configured")
         stay = _require_stay(self._stay)
         getter = getattr(stay, "get_hold", None)
         if not callable(getter):
             raise ProviderError("tools: stay hold read not configured")
-        return await _guarded("hold_invalid", getter, _require_str({"hold_id": hold_id}, "hold_id"))
+        return await _guarded(
+            "hold_invalid", getter, _require_str({"hold_id": hold_id}, "hold_id")
+        )
+
+    async def get_table_hold(self, hold_id: str):
+        """Trusted policy readback of the actual allocated table, not a model tool."""
+        if self.business != "restaurant":
+            raise ProviderError("tools: table booking not configured")
+        table = _require_table(self._table)
+        return await _guarded(
+            "hold_invalid",
+            table.get_hold,
+            _require_str({"hold_id": hold_id}, "hold_id"),
+        )
 
     async def dispatch(self, name: str, args: dict) -> dict:
         if isinstance(args, str):
@@ -394,6 +556,56 @@ class Dispatcher:
                 raise ProviderError(f"tools: bad JSON args: {exc}") from exc
         if not isinstance(args, dict):
             raise ProviderError("tools: args must be an object")
+        if self.business == "restaurant" and name not in _TABLE_PARAMETERS:
+            raise ProviderError("tools: tool not available for restaurant")
+        if name in _TABLE_PARAMETERS:
+            if self.business != "restaurant":
+                raise ProviderError("tools: table booking not configured")
+            parameters = _TABLE_PARAMETERS[name]
+            if set(args) - set(parameters["properties"]):
+                raise ProviderError("tools: untrusted restaurant arguments")
+            if set(parameters.get("required", ())) - set(args):
+                raise ProviderError("tools: bad arg required restaurant field")
+            table = _require_table(self._table)
+            if name == "get_table_catalogue":
+                return await _guarded("catalogue_failed", table.get_table_catalogue)
+            if name == "search_tables":
+                offers = await _guarded(
+                    "search_failed", table.search_tables, *_table_request(args)
+                )
+                return {"kind": "table", "offers": offers}
+            if name == "hold_table":
+                hold = await _guarded(
+                    "hold_invalid",
+                    table.create_hold,
+                    _require_str(args, "table_offer_id"),
+                )
+                return {
+                    "kind": "table",
+                    "hold_id": hold.hold_id,
+                    "table_offer_id": hold.price_quote_id,
+                    "quoted_total": None,
+                    "currency": hold.currency,
+                    "recap": hold.payload["recap"],
+                    "expires_at": hold.payload["expires_at"],
+                    "synthetic": hold.payload.get("synthetic") is True,
+                    "source": hold.payload.get("source"),
+                }
+            if name == "confirm_table_booking":
+                return await _guarded(
+                    "confirm_failed",
+                    table.confirm,
+                    _require_str(args, "hold_id"),
+                    _require_guest(args),
+                    _table_key(args),
+                )
+            if name == "cancel_table_booking":
+                return await _guarded(
+                    "cancel_failed",
+                    table.cancel,
+                    _require_str(args, "booking_id"),
+                    _table_key(args),
+                )
         if name == "search_availability":
             stay = _require_stay(self._stay)
             checkin = _require_date(args, "checkin")
@@ -405,8 +617,12 @@ class Dispatcher:
                 stay.search_availability,
                 checkin,
                 checkout,
-                {"adults": _coerce_adults(args), "children": _coerce_children(args),
-                 "room_type": args.get("room_type", ""), "service": args.get("service", "")},
+                {
+                    "adults": _coerce_adults(args),
+                    "children": _coerce_children(args),
+                    "room_type": args.get("room_type", ""),
+                    "service": args.get("service", ""),
+                },
             )
             return {"offers": offers}
         if name == "hold_offer":
@@ -440,8 +656,12 @@ class Dispatcher:
             )
         if name == "cancel_booking":
             stay = _require_stay(self._stay)
-            return await _guarded("cancel_failed", stay.cancel,
-                                  _require_str(args, "booking_id"), _idempotency_key(args))
+            return await _guarded(
+                "cancel_failed",
+                stay.cancel,
+                _require_str(args, "booking_id"),
+                _idempotency_key(args),
+            )
         if name == "get_stay_catalogue":
             stay = _require_stay(self._stay)
             describe = getattr(stay, "get_stay_catalogue", None)

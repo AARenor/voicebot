@@ -17,7 +17,14 @@ from tests.test_product_demo import AUTH, install_backend
 def client(monkeypatch, tmp_path):
     from app import callslog
 
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict(
+        "os.environ",
+        {
+            "OPERATOR_TOKEN": "fixture-operator",
+            "VOICEBOT_BUSINESS": "legacy",
+        },
+        clear=True,
+    ):
         callslog.reset_default()
         app = create_app()
     monkeypatch.setenv("OPERATOR_TOKEN", "fixture-operator")
@@ -94,7 +101,15 @@ def test_direct_spa_booking_requires_displayed_recap_and_explicit_button(
         {"session_id": session, "kind": "slot", "slot_id": slot["slotId"]},
     )
     hold = prepared.json()["hold_id"]
-    acknowledged = post(client, "recap", {"session_id": session, "hold_id": hold})
+    acknowledged = post(
+        client,
+        "recap",
+        {
+            "session_id": session,
+            "hold_id": hold,
+            "recap_delivery_id": prepared.json()["recap_delivery_id"],
+        },
+    )
     assert acknowledged.status_code == 200
     assert acknowledged.json()["acknowledged"] is True
     denied = post(
@@ -206,7 +221,15 @@ def test_direct_room_booking_and_cancellation_have_durable_receipts(client):
     hold = prepared.json()["hold_id"]
     assert offer["quoted_total"] in prepared.json()["recap_text"]
     assert (
-        post(client, "recap", {"session_id": session, "hold_id": hold}).status_code
+        post(
+            client,
+            "recap",
+            {
+                "session_id": session,
+                "hold_id": hold,
+                "recap_delivery_id": prepared.json()["recap_delivery_id"],
+            },
+        ).status_code
         == 200
     )
     confirmed = post(

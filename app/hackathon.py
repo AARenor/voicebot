@@ -12,6 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, Request
 
@@ -39,6 +40,7 @@ class DemoSession:
     turn_count: int = 0
     expiry: object = None
     recap_delivery: dict | None = None
+    booking_recap_delivery: dict | None = None
 
 
 def operator_scope(authorization):
@@ -272,6 +274,25 @@ def result_outcome(result):
     return "tools_ok" if results else "ok"
 
 
+def table_receipt_metadata(booking):
+    """Project an authoritative table receipt into contact-free local history."""
+    booking_id = booking["id"]
+    day = date.fromisoformat(booking["date"])
+    start = datetime.fromisoformat(booking["start"])
+    if not re.fullmatch(r"table_[a-f0-9]{32}", booking_id) or start.tzinfo is None:
+        raise ValueError("table receipt metadata invalid")
+    local = start.astimezone(ZoneInfo("Europe/Tallinn"))
+    if local.date() != day:
+        raise ValueError("table receipt date invalid")
+    return {
+        "id": booking_id,
+        "kind": "table",
+        "date": day.isoformat(),
+        "start_local": local.replace(tzinfo=None).isoformat(sep=" "),
+        "timezone": "Europe/Tallinn",
+    }
+
+
 class _TurnTools:
     def __init__(self, session):
         self.session = session
@@ -288,6 +309,8 @@ class _TurnTools:
             "cancel_slot_booking",
             "confirm_booking",
             "cancel_booking",
+            "confirm_table_booking",
+            "cancel_table_booking",
         }
         if is_mutation and self.mutation_attempted:
             result = {"error": "mutation_retry_forbidden"}
@@ -347,6 +370,18 @@ class _TurnTools:
                         "checkout": booking["checkout"],
                         "timezone": "Europe/Tallinn",
                     }
+                    self.changes.append(
+                        {
+                            "action": "confirmed",
+                            **self.session.booking_details[booking_id],
+                        }
+                    )
+                elif name == "confirm_table_booking":
+                    booking = result["booking"]
+                    booking_id = str(booking["id"])
+                    self.session.booking_details[booking_id] = table_receipt_metadata(
+                        booking
+                    )
                     self.changes.append(
                         {
                             "action": "confirmed",

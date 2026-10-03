@@ -1,4 +1,4 @@
-"""Hotel presentation stays local, public, and connected to server-owned data."""
+"""Restaurant presentation retains local routes and server-owned public data."""
 
 import hashlib
 from html.parser import HTMLParser
@@ -53,11 +53,11 @@ def test_public_hotel_does_not_embed_credentials_inventory_or_phone() -> None:
     assert "innerHTML" not in script
     assert "sessionStorage" not in script and "localStorage" not in script
     assert "+1202555" not in html + script
-    assert 'href="https://robot.arleserver.cfd/?book=stay"' in html
-    assert 'href="https://robot.arleserver.cfd/?book=spa"' in html
-    assert "FIKTIIVNE HOTELL" in html
+    assert 'href="https://robot.arleserver.cfd/?book=table"' in html
+    assert "?book=stay" not in html and "?book=spa" not in html
+    assert "Fiktiivne restoran" in html and "RESTORANI DEMO" in html
     assert "Päris külastuskohta pole" in html
-    assert 'id="room-grid"></div>' in html
+    assert 'id="table-grid"></div>' in html
     assert 'id="phone-number" hidden' in html
 
 
@@ -84,8 +84,7 @@ def test_hotel_operator_links_keep_the_management_domain() -> None:
         href for href in links if urlsplit(href).hostname == "robot.arleserver.cfd"
     } == {
         "https://robot.arleserver.cfd/",
-        "https://robot.arleserver.cfd/?book=stay",
-        "https://robot.arleserver.cfd/?book=spa",
+        "https://robot.arleserver.cfd/?book=table",
         "https://robot.arleserver.cfd/#demo-section",
     }
 

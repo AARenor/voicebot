@@ -177,7 +177,14 @@ def test_read_enforces_retention_without_reopening_database(db):
 
 @pytest.fixture
 def client(db, monkeypatch):
-    with patch.dict("os.environ", {"OPERATOR_TOKEN": "fixture-operator"}, clear=True):
+    with patch.dict(
+        "os.environ",
+        {
+            "OPERATOR_TOKEN": "fixture-operator",
+            "VOICEBOT_BUSINESS": "legacy",
+        },
+        clear=True,
+    ):
         monkeypatch.setattr(callslog, "get_default", lambda: db)
         app = create_app()
         app.state.stack.update(llm_primary=Mock(), tts=Mock())

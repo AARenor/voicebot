@@ -1,19 +1,18 @@
-# Voicebot — fictional Estonian hotel and spa demo
+# Voicebot — fictional restaurant reservations
 
-LiveKit Agents, Groq STT/LLM, Azure Anu speech and private Easy!Appointments
-**1.6.0**. The dashboard reads actual provider bookings and offers a protected
-text/microphone demo, direct spa and room booking, and a public hotel pitch at
-`https://meretuule.arleserver.cfd/`. Room inventory is a finite, persistent
-fictional PMS; Easy!Appointments
-continues to supply spa services, working plans and appointment availability.
-Only fictional guests and approved fictional FAQ data.
+LiveKit Agents, Groq STT/LLM, Azure speech and a durable fictional restaurant
+table ledger. The protected dashboard offers text/microphone dialogue, direct
+table reservations and independent readback. The public restaurant page is at
+`https://meretuule.arleserver.cfd/`. Date, Tallinn time, headcount, table capacity
+and full sitting overlap determine availability; no spa/room tools are exposed
+in the default restaurant pipeline. Only fictional guests and approved FAQ data.
 Spoken writes require an owned hold, a delivered recap and subsequent explicit
 consent. Model prose is not booking evidence.
 
 Both voice transports use configurable Groq `openai/gpt-oss-120b` and
 `whisper-large-v3`. Telephone calls automatically detect Estonian, English or
 Russian and reply with Azure Anu, Jenny or Svetlana respectively. English covers the same
-fictional spa/room searches, opening hours, FAQs, recaps, confirmation and
+fictional restaurant searches, opening hours, FAQs, recaps, confirmation and
 cancellation. Ambiguous English numeric dates and hours require clarification;
 changing language requires a fresh delivered recap before confirmation. See
 `GROQ_CHAT_MODEL`, `GROQ_STT_MODEL` and `GROQ_MAX_COMPLETION_TOKENS` in
@@ -22,8 +21,8 @@ of an actual successful carrier call. HTTP turns return per-stage timings and
 closed warning codes, and the native worker logs bounded latency summaries.
 The browser demo automatically selects the caller's language. HTTP callers can
 also select `language: "en"` or `language: "ru"` explicitly. Russian uses approved
-FAQ answers, inventory wording and booking recaps; backend names, dates and
-quoted amounts are preserved. Confirmation requires a delivered Russian recap
+FAQ answers, inventory wording and booking recaps; exact times and headcounts
+are preserved. Confirmation requires a delivered Russian recap
 followed by `Да, подтверждаю.`; switching language resets recap approval.
 The initial automatic greeting remains Estonian with the English invitation.
 A Russian call uses the cached Estonian apology if the speech provider fails.
@@ -80,19 +79,15 @@ voicebot/
     server.py         # FastAPI: dashboard, /api/status, POST /api/turn
     providers/        # Groq (STT+chat), Gemini (failover), Azure TTS
     booking/
-      base.py         # StayAdapter / SlotAdapter ABCs + hold ledger types
-      tools.py        # LLM tool schemas + Dispatcher + price gate
-      apaleo.py       # first paid adapter (stub: wire with PMS creds)
-      mews.py         # second (stub)
-      cloudbeds.py    # third (stub)
-      zenoti.py       # spa parallel (stub)
-      qloapps.py      # $0 demo double (stub)
-      easyappointments.py  # real spa REST adapter, opt-in demo + durable writes
-      demo_stay.py     # finite fictional rooms, durable quotes/holds/bookings
+      base.py         # shared hold types and archived adapter contracts
+      tools.py        # tool schemas + business-scoped Dispatcher
+      demo_table.py   # finite tables, durable offers/holds/reservations/results
+      easyappointments.py  # archived spa adapter, not active in restaurant mode
+      demo_stay.py    # archived room adapter, existing data preserved
     knowledge/        # SQLite FTS FAQ ingest + retrieve + ET seed
     callslog.py       # SQLite turn/call log (masked peers, 30d retention)
-    dashboard/        # protected provider bookings/catalogue + text/microphone UI
-    hotel/            # public fictional hotel/spa pitching website
+    dashboard/        # protected restaurant bookings + text/microphone UI
+    hotel/            # restaurant public page; historical asset paths retained
 ```
 
 ## Quickstart
@@ -106,28 +101,32 @@ voicebot/
    regular HTTP dependencies do not include the native audio runtime. Real
    provider calls may incur usage; no carrier purchase is performed here.
 
-## Installed booking demo
+## Restaurant booking demo
 
-Easy!Appointments **1.6.0** runs as a private separate service with persistent
-MySQL storage. The existing HTTP dialogue uses `SlotAdapter` → `Dispatcher` →
-the documented REST API for catalogue, slots, booking and cancellation.
-See [installation and operator runbook](deploy/easyappointments/README.md).
-This is synthetic spa data, not hotel room inventory or a real-property release.
+`DemoTableAdapter` → business-scoped `Dispatcher` → shared `CallTools` is used
+by browser controls, HTTP dialogue and the native worker. Five fictional tables
+seat 2, 2, 4, 4 and 6 people, with a two-hour sitting, daily 12:00–22:00 Tallinn
+opening and a 90-day horizon. All seated diners count toward party size. There
+is no combined-table allocation, payment, invented price or real POS connector.
 Canonical repository: **Parnuhakk/voicebot** (branch `master`).
 
-The room demo stores inventory, expiring exclusive holds and idempotent booking
-receipts in `STAY_STATE_DB` (default beside the Easy journal at
-`/data/stay-booking.db`). When unset, `STAY_DEMO_WRITES` follows the existing
-`EASY_DEMO_WRITES` opt-in; explicit `0` disables it. The web app and telephone
-worker must mount the same persistent volume and room database path. No real
-hotel PMS connection, payment or notification is implied by demo inventory.
+The table demo stores offers, expiring exclusive holds, reservations and
+fingerprinted write receipts in `RESTAURANT_STATE_DB` (default
+`/data/restaurant-booking.db`). The web app and native worker mount the same
+persistent volume and database path. Missing durable state fails closed; legacy
+spa credentials do not enable any restaurant fallback. `VOICEBOT_BUSINESS`
+defaults to `restaurant`; `legacy` exists only for archived adapter verification
+on the web, not the native restaurant worker. Existing spa/room/history databases
+and their original record kinds are preserved, not relabeled or deleted.
 
 Direct bookings use `/api/booking/session`, `/search`, `/prepare`, `/recap`,
 `/confirm` and `/cancel`. The displayed backend recap is acknowledged before
-the explicit confirmation button is accepted. Operator authentication applies
-to every step and to `/api/rooms` and `/api/stays`. Public `/api/public/property`
-and `/api/public/catalogue` contain only property/contact and catalogue DTOs;
-they expose no guests or appointment records. `PUBLIC_PHONE_NUMBER` can specify
+the explicit confirmation button is accepted. A one-use `recap_delivery_id`
+belongs to that exact preparation, not a reusable hold. Acknowledgement is a
+client assertion of reading/playback, not proof of hearing. Operator authentication
+applies to every step and `/api/tables` and `/api/table-bookings`. Public
+`/api/public/property` and `/api/public/catalogue` expose restaurant rules and
+table inventory, never guests or reservations. `PUBLIC_PHONE_NUMBER` can specify
 the demo phone contact; otherwise the configured Twilio/SIP number is used.
 
 ## Website architecture
@@ -143,14 +142,15 @@ is not used. Use the Meretuule root in guest-facing links; `/hotel` remains an
 internal proxy rewrite target and a local preview route.
 See the [Meretuule domain runbook](deploy/meretuule/README.md).
 
-`/api/bookings` and `/api/catalogue` read Easy REST through explicit allowlisted
-DTOs. `/api/demo/session` and `/api/turn` share native booking ownership/consent;
+`/api/tables` and `/api/table-bookings` read the authoritative restaurant ledger
+through contact-free DTOs. `/api/demo/session` and `/api/turn` share native ownership/consent;
 the browser selects the actual booking day after a successful write. Operator
 credentials, conversation and microphone data are not persisted in the browser.
 The old example queue is labelled separately and never used as availability.
 `/api/call-history` lists actual browser/telephone session metadata with channel
 and attention filters. Session details show recognition activity, provider
-failures and owned spa/room booking receipts; booking links open the relevant
+failures and owned table booking receipts; archived spa/room records retain their
+original kinds. Restaurant booking links open the relevant
 day's records. New tables migrate additively inside `CALLS_DB`. Web and worker
 must use the same persistent `/data/calls.db` volume. Earlier technical log
 rows remain separate because they cannot reconstruct a conversation history.
@@ -192,5 +192,5 @@ The latest call-history previews and verification limits are recorded in
 ## Rules
 
 - ET-first per-language routing; never send ET to non-ET voices.
-- Prices only verbatim from live PMS offers (`price_quote_id`), never embeddings.
-- No PAN in pipeline (payment links only). No secrets in repo.
+- No restaurant prices, payments or real customer contact collection.
+- No secrets in the repository or provider bodies/transcripts in diagnostics.

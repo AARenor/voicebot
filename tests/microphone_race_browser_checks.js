@@ -16,7 +16,7 @@ async (page) => {
     if(path==='/api/turn')requests.push(route.request().postDataJSON());
     const data=path==='/api/demo/session'?{session_id:'fixture',greeting:'Tere!',audio_b64:audio.toString('base64'),audio_type:'audio/wav'}:
       path==='/api/turn'?{reply:'Tere!',audio_b64:'',booking_changes:[]}:
-      path==='/api/bookings'?{items:[],has_more:false}:
+      path==='/api/table-bookings'?{items:[],has_more:false}:
       path==='/api/calls'?{calls:[]}:
       path==='/api/call-history'?{items:[],summary:{},has_more:false}:{};
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
@@ -33,7 +33,7 @@ async (page) => {
   await page.waitForFunction(()=>state.micStarting);
   const example=page.locator('.example-button').first();
   const disabled=await example.isDisabled();
-  await page.evaluate(()=>sendTurn({text:'Millal spaa avatud on?'}));
+  await page.evaluate(()=>sendTurn({text:'Millal restoran avatud on?'}));
   const serialized=requests.length===0;
   // Native playback controls can be pressed while permission is unresolved.
   await page.locator('#demo-audio').evaluate(async audio=>{audio.loop=true;audio.currentTime=0;await audio.play();});

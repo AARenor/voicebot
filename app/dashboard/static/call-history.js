@@ -98,7 +98,7 @@ function historyInsight(item) {
   if (item.empty_turns >= 3) return "Mitmest heliproovist ei tuvastatud kõnet. Kontrolli mikrofoni helitaset ja proovi lühikest eestikeelset lauset.";
   if (item.channel === "telephone" && !item.recognized_turns && item.vad_events) return "Rääkimine tuvastati, kuid lõplikku kõnetuvastuse teksti ei saabunud. Kontrolli sisendheli ja kõnetuvastuse teekonda.";
   if (item.channel === "telephone" && !item.recognized_turns) return "Selle kõne jooksul ei registreeritud tuvastatud kõnet. Kontrolli, kas helisisend jõudis abiliseni.";
-  if (item.bookings?.length) return "Broneeringuviited pärinevad kinnitatud taustsüsteemi tulemustest. Ava broneering, et kontrollida praegust olekut.";
+  if (item.bookings?.length) return "Viited pärinevad taustsüsteemi toimingutest. Lauabroneeringu praegust olekut kontrolli päeva ülevaatest. Varasemad hotelli- ja spaakirjed on arhiveeritud.";
   return "Vestluse toimingud on allpool. Veebivestlus ja telefonikõne kasutavad eraldi heliteekondi.";
 }
 function renderHistoryDetail(data) {
@@ -115,18 +115,24 @@ function renderHistoryDetail(data) {
     const bookings=historyNode("div", "", "history-bookings");
     for (const booking of item.bookings) {
       const box=historyNode("div", "", "history-booking"), copy=historyNode("div");
-      const stay=booking.kind === "stay";
-      copy.append(historyNode("strong",stay ? `Hotellipeatumine #${booking.id.slice(-8)}` : `Broneering #${booking.id}`),historyNode("p",`${stay ? `${booking.date} – ${booking.checkout}` : `${booking.date} ${booking.start_local.slice(11,16)}`} · ${booking.action === "cancelled" ? "Tühistatud" : "Kinnitatud"}`));
-      const button=historyNode("button",stay ? "Ava päeva peatumised" : "Ava päeva broneeringud","button compact"); button.type="button";
-      button.addEventListener("click",async()=>{
-        if (!state.connected || !/^\d{4}-\d{2}-\d{2}$/.test(booking.date) || !(stay ? /^stay_[a-f0-9]{32}$/ : /^[1-9]\d*$/).test(booking.id)) return;
-        $("booking-date").value=booking.date;
-        await changeView(1,!stay && booking.action === "confirmed" ? booking.id : null);
-        if (!state.connected) return;
-        const heading=stay ? "stays-title" : "bookings-title";
-        location.hash=stay ? "stays-section" : "booking-section"; $(heading).setAttribute("tabindex","-1"); $(heading).focus?.();
-      });
-      box.append(copy,button); bookings.append(box);
+      const table=booking.kind === "table", stay=booking.kind === "stay";
+      const label=table ? `Lauabroneering #${booking.id}` : stay ? `Arhiveeritud hotellipeatumine #${booking.id}` : `Arhiveeritud spaa broneering #${booking.id}`;
+      const time=typeof booking.start_local==="string" ? booking.start_local.slice(11,16) : booking.start_time || "";
+      copy.append(historyNode("strong",label),historyNode("p",`${stay ? `${booking.date} – ${booking.checkout || ""}` : `${booking.date} ${time}`} · ${booking.action === "cancelled" ? "Tühistatud" : "Kinnitatud"}`));
+      box.append(copy);
+      // Archive metadata keeps its original kind; never point at retired controls.
+      if(table && /^\d{4}-\d{2}-\d{2}$/.test(booking.date) && /^table_[a-f0-9]{32}$/.test(booking.id)) {
+        const button=historyNode("button","Ava päeva lauabroneeringud","button compact"); button.type="button";
+        button.addEventListener("click",async()=>{
+          if (!state.connected) return;
+          $("booking-date").value=booking.date;
+          await changeView(1,booking.action === "confirmed" ? booking.id : null);
+          if (!state.connected) return;
+          location.hash="booking-section"; $("bookings-title").setAttribute("tabindex","-1"); $("bookings-title").focus?.();
+        });
+        box.append(button);
+      }
+      bookings.append(box);
     }
     panel.append(bookings);
   }

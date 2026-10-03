@@ -37,7 +37,7 @@ async page => {
   assert((await page.locator('#demo-messages .assistant-message').last().textContent()).includes("You're welcome"));
   await page.locator('[data-demo-example="hours"]').click();
   await page.waitForFunction(()=>!state.turnBusy);
-  assert.equal(requests.at(-1).body.text,'What are the spa opening hours?');
+  assert.equal(requests.at(-1).body.text,'What are the restaurant opening hours?');
   assert.equal(requests.at(-1).body.language,'en');
   // Synthetic Web Audio stream goes through real microphone capture/resampling.
   await page.evaluate(()=>{
@@ -70,7 +70,7 @@ async page => {
   assert.equal(await page.locator('#demo-language').isDisabled(),false);
   await page.locator('#demo-language').selectOption('et');
   assert.equal(await page.locator('#demo-title').textContent(),'Proovi kõneabilist');
-  assert.equal(await page.locator('[data-demo-example="hours"]').getAttribute('data-message'),'Millal spaa avatud on?');
+  assert.equal(await page.locator('[data-demo-example="hours"]').getAttribute('data-message'),'Millal restoran avatud on?');
   await page.locator('#demo-start').click();await page.waitForFunction(()=>state.sessionId && !state.turnBusy);
   assert.equal(requests.at(-1).body.language,'et');
   assert((await page.locator('#demo-messages').textContent()).includes('Tere!'));

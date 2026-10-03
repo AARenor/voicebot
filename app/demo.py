@@ -11,6 +11,7 @@ from typing import NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 DEMO_PATH = Path(__file__).resolve().parents[1] / "data/demo/telephone-demo.json"
+RESTAURANT_DEMO_PATH = DEMO_PATH.with_name("restaurant-demo.json")
 DEMO_TIMEZONE = "Europe/Tallinn"
 
 
@@ -45,10 +46,13 @@ def validate_call_id(value):
     return value
 
 
-def load_demo_data(path=None) -> DemoData:
+def load_demo_data(path=None, *, business="legacy") -> DemoData:
     """Read only the disclosed profile, FAQ and reserved fictional contacts."""
     try:
-        source = json.loads(Path(path or DEMO_PATH).read_text(encoding="utf-8"))
+        if business not in {"legacy", "restaurant"}:
+            raise ValueError
+        default_path = RESTAURANT_DEMO_PATH if business == "restaurant" else DEMO_PATH
+        source = json.loads(Path(path or default_path).read_text(encoding="utf-8"))
         if (
             source["schema_version"] != 1
             or source["synthetic"] is not True
@@ -94,7 +98,9 @@ def load_demo_data(path=None) -> DemoData:
         for translated, entry in zip(faq, source["manual_demo_faq"]["entries"]):
             for suffix in ("en", "ru"):
                 if "question_" + suffix in entry or "answer_" + suffix in entry:
-                    translated["question_" + suffix] = _text(entry["question_" + suffix])
+                    translated["question_" + suffix] = _text(
+                        entry["question_" + suffix]
+                    )
                     translated["answer_" + suffix] = _text(entry["answer_" + suffix])
         guests = {}
         for entry in source["guests"]:

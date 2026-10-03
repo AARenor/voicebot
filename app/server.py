@@ -28,23 +28,24 @@ else:
 
 def build_stack() -> dict:
     """Construct providers/adapters from env. Never logs or returns keys."""
-    from .booking.apaleo import ApaleoAdapter
-    from .booking.cloudbeds import CloudbedsAdapter
-    from .booking.easyappointments import EasyAppointmentsAdapter
-    from .booking.mews import MewsAdapter
     from .providers.azure_tts import AzureTtsClient
     from .providers.gemini import GeminiClient
     from .providers.groq import GroqClient
     from .providers.voice_config import SpeechConfig
     from .providers.speech_delivery import SpeechDelivery
 
+    business = os.environ.get("VOICEBOT_BUSINESS", "restaurant")
+    if business not in {"restaurant", "legacy"}:
+        raise ValueError("unsupported voicebot business")
     stack: dict = {
+        "business": business,
         "stt": None,
         "llm_primary": None,
         "llm_secondary": None,
         "tts": None,
         "stay": None,
         "slot": None,
+        "table": None,
         "booking_reader": None,
         "livekit": None,
         "faq_db": None,
@@ -65,7 +66,49 @@ def build_stack() -> dict:
             languages={lang: speech.voice_for(lang) for lang in ("et", "en", "ru")},
             delivery=SpeechDelivery.from_env(),
         )
-    # Stay priority: Apaleo (API-first) -> Mews (coverage) -> Cloudbeds.
+    if business == "restaurant":
+        from .booking.demo_table import DemoTableAdapter
+
+        try:
+            stack["table"] = DemoTableAdapter(
+                os.environ.get("RESTAURANT_STATE_DB", "/data/restaurant-booking.db")
+            )
+        except (OSError, ValueError, sqlite3.Error):
+            # Missing durable state must not fall back to hotel/spa tools.
+            stack["table"] = None
+    else:
+        _wire_legacy_booking(stack)
+    if all(
+        os.environ.get(k)
+        for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
+    ):
+        # Self-hosted media plane (livekit:7880 on the coolify network).
+        # Reachability is verified at deploy; status only reports config.
+        stack["livekit"] = {
+            "url": os.environ["LIVEKIT_URL"],
+            "api_key": os.environ["LIVEKIT_API_KEY"],
+        }
+    from .booking.tools import Dispatcher
+
+    # The HTTP demo uses the approved fictional profile through CallTools.
+    # Never seed or expose generic real-hotel FAQ promises here.
+    stack["dispatcher"] = Dispatcher(
+        stay=stack["stay"],
+        slot=stack["slot"],
+        table=stack["table"],
+        business=business,
+    )
+    stack["demo"] = stack["stt"] is None
+    return stack
+
+
+def _wire_legacy_booking(stack):
+    """Explicit archived adapter verification only; never the default product."""
+    from .booking.apaleo import ApaleoAdapter
+    from .booking.cloudbeds import CloudbedsAdapter
+    from .booking.easyappointments import EasyAppointmentsAdapter
+    from .booking.mews import MewsAdapter
+
     if os.environ.get("APALEO_CLIENT_ID") and os.environ.get("APALEO_CLIENT_SECRET"):
         stack["stay"] = ApaleoAdapter(
             os.environ["APALEO_CLIENT_ID"], os.environ["APALEO_CLIENT_SECRET"]
@@ -88,44 +131,27 @@ def build_stack() -> dict:
     elif os.environ.get("CLOUDBEDS_API_KEY"):
         stack["stay"] = CloudbedsAdapter(os.environ["CLOUDBEDS_API_KEY"])
     if os.environ.get("EASY_BASE_URL") and os.environ.get("EASY_API_KEY"):
-        read_options = {
+        options = {
             "auth_scheme": os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
             "api_prefix": os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
         }
         stack["booking_reader"] = EasyAppointmentsAdapter(
             os.environ["EASY_BASE_URL"],
             os.environ["EASY_API_KEY"],
-            **read_options,
+            **options,
         )
-        # Sole-writer demo gate: credentials alone never advertise booking
-        # tools. Explicit opt-in plus a persistent journal are required
-        # (upstream 1.6.0 creation does not reject overlaps).
         if os.environ.get("EASY_DEMO_WRITES") == "1":
             try:
                 stack["slot"] = EasyAppointmentsAdapter(
                     os.environ["EASY_BASE_URL"],
                     os.environ["EASY_API_KEY"],
-                    auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-                    api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
+                    **options,
                     state_db=os.environ.get("EASY_STATE_DB", "/data/easy-booking.db"),
                     allow_writes=True,
                 )
             except Exception:
-                # Journal unwritable: stay unwired, never half-operational.
                 stack["slot"] = None
-    if all(
-        os.environ.get(k)
-        for k in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
-    ):
-        # Self-hosted media plane (livekit:7880 on the coolify network).
-        # Reachability is verified at deploy; status only reports config.
-        stack["livekit"] = {
-            "url": os.environ["LIVEKIT_URL"],
-            "api_key": os.environ["LIVEKIT_API_KEY"],
-        }
     if stack["slot"] is None and os.environ.get("ZENOTI_API_KEY"):
-        # Independent fallback: media plane (LiveKit) and spa PMS are
-        # orthogonal — Zenoti must survive LiveKit being configured.
         from .booking.zenoti import ZenotiAdapter
 
         stack["slot"] = ZenotiAdapter(os.environ["ZENOTI_API_KEY"])
@@ -136,8 +162,6 @@ def build_stack() -> dict:
     ):
         from .booking.demo_stay import DemoStayAdapter
 
-        # Keep room inventory beside the existing persistent booking journal.
-        # This is explicitly fictional inventory, never a live hotel PMS.
         state_dir = os.path.dirname(
             os.environ.get("EASY_STATE_DB", "/data/easy-booking.db")
         )
@@ -148,16 +172,6 @@ def build_stack() -> dict:
             )
         except (OSError, ValueError, sqlite3.Error):
             stack["stay"] = None
-    from .booking.tools import Dispatcher
-
-    # The HTTP demo uses the approved fictional profile through CallTools.
-    # Never seed or expose generic real-hotel FAQ promises here.
-    stack["dispatcher"] = Dispatcher(
-        stay=stack["stay"],
-        slot=stack["slot"],
-    )
-    stack["demo"] = stack["stt"] is None
-    return stack
 
 
 def create_app():
@@ -186,6 +200,7 @@ def create_app():
             "tts",
             "slot",
             "stay",
+            "table",
             "booking_reader",
         ):
             client = stack.get(key)
@@ -220,6 +235,8 @@ def create_app():
             "/api/reset",
             "/api/rooms",
             "/api/stays",
+            "/api/tables",
+            "/api/table-bookings",
         ) or request.url.path.startswith(
             ("/api/demo/", "/api/holds/", "/api/booking/", "/api/call-history")
         )
@@ -250,9 +267,15 @@ def create_app():
         and stack["tts"] is not None,
         "stay_booking_ready": "search_availability" in advertised,
         "slot_booking_ready": "search_slots" in advertised,
-        "booking_read_ready": stack["booking_reader"] is not None,
+        "table_booking_ready": "search_tables" in advertised,
+        "booking_read_ready": stack["booking_reader"] is not None
+        or stack["table"] is not None,
         "booking_view_source": (
-            "easyappointments" if stack["booking_reader"] is not None else None
+            "fictional_restaurant"
+            if stack["table"] is not None
+            else "easyappointments"
+            if stack["booking_reader"] is not None
+            else None
         ),
         # Dashboard queue is still explicit demo state; never claim a PMS write.
         "operator_hold_commands_ready": False,
@@ -262,7 +285,7 @@ def create_app():
     # operator_hold_commands_ready and serving_demo_data together.
     app.state.capabilities = capabilities
     dashboard_api.configure_mode(
-        demo=stack["demo"],
+        demo=stack["demo"] and stack["business"] == "legacy",
         commands_ready=capabilities["operator_hold_commands_ready"],
     )
     if app.state.stack["demo"]:
@@ -295,10 +318,12 @@ def create_app():
                     "tts",
                     "stay",
                     "slot",
+                    "table",
                     "livekit",
                 )
             },
             "demo": stack["demo"],
+            "business": getattr(stack["dispatcher"], "business", "legacy"),
             "models": {
                 "stt": {
                     "provider": "groq",

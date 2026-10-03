@@ -13,9 +13,9 @@ DATA_PATH = ROOT / "data/demo/telephone-demo.json"
 
 
 def demo_module():
-    assert (
-        importlib.util.find_spec("app.demo") is not None
-    ), "fictional demo loader is missing"
+    assert importlib.util.find_spec("app.demo") is not None, (
+        "fictional demo loader is missing"
+    )
     return importlib.import_module("app.demo")
 
 
@@ -125,7 +125,6 @@ def test_readers_cannot_mutate_fixture_guests_or_faq():
 
 
 def test_telephony_image_copies_approved_demo_fixtures():
-    assert (
-        "COPY data/demo/ ./data/demo/"
-        in (ROOT / "deploy/telephony/Dockerfile").read_text(encoding="utf-8")
-    )
+    assert "COPY --chown=voicebot:voicebot data/demo/ ./data/demo/" in (
+        ROOT / "deploy/telephony/Dockerfile"
+    ).read_text(encoding="utf-8")

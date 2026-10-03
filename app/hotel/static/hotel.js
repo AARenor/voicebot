@@ -7,26 +7,44 @@ async function publicData(path){
   try{const response=await fetch(path,{signal:controller.signal,cache:"no-store",credentials:"omit"});if(!response.ok)throw new Error("public_read_unavailable");return await response.json();}
   finally{clearTimeout(timeout);}
 }
-function renderHotelRooms(rooms){
-  const items=rooms?.room_types || [];
-  hotelElement("room-grid").replaceChildren();
-  items.forEach((room,index)=>{
-    const card=document.createElement("article"),art=document.createElement("div"),windowArt=document.createElement("div"),bed=document.createElement("div"),caption=document.createElement("span"),content=document.createElement("div"),title=document.createElement("h3"),description=document.createElement("p"),amenities=document.createElement("ul"),bottom=document.createElement("div"),capacity=document.createElement("span"),link=document.createElement("a");
-    card.className="room-card";art.className="room-art palette-"+(index%3);art.setAttribute("aria-hidden","true");windowArt.className="room-window";bed.className="room-bed";caption.className="room-art-caption";caption.textContent="FIKTIIVSE TOA ILLUSTRATSIOON";art.append(windowArt,bed,caption);
-    content.className="room-content";title.textContent=room.name;description.textContent=room.description;amenities.className="room-amenities";
-    for(const name of room.amenities || []){const item=document.createElement("li");item.textContent=name;amenities.append(item);}
-    bottom.className="room-bottom";capacity.textContent="Kuni "+room.capacity+" külalist";link.className="text-link";link.href="https://robot.arleserver.cfd/?"+new URLSearchParams({book:"stay",room:String(room.id)});link.textContent="Kontrolli saadavust ↗";link.setAttribute("aria-label",room.name+": kontrolli demo saadavust");bottom.append(capacity,link);content.append(title,description,amenities,bottom);card.append(art,content);hotelElement("room-grid").append(card);
-  });
-  hotelStatus("rooms-status",items.length?"Toatüübid sünteetilisest hotellikataloogist. Pildid on illustratsioonid.":"Demotubade kataloog pole praegu saadaval.",!items.length);
+function renderRestaurantTables(items){
+  hotelElement("table-grid").replaceChildren();
+  for(const table of items){
+    const card=document.createElement("article"),title=document.createElement("h3"),capacity=document.createElement("p"),link=document.createElement("a");
+    card.className="table-card";title.textContent=table.name;capacity.textContent="Kuni "+table.capacity+" inimest";
+    link.className="text-link";link.href="https://robot.arleserver.cfd/?book=table";link.textContent="Kontrolli saadavust ↗";link.setAttribute("aria-label",table.name+": kontrolli demo saadavust");
+    card.append(title,capacity,link);hotelElement("table-grid").append(card);
+  }
+  hotelStatus("tables-status",items.length?"Füüsilised demolaudade kohad kataloogist. Saadavus kontrollitakse eraldi.":"Laudade kataloog on tühi; saadavus pole kinnitatud.",!items.length);
 }
-function renderHotelServices(services){
-  hotelElement("service-list").replaceChildren();
-  for(const service of services || []){const item=document.createElement("li"),name=document.createElement("span"),duration=document.createElement("span");name.textContent=service.name;duration.textContent=service.duration+" min";item.append(name,duration);hotelElement("service-list").append(item);}
-  hotelStatus("spa-status",services?.length?"Teenused demo broneerimissüsteemist. Saadavus kontrollitakse eraldi.":"Spaateenuseid ei saanud praegu laadida.",!services?.length);
+function renderRestaurantMenu(menu){
+  hotelElement("menu-list").replaceChildren();
+  for(const entry of menu){
+    const item=document.createElement("li"),name=document.createElement("h3"),description=document.createElement("p");
+    name.textContent=entry.name_et || entry.name;description.textContent=entry.description_et || entry.description || "";
+    item.append(name,description);hotelElement("menu-list").append(item);
+  }
+  hotelStatus("menu-status",menu.length?"Fiktiivne demomenüü. Tellimusi ega makseid ei võeta vastu.":"Demomenüü andmed pole praegu saadaval.",!menu.length);
+}
+function renderRestaurantRules(rules){
+  const labels={timezone:"Ajavöönd",opening_time:"Avatud alates",closing_time:"Suletud alates",duration_minutes:"Laua kasutusaeg (min)",min_party_size:"Vähim inimeste arv",max_party_size:"Suurim inimeste arv",horizon_days:"Broneerimine ette (päeva)",combine_tables:"Lauad ühendatavad",children_count_toward_party_size:"Lapsed arvestatakse inimeste hulka"};
+  hotelElement("rules-list").replaceChildren();
+  for(const [key,value] of Object.entries(rules || {})){
+    if(!["string","number","boolean"].includes(typeof value))continue;
+    const item=document.createElement("li");item.textContent=`${labels[key] || key}: ${typeof value==="boolean"?value?"jah":"ei":value}`;hotelElement("rules-list").append(item);
+  }
+  hotelStatus("rules-status",hotelElement("rules-list").children.length?"Reeglid restorani kataloogist. Kõik ajad on Tallinna ajavööndis.":"Restorani reegleid ei saanud kontrollida.",!hotelElement("rules-list").children.length);
 }
 function renderOpeningHours(property){
-  const hours=property.working_hours || property.opening_hours || {};
+  const hours=property.opening_hours || {};
   hotelElement("opening-hours").replaceChildren();
+  const rules=property.restaurant_rules;
+  if(rules?.opening_time && rules?.closing_time){
+    const row=document.createElement("li"),name=document.createElement("span"),time=document.createElement("span");
+    name.textContent="Iga päev";time.textContent=`${rules.opening_time}–${rules.closing_time}`;row.append(name,time);hotelElement("opening-hours").append(row);
+    hotelElement("hours-status").textContent="Ajavöönd: "+(property.timezone || "Europe/Tallinn")+". Kogu laua kasutusaeg peab jääma lahtiolekuaega.";
+    return;
+  }
   const entries=Array.isArray(hours)?hours.map(item=>[item.day,item]):Object.entries(hours);
   for(const [day,value] of entries){
     const row=document.createElement("li"),name=document.createElement("span"),time=document.createElement("span");name.textContent=dayLabels[day] || value?.label || day;
@@ -37,25 +55,33 @@ function renderOpeningHours(property){
     }else time.textContent="Suletud";
     row.append(name,time);hotelElement("opening-hours").append(row);
   }
-  hotelElement("hours-status").textContent=entries.length?"Ajavöönd: "+(property.timezone || "Europe/Tallinn")+". Vabad ajad kontrollib broneerimissüsteem.":"Lahtiolekuaegade andmed pole praegu saadaval.";
+  hotelElement("hours-status").textContent=entries.length?"Ajavöönd: "+(property.timezone || "Europe/Tallinn")+". Laua saadavus kontrollitakse eraldi.":"Lahtiolekuaegade andmed pole praegu saadaval.";
 }
-function renderHotelProperty(data){
+function renderRestaurantProperty(data){
   const property=data.property || {},phone=data.phone || {};
   if(property.description_et)hotelElement("property-description").textContent=property.description_et+" Kõik broneeringud on sünteetilised.";
   const number=phone.number;
   if(phone.configured===true && /^\+[1-9]\d{6,14}$/.test(number || "")){
     hotelElement("phone-number").href="tel:"+number;hotelElement("phone-number").textContent=number;hotelElement("phone-number").hidden=false;
     hotelElement("phone-status").textContent="Seadistatud demonumber. Telefonikõne valmisolekut kontrollib operaator; veebis saad proovida teksti või mikrofoniga.";
-  }else{hotelElement("phone-number").hidden=true;hotelElement("phone-status").textContent="Demonumber pole seadistatud. Veebis saad proovida teksti või mikrofoniga.";}
+  }else{hotelElement("phone-number").hidden=true;hotelElement("phone-number").removeAttribute("href");hotelElement("phone-number").textContent="";hotelElement("phone-status").textContent="Demonumber pole seadistatud. Veebis saad proovida teksti või mikrofoniga.";}
   renderOpeningHours(property);
+  if(Array.isArray(data.menu))renderRestaurantMenu(data.menu);
+  if(property.restaurant_rules || data.rules)renderRestaurantRules(property.restaurant_rules || data.rules);
   hotelElement("faq-list").replaceChildren();
   for(const entry of data.faq || []){const details=document.createElement("details"),summary=document.createElement("summary"),answer=document.createElement("p");summary.textContent=entry.question_et;answer.textContent=entry.answer_et;details.append(summary,answer);hotelElement("faq-list").append(details);}
   if(!data.faq?.length){const note=document.createElement("p");note.className="load-status";note.textContent="Meretuule on fiktiivne esitlus. Broneeringud ei anna õigust päris teenusele.";hotelElement("faq-list").append(note);}
 }
 async function loadHotel(){
   await Promise.allSettled([
-    publicData("/api/public/property").then(renderHotelProperty).catch(()=>{hotelElement("phone-status").textContent="Demonumbri andmeid ei saanud kontrollida. Kasuta veebis Kõneproovi.";hotelElement("hours-status").textContent="Lahtiolekuaegu ei saanud praegu laadida.";hotelElement("faq-list").textContent="Demokeskkonna teavet ei saanud laadida. Meretuule on fiktiivne esitlus.";}),
-    publicData("/api/public/catalogue").then(data=>{renderHotelRooms(data.rooms);renderHotelServices(data.services);}).catch(()=>{hotelStatus("rooms-status","Demotubade kataloogi ei saanud laadida. Proovi hiljem uuesti.",true);hotelStatus("spa-status","Spaateenuseid ei saanud laadida. Proovi hiljem uuesti.",true);})
+    publicData("/api/public/property").then(renderRestaurantProperty).catch(()=>{hotelElement("phone-number").hidden=true;hotelElement("phone-number").removeAttribute("href");hotelElement("phone-number").textContent="";hotelElement("phone-status").textContent="Demonumbri andmeid ei saanud kontrollida. Kasuta veebis Kõneproovi.";hotelElement("opening-hours").replaceChildren();hotelElement("hours-status").textContent="Lahtiolekuaegu ei saanud praegu laadida.";hotelElement("faq-list").textContent="Demokeskkonna teavet ei saanud laadida. Meretuule on fiktiivne esitlus.";}),
+    publicData("/api/public/catalogue").then(data=>{
+      const catalogue=Array.isArray(data.tables)?data:data.tables;
+      if(!catalogue || !Array.isArray(catalogue.tables) || !catalogue.rules)throw new Error("restaurant_catalogue_unavailable");
+      renderRestaurantTables(catalogue.tables);renderRestaurantRules(catalogue.rules);
+      if(Array.isArray(data.menu || catalogue.menu))renderRestaurantMenu(data.menu || catalogue.menu);
+      else if(!hotelElement("menu-list").children.length)hotelStatus("menu-status","Demomenüü andmed pole praegu saadaval.",true);
+    }).catch(()=>{hotelElement("table-grid").replaceChildren();hotelStatus("tables-status","Laudade kataloogi ei saanud laadida. Saadavus pole kinnitatud.",true);hotelStatus("menu-status","Demomenüü lugemine ebaõnnestus; kuvatud menüü võib olla aegunud.",true);hotelStatus("rules-status","Kataloogi reegleid ei saanud kontrollida; kuvatud teave võib olla aegunud.",true);})
   ]);
 }
 loadHotel();

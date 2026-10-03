@@ -261,7 +261,7 @@ def test_fatal_initialization_failure_closes_allocated_adapter_and_owned_room():
                 },
                 clear=True,
             ),
-            patch.object(w, "EasyAppointmentsAdapter", return_value=adapter),
+            patch.object(w, "DemoTableAdapter", return_value=adapter),
             patch.object(w.groq, "STT"),
             patch.object(w.groq, "LLM"),
             patch.object(

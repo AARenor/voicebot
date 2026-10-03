@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "reference_date": "2026-10-03",
+  "purpose": "Fictional restaurant telephone-demo profile; no real guests, restaurant or availability claims.",
+  "automatic_import": false,
+  "safety": {
+    "send_notifications": false,
+    "make_outbound_calls": false,
+    "collect_payments": false,
+    "speak_prices": false,
+    "email_domain": "example.invalid",
+    "phone_range": "Fictional NANPA 202-555-01xx numbers; never dial or text them.",
+    "availability_source": "Query the actual booking backend; this file does not reserve or prove availability."
+  },
+  "fictional_property": {
+    "name": "Meretuule restoran",
+    "language": "et",
+    "timezone": "Europe/Tallinn",
+    "description_et": "Väljamõeldud restoran tehisintellektil põhineva lauabroneerimisabilise katsetamiseks. Testbroneering ei anna õigust päris restoranikülastusele.",
+    "description_en": "A fictional restaurant for testing an AI table-booking assistant. Test reservations do not entitle you to a real restaurant visit.",
+    "description_ru": "Вымышленный ресторан для проверки помощника по бронированию столиков. Тестовые бронирования не дают права на посещение настоящего ресторана.",
+    "address": null,
+    "real_visitor_location": false,
+    "automatically_used_by_agent": true
+  },
+  "guests": [
+    {
+      "fixture_id": "guest-001",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Esimene",
+        "email": "demo.esimene@example.invalid",
+        "phone": "+12025550101"
+      }
+    },
+    {
+      "fixture_id": "guest-002",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Teine",
+        "email": "demo.teine@example.invalid",
+        "phone": "+12025550102"
+      }
+    },
+    {
+      "fixture_id": "guest-003",
+      "guest": {
+        "firstName": "Demo",
+        "lastName": "Kolmas",
+        "email": "demo.kolmas@example.invalid",
+        "phone": "+12025550103"
+      }
+    }
+  ],
+  "manual_demo_faq": {
+    "automatically_used_by_agent": true,
+    "entries": [
+      {
+        "question_et": "Kas see on päris restoran?",
+        "answer_et": "Ei. Meretuule restoran on väljamõeldud katsetuskeskkond. Testbroneeringud ei anna õigust päris restoranikülastusele.",
+        "question_en": "Is this a real restaurant?",
+        "answer_en": "No. Meretuule restoran is a fictional testing environment. Test reservations do not entitle you to a real restaurant visit.",
+        "question_ru": "Это настоящий ресторан?",
+        "answer_ru": "Нет. Meretuule restoran — вымышленная тестовая среда. Тестовые бронирования не дают права на посещение настоящего ресторана."
+      },
+      {
+        "question_et": "Millal demorestoran on avatud?",
+        "answer_et": "Demorestoran on avatud iga päev kell 12–22 Tallinna aja järgi. Laua saadavust tuleb kontrollida broneerimissüsteemist.",
+        "question_en": "When is the demo restaurant open?",
+        "answer_en": "The demo restaurant is open daily from 12:00 to 22:00 Tallinn time. Table availability must be checked in the booking system.",
+        "question_ru": "Когда открыт демонстрационный ресторан?",
+        "answer_ru": "Демонстрационный ресторан открыт ежедневно с 12:00 до 22:00 по таллиннскому времени. Наличие свободного столика нужно проверить в системе бронирования."
+      },
+      {
+        "question_et": "Kui kaua lauabroneering kestab?",
+        "answer_et": "Lauabroneering kestab 120 minutit ja peab lõppema hiljemalt kell 22 Tallinna aja järgi. Me ei muuda soovitud algusaega ilma sinu uue valikuta.",
+        "question_en": "How long is a table reservation?",
+        "answer_en": "A table reservation lasts 120 minutes and must end by 22:00 Tallinn time. We do not change your requested start time without a new choice from you.",
+        "question_ru": "На сколько времени бронируется столик?",
+        "answer_ru": "Столик бронируется на 120 минут, и бронирование должно закончиться не позднее 22:00 по таллиннскому времени. Мы не меняем желаемое время начала без вашего нового выбора."
+      },
+      {
+        "question_et": "Mitmele inimesele saab laua broneerida?",
+        "answer_et": "Laua saab broneerida 1–6 inimesele. Kõik istuvad lapsed lähevad inimeste arvu hulka. Laudu ei ühendata. Tulevase aja saab valida kuni 90 päeva ette; saadavust kontrollib broneerimissüsteem.",
+        "question_en": "How many people can reserve a table?",
+        "answer_en": "A table can be reserved for 1–6 people, including all seated children. Tables are not combined. You can choose a future time up to 90 days ahead; the booking system checks availability.",
+        "question_ru": "На сколько человек можно забронировать столик?",
+        "answer_ru": "Столик можно забронировать на 1–6 человек, включая всех детей, которым нужно место за столом. Столики не объединяются. Можно выбрать время в будущем не более чем на 90 дней вперёд; наличие мест проверяет система бронирования."
+      },
+      {
+        "question_et": "Kus restoran asub?",
+        "answer_et": "Demol ei ole päris aadressi ega külastuskohta.",
+        "question_en": "Where is the restaurant?",
+        "answer_en": "The demo has no real address or visitor location.",
+        "question_ru": "Где находится ресторан?",
+        "answer_ru": "У этой демонстрации нет настоящего адреса или места для посещения."
+      },
+      {
+        "question_et": "Kas pean midagi maksma?",
+        "answer_et": "See demo ei kogu makseid ega kinnita päris restorani hindu. Päris kontaktandmeid ei küsita ja teavitusi ei saadeta.",
+        "question_en": "Do I need to pay anything?",
+        "answer_en": "This demo does not collect payments or quote real restaurant prices. Real contact details are not requested and notifications are not sent.",
+        "question_ru": "Нужно ли что-нибудь платить?",
+        "answer_ru": "Эта демонстрация не принимает оплату и не подтверждает цены настоящего ресторана. Настоящие контактные данные не запрашиваются, уведомления не отправляются."
+      }
+    ]
+  }
+}

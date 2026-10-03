@@ -111,7 +111,7 @@ def test_invalid_model_settings_fail_before_paid_provider_requests(env):
         VoiceConfig.from_env(env)
 
 
-def test_native_startup_uses_same_models_and_room_journal(tmp_path):
+def test_native_startup_uses_same_models_and_restaurant_journal(tmp_path):
     pytest.importorskip("livekit.agents")
     from app import worker
 
@@ -140,6 +140,7 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
             shutdown=Mock(),
         )
         env = {
+            "RESTAURANT_STATE_DB": str(tmp_path / "restaurant-booking.db"),
             "EASY_BASE_URL": "https://fixture.invalid",
             "EASY_API_KEY": "fixture",
             "EASY_STATE_DB": str(tmp_path / "easy-booking.db"),
@@ -156,9 +157,8 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
             patch.object(worker, "validate_environment"),
             patch.object(worker, "protect_logs"),
             patch.object(
-                worker, "EasyAppointmentsAdapter", return_value=NS(close=AsyncMock())
-            ),
-            patch.object(worker, "DemoStayAdapter") as stay,
+                worker, "DemoTableAdapter", return_value=NS(close=AsyncMock())
+            ) as table,
             patch.object(worker, "AgentSession", return_value=session),
             patch.object(worker, "TelephoneAgent"),
             patch.object(worker.callslog, "log_call"),
@@ -169,7 +169,7 @@ def test_native_startup_uses_same_models_and_room_journal(tmp_path):
             patch.object(worker, "TelephoneTTS"),
         ):
             await worker.entrypoint(ctx)
-        stay.assert_called_once_with(str(tmp_path / "stay-booking.db"))
+        table.assert_called_once_with(str(tmp_path / "restaurant-booking.db"))
         assert stt.call_args.kwargs["model"] == "whisper-large-v3"
         assert stt.call_args.kwargs["mode"] == "auto"
         assert llm.call_args.kwargs["model"] == "openai/gpt-oss-120b"

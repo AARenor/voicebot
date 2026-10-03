@@ -18,8 +18,7 @@ from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli, ll
 from livekit.agents.types import TimedString, USERDATA_TIMED_TRANSCRIPT
 from livekit.plugins import groq, silero
 
-from .booking.easyappointments import EasyAppointmentsAdapter
-from .booking.demo_stay import DemoStayAdapter
+from .booking.demo_table import DemoTableAdapter
 from .booking.tools import Dispatcher
 from .booking_response import trusted_booking_response
 from . import callslog, call_history
@@ -36,7 +35,6 @@ from .telephone import (
     FALLBACK,
     UNVERIFIED_REPLY,
     sdk_tools,
-    validate_environment,
 )
 
 
@@ -127,19 +125,22 @@ class TelephoneAgent(Agent):
         turn = self._final_user_turn
         user = next(
             (
-                item for item in reversed(chat_ctx.items)
+                item
+                for item in reversed(chat_ctx.items)
                 if getattr(item, "role", None) == "user"
             ),
             None,
         )
         current = turn is not None and turn == (
-            getattr(user, "id", None), self.state._turn_serial
+            getattr(user, "id", None),
+            self.state._turn_serial,
         )
         # SDK instruction refreshes append configuration metadata after the
         # user's item. That metadata does not change which turn is answered.
         tail = next(
             (
-                item for item in reversed(chat_ctx.items)
+                item
+                for item in reversed(chat_ctx.items)
                 if not isinstance(item, llm.AgentConfigUpdate)
             ),
             None,
@@ -202,16 +203,22 @@ class TelephoneAgent(Agent):
             items.insert(items.index(tail), inquiry)
             chat_ctx = llm.ChatContext(items=items)
         responded = False
-        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            if current and (initial or after_tool) and (
-                turn != self._final_user_turn
-                or turn[1] != self.state._turn_serial
+        async for chunk in Agent.default.llm_node(
+            self, chat_ctx, tools, model_settings
+        ):
+            if (
+                current
+                and (initial or after_tool)
+                and (
+                    turn != self._final_user_turn or turn[1] != self.state._turn_serial
+                )
             ):
                 # SDK tool execution consumes emitted chunks directly. Withhold
                 # late calls as well as IDs after a newer final user turn.
                 return
             if (
-                current and (initial or after_tool)
+                current
+                and (initial or after_tool)
                 and turn == self._final_user_turn
                 and turn[1] == self.state._turn_serial
             ):
@@ -224,8 +231,10 @@ class TelephoneAgent(Agent):
             elif isinstance(chunk, llm.ChatChunk):
                 responded |= chunk.has_response()
             yield chunk
-        if current and (initial or after_tool) and (
-            turn != self._final_user_turn or turn[1] != self.state._turn_serial
+        if (
+            current
+            and (initial or after_tool)
+            and (turn != self._final_user_turn or turn[1] != self.state._turn_serial)
         ):
             return
         if not responded:
@@ -272,8 +281,11 @@ class TelephoneAgent(Agent):
         if self.state.history_enabled:
             outcome = (
                 "fallback"
-                if event.item.text_content in {
-                    UNVERIFIED_REPLY, ENGLISH["unverified"], localize(UNVERIFIED_REPLY, "ru")
+                if event.item.text_content
+                in {
+                    UNVERIFIED_REPLY,
+                    ENGLISH["unverified"],
+                    localize(UNVERIFIED_REPLY, "ru"),
                 }
                 else self.state.outcome
             )
@@ -325,7 +337,9 @@ class TelephoneAgent(Agent):
                 if self.speech_provider is not None:
                     voice, locale = self.speech_config.voice_for(language)
                     self.speech_provider.update_options(voice=voice, language=locale)
-                async for frame in Agent.default.tts_node(self, checked(), model_settings):
+                async for frame in Agent.default.tts_node(
+                    self, checked(), model_settings
+                ):
                     if not frames:
                         frame.userdata[USERDATA_TIMED_TRANSCRIPT] = [_SpokenText(reply)]
                     frames = True
@@ -549,7 +563,7 @@ async def cleanup_call(ctx, session, adapter, *, state=None, failed=False):
     try:
         for close in (
             session.aclose if session is not None else None,
-            adapter.close if adapter is not None else None,
+            getattr(adapter, "close", None),
             lambda: ctx.api.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name)),
         ):
             if close is None:
@@ -665,6 +679,29 @@ def on_provider_error(failed, event, *, state=None):
     failed.set()
 
 
+def validate_environment(env=None):
+    """Native runtime has restaurant state, not a legacy spa/PMS dependency."""
+    env = os.environ if env is None else env
+    required = (
+        "LIVEKIT_URL",
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "GROQ_API_KEY",
+        "AZURE_SPEECH_KEY",
+        "AZURE_REGION",
+    )
+    if any(not env.get(key) for key in required):
+        raise ValueError("native provider configuration incomplete")
+    if (
+        env.get("VOICEBOT_TELEPHONE_DEMO") != "1"
+        or env.get("VOICEBOT_BUSINESS", "restaurant") != "restaurant"
+    ):
+        raise ValueError("native restaurant demo not configured")
+    path = env.get("RESTAURANT_STATE_DB", "/data/restaurant-booking.db")
+    if not os.path.isabs(path):
+        raise ValueError("persistent restaurant state required")
+
+
 server = AgentServer(
     num_idle_processes=2,
     # Cover setup, the bounded ten-minute call and independent resource cleanup.
@@ -692,27 +729,12 @@ async def entrypoint(ctx: JobContext):
         config = VoiceConfig.from_env()
         speech_config = SpeechConfig.from_env()
         delivery = SpeechDelivery.from_env()
-        adapter = EasyAppointmentsAdapter(
-            os.environ["EASY_BASE_URL"],
-            os.environ["EASY_API_KEY"],
-            auth_scheme=os.environ.get("EASY_AUTH_SCHEME", "Bearer "),
-            api_prefix=os.environ.get("EASY_API_PREFIX", "/index.php/api/v1"),
-            state_db=os.environ["EASY_STATE_DB"],
-            allow_writes=True,
+        adapter = DemoTableAdapter(
+            os.environ.get("RESTAURANT_STATE_DB", "/data/restaurant-booking.db")
         )
-        stay = None
-        if (
-            os.environ.get("STAY_DEMO_WRITES", os.environ.get("EASY_DEMO_WRITES"))
-            == "1"
-        ):
-            stay = DemoStayAdapter(
-                os.environ.get("STAY_STATE_DB")
-                or os.path.join(
-                    os.path.dirname(os.environ["EASY_STATE_DB"]), "stay-booking.db"
-                )
-            )
         state = CallTools(
-            Dispatcher(slot=adapter, stay=stay), language=speech_config.initial_language
+            Dispatcher(table=adapter, business="restaurant"),
+            language=speech_config.initial_language,
         )
         callslog.history_safe(
             call_history.start, state.call_id, "telephone", state.language

@@ -125,6 +125,7 @@ def test_real_pipeline_catalogue_search_hold_confirm_cancel(api, monkeypatch, tm
     from app.turn import run_turn
 
     monkeypatch.setenv("EASY_DEMO_WRITES", "1")
+    monkeypatch.setenv("VOICEBOT_BUSINESS", "legacy")
     monkeypatch.setenv("EASY_STATE_DB", str(tmp_path / "pipeline.db"))
     stack = build_stack()
     slot = stack["slot"]

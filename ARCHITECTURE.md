@@ -1,10 +1,46 @@
-# English and Estonian hotel and spa voicebot — architecture
+# Restaurant voicebot — current architecture and historical research
 
-Status: **v1.2 fictional hackathon demo; Twilio-first activation, 2026-10-02**.
+Status: **restaurant-only fictional pipeline, 2026-10-03**. Release acceptance is
+recorded separately; implementation/configuration is not production readiness.
 
 This document separates what is running from what is planned. A component is
 not “ready” because credentials exist or a container starts; it is ready only
 after its real workflow passes end-to-end verification.
+
+## Current restaurant pipeline
+
+The current product is a restaurant reservation assistant in Estonian, English
+and Russian. Both HTTP and native startup default to the disclosed fictional
+restaurant profile and table-only Dispatcher. An unavailable restaurant ledger
+fails closed, never falls back to the archived hotel/spa adapters.
+
+`Browser controls / HTTP dialogue / LiveKit telephone Agent`
+→ `CallTools` (owned IDs, exact delivered recap, subsequent explicit consent,
+server idempotency, sticky uncertainty)
+→ restaurant-scoped `Dispatcher`
+→ `DemoTableAdapter`
+→ shared persistent `/data/restaurant-booking.db`.
+
+Date, exact Tallinn time, all seated diners, actual table capacity and the whole
+two-hour sitting define availability. SQLite transactions allocate an adequate
+physical table, recheck it on confirmation and preserve replay results. Separate
+readback verifies stored reservations; call history keeps contact-free table
+receipts and original kinds of archived records. The public Meretuule page is
+read-only; operator/demo writes require authentication. No real restaurant/POS
+connector, price, payment, notification or real-customer collection is implied.
+
+The existing signed incoming HTTPS/WSS route and private LiveKit media plane
+remain unchanged. Website and worker are independently deployed/source-verified;
+image build or public HTTP success alone is not native/PSTN acceptance.
+See [the restaurant design](docs/superpowers/specs/2026-10-03-restaurant-pipeline-design.md)
+for the domain contract, safeguards, migration boundaries and verification gates.
+
+## Archived architecture and earlier acceptance snapshots
+
+**The remainder records the former hotel/spa design and dated pilot results,
+not active restaurant inventory, current deployment proof or PSTN acceptance.**
+Its candidate vendors, stubs, diagrams and earlier measurements are retained as
+research history rather than silently reinterpreted as restaurant functionality.
 
 Historical vendor/model research from the earlier draft is summarized in
 [`docs/research/stack-research-2026-09-29.md`](docs/research/stack-research-2026-09-29.md).

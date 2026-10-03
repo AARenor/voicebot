@@ -29,26 +29,29 @@ def environment(source):
         "GROQ_API_KEY",
         "AZURE_SPEECH_KEY",
         "AZURE_REGION",
-        "EASY_BASE_URL",
-        "EASY_API_KEY",
     )
-    if (
-        any(not source_env.get(k) for k in required)
-        or source_env.get("EASY_DEMO_WRITES") != "1"
-    ):
+    business = source_env.get("VOICEBOT_BUSINESS", "restaurant")
+    if any(not source_env.get(k) for k in required) or business != "restaurant":
         raise ValueError("source runtime configuration incomplete")
     volumes = [
         m["Name"]
         for m in container["Mounts"]
         if m["Type"] == "volume" and m["Destination"] == "/data"
     ]
-    if len(volumes) != 1 or source_env.get("EASY_STATE_DB") != "/data/easy-booking.db":
+    if (
+        len(volumes) != 1
+        or source_env.get("EASY_STATE_DB", "/data/easy-booking.db")
+        != "/data/easy-booking.db"
+    ):
         raise ValueError("shared booking journal not identified")
     env = dict(os.environ)
     env.update({k: source_env[k] for k in required})
+    env["VOICEBOT_BUSINESS"] = business
     for k in (
         "EASY_AUTH_SCHEME",
         "EASY_API_PREFIX",
+        "EASY_BASE_URL",
+        "EASY_API_KEY",
         "GROQ_CHAT_MODEL",
         "GROQ_STT_MODEL",
         "GROQ_MAX_COMPLETION_TOKENS",
@@ -66,19 +69,26 @@ def environment(source):
         if k in source_env:
             env[k] = source_env[k]
     env["STAY_DEMO_WRITES"] = source_env.get(
-        "STAY_DEMO_WRITES", source_env["EASY_DEMO_WRITES"]
+        "STAY_DEMO_WRITES", source_env.get("EASY_DEMO_WRITES", "0")
     )
     database_paths = {
-        "EASY_STATE_DB": source_env["EASY_STATE_DB"],
-        "STAY_STATE_DB": source_env.get("STAY_STATE_DB") or posixpath.join(
-            posixpath.dirname(source_env["EASY_STATE_DB"]), "stay-booking.db"
+        "RESTAURANT_STATE_DB": source_env.get(
+            "RESTAURANT_STATE_DB", "/data/restaurant-booking.db"
+        ),
+        "EASY_STATE_DB": source_env.get("EASY_STATE_DB", "/data/easy-booking.db"),
+        "STAY_STATE_DB": source_env.get("STAY_STATE_DB")
+        or posixpath.join(
+            posixpath.dirname(source_env.get("EASY_STATE_DB", "/data/easy-booking.db")),
+            "stay-booking.db",
         ),
         "CALLS_DB": source_env.get("CALLS_DB", "/data/calls.db"),
     }
     for key, path in database_paths.items():
         # Containers use POSIX paths, even when deployment checks run on Windows.
         # Only /data is shared; an in-memory or other file path would split state.
-        if not posixpath.isabs(path) or not posixpath.normpath(path).startswith("/data/"):
+        if not posixpath.isabs(path) or not posixpath.normpath(path).startswith(
+            "/data/"
+        ):
             raise ValueError("shared database path not identified")
         env[key] = path
     env["VOICEBOT_DATA_VOLUME"] = volumes[0]

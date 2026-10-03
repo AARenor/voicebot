@@ -177,7 +177,7 @@ def _receipt(
         day = date.fromisoformat(change["date"])
         kind = change.get("kind", "slot")
         checkout = None
-        if kind == "slot":
+        if kind in {"slot", "table"}:
             start = datetime.fromisoformat(change["start_local"])
             valid_id = (
                 booking_id.isascii()
@@ -186,6 +186,12 @@ def _receipt(
             )
             if start.date() != day or start.tzinfo is not None:
                 return None
+            if kind == "table":
+                valid_id = re.fullmatch(r"table_[a-f0-9]{32}", booking_id) is not None
+                if day.isoformat() != change["date"] or not re.fullmatch(
+                    r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:00", change["start_local"]
+                ):
+                    return None
             start_local = start.isoformat(sep=" ")
         elif kind == "stay":
             valid_id = re.fullmatch(r"stay_[a-f0-9]{32}", booking_id) is not None

@@ -43,7 +43,7 @@ try:
 
     class CallBooking(BaseModel):
         id: str
-        kind: Literal["slot", "stay"] = "slot"
+        kind: Literal["slot", "stay", "table"] = "slot"
         action: Literal["confirmed", "cancelled"]
         date: str
         start_local: str

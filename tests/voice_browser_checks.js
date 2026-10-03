@@ -20,8 +20,8 @@ async (page) => {
     }
     if (path === '/api/demo/session') return reply({session_id:'fixture-session',greeting:'Tere!',audio_b64,audio_type:'audio/wav',expires_in_s:600});
     if (path === '/api/calls') return reply({calls:[]});
-    if (path === '/api/catalogue') return reply({services:[],providers:[]});
-    if (path === '/api/bookings') return reply({items:[],fetched_at:'fixture',has_more:false});
+    if (path === '/api/tables') return reply({tables:[],rules:{max_party_size:6}});
+    if (path === '/api/table-bookings') return reply({items:[],fetched_at:'fixture',has_more:false});
     return reply({});
   });
   await page.goto('http://127.0.0.1:8765/',{waitUntil:'networkidle'});

@@ -29,8 +29,28 @@ INTENTS = {
         "доброе утро",
         "добрый вечер",
     },
-    "thanks": {"aitäh", "suur tänu", "tänan", "thanks", "thank you", "thanks a lot", "спасибо", "большое спасибо", "спасибо большое", "благодарю"},
-    "goodbye": {"head aega", "nägemist", "bye", "goodbye", "bye bye", "до свидания", "пока", "всего доброго"},
+    "thanks": {
+        "aitäh",
+        "suur tänu",
+        "tänan",
+        "thanks",
+        "thank you",
+        "thanks a lot",
+        "спасибо",
+        "большое спасибо",
+        "спасибо большое",
+        "благодарю",
+    },
+    "goodbye": {
+        "head aega",
+        "nägemist",
+        "bye",
+        "goodbye",
+        "bye bye",
+        "до свидания",
+        "пока",
+        "всего доброго",
+    },
     "decline": {
         "ei",
         "ei aitäh",
@@ -95,7 +115,13 @@ INTENTS = {
         "вы робот",
         "вы человек",
     },
-    "how_are_you": {"kuidas sul läheb", "how are you", "how are you doing", "как дела", "как у вас дела"},
+    "how_are_you": {
+        "kuidas sul läheb",
+        "how are you",
+        "how are you doing",
+        "как дела",
+        "как у вас дела",
+    },
     "human": {
         "soovin inimesega rääkida",
         "kas saan inimesega rääkida",
@@ -246,6 +272,32 @@ QUESTIONS = {
     },
 }
 
+TABLE_QUESTIONS = {
+    "et": {
+        "date": ("Mis kuupäevaks soovid lauda broneerida?",),
+        "time": ("Mis kellaajaks soovid lauda broneerida?",),
+        "party_size": ("Mitu inimest tuleb kokku, kaasa arvatud lapsed?",),
+        "guest": QUESTIONS["et"]["guest"],
+    },
+    "en": {
+        "date": ("What date would you like to reserve a table for?",),
+        "time": ("What time would you like to reserve a table for?",),
+        "party_size": ("How many people are coming in total, including children?",),
+        "guest": QUESTIONS["en"]["guest"],
+    },
+    "ru": {
+        "date": ("На какую дату вы хотите забронировать столик?",),
+        "time": ("На какое время вы хотите забронировать столик?",),
+        "party_size": ("Сколько всего будет гостей, включая детей?",),
+        "guest": QUESTIONS["ru"]["guest"],
+    },
+}
+TABLE_IDENTITY = {
+    "et": "Olen fiktiivse Meretuule restorani tehisintellekti abiline. Aitan demo küsimuste ja laudade testbroneeringutega.",
+    "en": "I'm the AI assistant for the fictional Meretuule restaurant. I can help with demo questions and test table bookings.",
+    "ru": "Я ИИ-помощник вымышленного ресторана Meretuule. Могу помочь с вопросами демонстрации и тестовым бронированием столиков.",
+}
+
 STYLE_INSTRUCTIONS = {
     "et": "Räägi sõbraliku abilisena, lühikeste kõnelausete ja ühe küsimusega korraga. Vali puuduvate andmete küsimus natural_questions valikutest. Ära küsi uuesti juba antud detaili. Ära korda tervitust ega demo tutvustust igas voorus. Väldi bürokraatlikku sõnastust, loetelude ettelugemist, täitesõnu ja väljamõeldud naeru. Ära väida, et oled inimene. Vastused ja küsimused ei tohi lubada kinnitamata broneeringut, hinda, saadavust ega inimesele suunamist. Serveri kokkuvõte ja nõusoleku sõnad jäävad täpseks. Vali kõigepealt üks täpsustav küsimus; ära loe korraga kõiki puuduvate andmete küsimusi ette.",
     "en": "Speak like a friendly assistant, with short spoken sentences and one question at a time. Choose missing-detail questions from natural_questions. Keep details the caller already supplied. Do not restart the greeting or repeat the demo disclosure every turn. Avoid bureaucratic wording, long lists, filler noises and invented laughter. Do not pretend to be human. Never add an unverified booking, price, availability or transfer claim. The server's recap and consent wording stay exact. Pick one clarification question; do not read out the whole list of missing details.",
@@ -268,30 +320,35 @@ def spa_hours_focus(text: object) -> bool:
     if re.search(
         r"\b(?:broneer\w*|brooneer\w*|bruneer\w*|kinnita\w*|tühist\w*|book\w*|reserv\w*|"
         r"confirm\w*|cancel\w*|hotell\w*|hotel\w*|toa\w*|tuba\w*|tube\w*|"
-        r"room\w*|stay\w*|majut\w*)\b", value,
+        r"room\w*|stay\w*|majut\w*)\b",
+        value,
     ):
         return False
     if not re.search(
         r"\b(?:spaa?\w*|teenindaja\w*|teenusepakkuja\w*|terapeut\w*|"
-        r"massöör\w*|therapist\w*|provider\w*)\b", value,
+        r"massöör\w*|therapist\w*|provider\w*)\b",
+        value,
     ):
         return False
     if not re.search(
         r"\b(?:mis|millal|kas|palun|näita|ütle|kontrolli|what|when|can|could|"
-        r"please|show|tell|check)\b", value,
+        r"please|show|tell|check)\b",
+        value,
     ):
         return False
     if re.search(
         r"\b(?:tööa\w*|tööplaan\w*|töögraafik\w*|graafik\w*|teenindusa\w*|"
         r"lõunapaus\w*|puhkepaus\w*|paus\w*|opening hours|working hours|"
-        r"work plan|schedule\w*|timetable\w*|break\w*|lunch)\b", value,
+        r"work plan|schedule\w*|timetable\w*|break\w*|lunch)\b",
+        value,
     ):
         return True
     return bool(
         re.search(r"\b(?:kell|millal|when|what time|hours)\b", value)
         and re.search(
             r"\b(?:tööt\w*|alustab|lõpetab|avatud|lahti|work\w*|start\w*|"
-            r"finish\w*|open\w*|close\w*)\b", value,
+            r"finish\w*|open\w*|close\w*)\b",
+            value,
         )
     )
 
@@ -300,19 +357,31 @@ def read_focus(text: str) -> str | None:
     value = normalize(text)
     if spa_hours_focus(text):
         return "hours"
-    if re.search(r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b", value):
+    if re.search(
+        r"\b(?:tööa\w*|avatud|lahti|opening hours|working hours|часы работы|время работы|график работы|режим работы|время открытия|время закрытия)\b",
+        value,
+    ):
         return "hours"
     if re.search(
-        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*|спа\w*|процедур\w*|услуг\w*|массаж\w*)\b", value
+        r"\b(?:spa\w*|spaa\w*|hooldus\w*|teenus\w*|treatment\w*|service\w*|спа\w*|процедур\w*|услуг\w*|массаж\w*)\b",
+        value,
     ):
         return "services"
     return None
 
 
-def approved_dialogue(language: str) -> set[str]:
+def approved_dialogue(language: str, *, business="legacy") -> set[str]:
+    replies = REPLIES[language]
+    if business == "restaurant":
+        replies = {**replies, "identity": (TABLE_IDENTITY[language],)}
     return {
         text
-        for group in (REPLIES[language], QUESTIONS[language])
+        for group in (
+            replies,
+            TABLE_QUESTIONS[language]
+            if business == "restaurant"
+            else QUESTIONS[language],
+        )
         for variants in group.values()
         for text in variants
     }
@@ -321,7 +390,8 @@ def approved_dialogue(language: str) -> set[str]:
 class Conversation:
     """Only bounded intent/counters survive a turn; never the caller's words."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, business="legacy") -> None:
+        self.business = business
         self.intent: str | None = None
         self.reply: str | None = None
         self.focus: str | None = None
@@ -333,6 +403,8 @@ class Conversation:
         self.reply = None
         if self.intent is not None:
             choices = REPLIES[language][self.intent]
+            if self.business == "restaurant" and self.intent == "identity":
+                choices = (TABLE_IDENTITY[language],)
             key = (language, self.intent)
             count = self._counts.get(key, 0)
             self.reply = choices[count % len(choices)]

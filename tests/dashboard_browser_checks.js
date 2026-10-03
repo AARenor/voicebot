@@ -10,8 +10,10 @@ async (page) => {
   let sessionEnds = 0;
   const audioUploads = [];
   const requests = [];
-  const services = [{id:1,name:'Klassikaline massaaž',duration:60},{id:2,name:'Näohooldus',duration:45},{id:3,name:'Lõõgastav kehahooldus',duration:90}];
-  const telephoneCall={id:'a'.repeat(32),channel:'telephone',language:'et',status:'ended',outcome:'booking_confirmed',started_at:'2026-10-03T05:45:00Z',updated_at:'2026-10-03T05:46:22Z',ended_at:'2026-10-03T05:46:22Z',duration_s:82,turns:4,recognized_turns:4,typed_turns:0,empty_turns:0,stt_errors:0,tts_errors:0,provider_errors:0,vad_events:4,needs_attention:false,data_mode:'synthetic',bookings:[{id:'101',action:'confirmed',date:'2026-10-09',start_local:'2026-10-09 10:00:00',timezone:'Europe/Tallinn'}]};
+  const tables = [{id:'table-1',name:'Laud 1',capacity:2},{id:'table-2',name:'Laud 2',capacity:4},{id:'table-3',name:'Laud 3',capacity:6}];
+  const bookingId=i=>'table_'+i.toString(16).padStart(32,'0');
+  let manyRows=false;
+  const telephoneCall={id:'a'.repeat(32),channel:'telephone',language:'et',status:'ended',outcome:'booking_confirmed',started_at:'2026-10-03T05:45:00Z',updated_at:'2026-10-03T05:46:22Z',ended_at:'2026-10-03T05:46:22Z',duration_s:82,turns:4,recognized_turns:4,typed_turns:0,empty_turns:0,stt_errors:0,tts_errors:0,provider_errors:0,vad_events:4,needs_attention:false,data_mode:'synthetic',bookings:[{id:bookingId(101),kind:'table',action:'confirmed',date:'2026-10-09',start_local:'2026-10-09 18:00:00',timezone:'Europe/Tallinn'}]};
   const browserCall={...telephoneCall,id:'b'.repeat(32),channel:'browser',outcome:'fallback',turns:2,recognized_turns:0,typed_turns:1,stt_errors:1,vad_events:0,needs_attention:true,bookings:[]};
   const stayReceipt={id:'stay_'+'d'.repeat(32),kind:'stay',action:'confirmed',date:'2026-10-12',checkout:'2026-10-14',start_local:'',timezone:'Europe/Tallinn'};
   let historyMode='loaded', releaseHistory;
@@ -37,20 +39,16 @@ async (page) => {
       const item=url.pathname.endsWith(telephoneCall.id)?telephoneCall:browserCall;
       return reply({session:item,events:[{id:1,at:item.started_at,kind:'started',outcome:''},{id:2,at:item.started_at,kind:'recognized',outcome:''},{id:3,at:item.ended_at,kind:item.bookings.length?'booking_confirmed':'stt_unavailable',outcome:''},{id:4,at:item.ended_at,kind:'ended',outcome:item.outcome}]});
     }
-    if (url.pathname === '/api/catalogue') return reply({services,providers:[{id:1,name:'Demo teenindaja',services:[1,2,3]}]});
-    if (url.pathname === '/api/rooms') return reply({room_types:[]});
-    if (url.pathname === '/api/stays') return reply({items:url.searchParams.get('date')===stayReceipt.date?[{id:stayReceipt.id,status:'confirmed',room_name:'Fiktiivne spaatoa näidis',checkin:stayReceipt.date,checkout:stayReceipt.checkout,nights:2,adults:2,children:0}]:[]});
-    if (url.pathname === '/api/rooms') return reply({synthetic:true,room_types:[]});
-    if (url.pathname === '/api/stays') return reply({synthetic:true,items:[]});
-    if (url.pathname === '/api/bookings') {
+    if (url.pathname === '/api/tables') return reply({tables,rules:{opening_time:'12:00',closing_time:'22:00',duration_minutes:120,max_party_size:6,horizon_days:90,combine_tables:false,children_count_toward_party_size:true}});
+    if (url.pathname === '/api/table-bookings') {
       if (mode === 'delayed') await new Promise(resolve => releaseBooking = resolve);
       if (mode === 'failure') return reply({},503);
       const date = url.searchParams.get('date');
-      const second = url.searchParams.get('page') === '2';
-      const selected = second ? services.slice(0,1) : services;
-      return reply({items:mode === 'empty' ? [] : selected.map((service,i)=>({id:second?201:i+101,service_name:service.name,provider_name:'Demo teenindaja',start_local:`${date} ${10+i*2}:00:00`,end_local:`${date} ${11+i*2}:00:00`,timezone:'Europe/Tallinn',time_state:'valid',status:'Booked'})),fetched_at:'2026-10-02T14:34:00+03:00',has_more:mode === 'empty'||second?false:'unknown'});
+      assert(!url.searchParams.has('page'),'independent table readback was sent unsupported server pagination');
+      const selected=manyRows?Array.from({length:51},(_,i)=>tables[i%tables.length]):tables;
+      return reply({items:mode === 'empty' ? [] : selected.map((table,i)=>({id:bookingId(i+101),kind:'table',table_name:table.name,party_size:2,start:`${date}T18:00:00+03:00`,end:`${date}T20:00:00+03:00`,timezone:'Europe/Tallinn',time_state:'valid',status:'confirmed'})),fetched_at:'2026-10-02T14:34:00+03:00'});
     }
-    if (url.pathname === '/api/demo/session') return reply({session_id:'fixture-session',call_id:browserCall.id,greeting:'Tere! Olen Meretuule Demo Spa virtuaalne abiline. Millist teenust soovid proovida?'});
+    if (url.pathname === '/api/demo/session') return reply({session_id:'fixture-session',call_id:browserCall.id,greeting:'Tere! Olen Meretuule restorani virtuaalne abiline. Mitmele inimesele lauda otsid?'});
     if (url.pathname.startsWith('/api/demo/session/')) {
       sessionEnds++;
       return reply(sessionEndStatus === 200 ? {ok:true} : {detail:'fixture_session_unavailable'},sessionEndStatus);
@@ -59,7 +57,7 @@ async (page) => {
       turns++;
       const input = request.postDataJSON();
       if(input.audio_b64) audioUploads.push(Buffer.from(input.audio_b64,"base64"));
-      return reply({text_heard:input.text || "Sünteetiline heliproov",input_status:input.audio_b64?"recognized":"typed",reply:'Klassikaline massaaž kestab 60 minutit. Mis päeval soovid tulla?',outcome:speechFails?'tts_failed':'ok',tts_failed:speechFails,warnings:speechFails?[{stage:'tts',code:'reply_audio_unavailable'}]:[],timings_ms:{stt:0,llm:400,tools:25,tts:75,total:500},audio_b64:'',turn_count:turns,expires_in_s:590,booking_changes:[]});
+      return reply({text_heard:input.text || "Sünteetiline heliproov",input_status:input.audio_b64?"recognized":"typed",reply:'Lauabroneering kestab 120 minutit. Mis päeval, mis kell ja mitmele inimesele lauda otsid?',outcome:speechFails?'tts_failed':'ok',tts_failed:speechFails,warnings:speechFails?[{stage:'tts',code:'reply_audio_unavailable'}]:[],timings_ms:{stt:0,llm:400,tools:25,tts:75,total:500},audio_b64:'',turn_count:turns,expires_in_s:590,booking_changes:[]});
     }
     return reply({},404);
   });
@@ -109,19 +107,19 @@ async (page) => {
   assert(await page.locator('#history-total').textContent()==='2','history count did not use server summary');
   await page.locator('#history-list button').first().click();
   await page.waitForFunction(()=>document.querySelectorAll('.history-timeline li').length===4);
-  assert((await page.locator('#history-detail').textContent()).includes('Broneering #101'),'confirmed booking link missing');
+   assert((await page.locator('#history-detail').textContent()).includes('Lauabroneering #'+bookingId(101)),'confirmed table booking link missing');
   await page.locator('.history-booking button').click();
   await page.waitForFunction(()=>document.getElementById('booking-date').value==='2026-10-09' && document.querySelector('#bookings tbody tr.highlight'));
   assert(await page.locator('#bookings tbody tr.highlight').count()===1,'history did not highlight the authoritative booking');
   await page.locator('#history-channel').selectOption('browser');
   await page.waitForFunction(()=>document.querySelectorAll('#history-list li').length===1);
-  browserCall.bookings=[stayReceipt];
+   browserCall.bookings=[stayReceipt,{id:'17',kind:'slot',action:'cancelled',date:'2026-10-01',start_local:'2026-10-01 10:00:00'}];
   await page.locator('#history-list button').click();
   await page.waitForFunction(()=>document.querySelector('.history-insight')?.textContent.includes('Kõnetuvastuse teenus'));
-  await page.getByRole('button',{name:'Ava päeva peatumised'}).click();
-  await page.waitForFunction(()=>document.getElementById('booking-date').value==='2026-10-12' && document.querySelector('#stays-list .stay-row'));
-  assert((await page.locator('#stays-list').textContent()).includes(stayReceipt.id),'history room link did not open its actual day');
-  assert(await page.locator('#stays-title').evaluate(el=>el===document.activeElement),'room history link did not focus the destination');
+   assert((await page.locator('#history-detail').textContent()).includes('Arhiveeritud hotellipeatumine #'+stayReceipt.id),'archived stay lost its original kind');
+   assert((await page.locator('#history-detail').textContent()).includes('Arhiveeritud spaa broneering #17'),'archived slot lost its original kind');
+   assert(await page.locator('.history-booking button').count()===0,'archived history linked to retired panels');
+   assert(await page.locator('#booking-date').inputValue()==='2026-10-09','archived history changed the restaurant readback date');
   browserCall.bookings=[];
   await page.locator('#history-channel').selectOption('all');
   await page.waitForFunction(()=>document.querySelectorAll('#history-list li').length===2);
@@ -136,13 +134,17 @@ async (page) => {
   await page.waitForFunction(()=>document.querySelectorAll('.history-timeline li').length===4);
   await page.locator('.history-booking button').click();
   await page.waitForFunction(()=>document.getElementById('booking-date').value==='2026-10-09' && document.querySelector('#bookings tbody tr.highlight'));
-  assert((await page.locator('#bookings tbody tr').first().locator('td').nth(2).textContent()).includes('10:00 – 11:00'),'local booking times did not format');
+   assert((await page.locator('#bookings tbody tr').first().locator('td').nth(2).textContent()).includes('18:00 – 20:00'),'aware table booking times did not format in Tallinn');
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:'output/playwright/after-connected-desktop.png',fullPage:true});
-  await page.locator('#booking-next').click();
-  await page.waitForFunction(()=>document.querySelector('#bookings tbody tr')?.dataset.bookingId==='201');
+   manyRows=true;await page.locator('#refresh').click();
+   await page.waitForFunction(()=>document.querySelectorAll('#bookings tbody tr').length===50);
+   await page.locator('#booking-next').click();
+   await page.waitForFunction(id=>document.querySelector('#bookings tbody tr')?.dataset.bookingId===id,bookingId(151));
   assert(new URL(page.url()).searchParams.get('page')==='2','pagination was not reflected in URL');
-  await page.locator('#booking-prev').click();
+   await page.locator('#booking-prev').click();
+   await page.waitForFunction(()=>document.querySelectorAll('#bookings tbody tr').length===50);
+   manyRows=false;await page.locator('#refresh').click();
   await page.waitForFunction(()=>document.querySelectorAll('#bookings tbody tr').length===3);
   mode='failure';
   await page.locator('#refresh').click();
@@ -160,7 +162,7 @@ async (page) => {
   await page.waitForFunction(()=>state.sessionId && !state.micStarting && document.getElementById('demo-status').classList.contains('error'));
   assert(requests.filter(path=>path==='/api/demo/session').length===1,'direct microphone start did not create exactly one demo session');
   await page.waitForFunction(()=>!document.getElementById('demo-text').disabled);
-  await page.locator('#demo-text').fill('Kui kaua massaaž kestab?');
+   await page.locator('#demo-text').fill('Kui kaua lauabroneering kestab?');
   await page.locator('#demo-send').click();
   await page.waitForFunction(()=>document.querySelectorAll('#demo-messages li').length===3);
   assert(await page.locator('#demo-messages .user-message').count()===1,'user bubble missing');
@@ -288,7 +290,7 @@ async (page) => {
   assert(await page.locator('#demo-messages li').count()===0,'logout retained conversation');
   assert(await page.locator('#catalogue li').count()===0,'logout retained catalogue');
   assert(await page.locator('#history-list li').count()===0,'logout retained history');
-  assert(!(await page.locator('#history-detail').textContent()).includes('Broneering #101'),'late history detail revived private data');
+   assert(!(await page.locator('#history-detail').textContent()).includes(bookingId(101)),'late history detail revived private data');
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:'output/playwright/after-mobile.png',fullPage:true});
   let stalledSignIns = 0;
