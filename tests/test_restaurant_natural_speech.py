@@ -206,3 +206,22 @@ def test_public_summaries_use_the_same_spoken_schedule(client):
     for language in ("et", "en", "ru"):
         assert public["opening_hours_summary"][language] == format_schedule(public["restaurant"], language) + "."
         assert public["kitchen_hours_summary"][language] == format_schedule(public["restaurant"], language, kitchen=True) + "."
+
+
+@pytest.mark.parametrize(
+    "language,request,day,time,party",
+    [
+        ("en", "I'd like to reserve a table", "tomorrow", "at 16:00", "for two adults and two children"),
+        ("et", "Soovin lauda", "homme", "kell 16:00", "kaks täiskasvanut ja kaks last"),
+        ("ru", "Хочу забронировать столик", "завтра", "в 16:00", "два взрослых и два ребёнка"),
+    ],
+)
+def test_party_count_answers_stay_in_booking_flow(make_state, language, request, day, time, party):
+    state = make_state(language)
+    for utterance in (request, day, time):
+        state.observe_user_text(utterance, language=language)
+        state.guard_reply("", [])
+    state.observe_user_text(party, language=language)
+    assert state._restaurant_focus is None
+    assert state.booking_inquiry["party_size"] == 4
+    assert trusted_booking_response(state)["name"] == "plan_restaurant_reservation"

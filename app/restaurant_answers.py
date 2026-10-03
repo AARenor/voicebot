@@ -74,6 +74,14 @@ def match_question(
     matches = [(match.start(), topic) for topic, pattern in PATTERNS.items()
                if (match := re.search(pattern, text))]
     topics = [topic for _, topic in sorted(matches)]
+    # Narrative party counts are booking details, not a request for policies.
+    # In particular, "for two adults and two children" must reach the planner.
+    policy_question = bool(re.search(
+        r"\?|^(?:kas|kuidas|miks|do|does|can|are|is|how|what|may|мож\w*|как|сколько|вход\w*|учит\w*)\b",
+        text,
+    ))
+    if not policy_question:
+        topics = [topic for topic in topics if topic not in {"children", "groups"}]
     if "kitchen" in topics:
         topics = [topic for topic in topics if topic != "hours"]
         if not re.search(r"menüü|menu|меню|pakute|serve|dishes|roogi|блюд", text):
